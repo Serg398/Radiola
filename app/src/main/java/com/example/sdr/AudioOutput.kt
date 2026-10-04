@@ -1,0 +1,114 @@
+package com.example.sdr
+
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+/** Plays 48 kHz mono PCM produced by the selected native demodulator. */
+class AudioOutput {
+    @Volatile private var running = false
+    private var track: AudioTrack? = null
+    private var worker: Thread? = null
+    @Volatile private var flushRequest: CountDownLatch? = null
+
+    fun start(): Boolean {
+        val minimum = AudioTrack.getMinBufferSize(
+            48_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minimum <= 0) return false
+        val output = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(48_000)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .setBufferSizeInBytes(maxOf(minimum, 1_920))
+                .build()
+        } catch (_: Exception) {
+            return false
+        }
+        if (output.state != AudioTrack.STATE_INITIALIZED) {
+            output.release()
+            return false
+        }
+        track = output
+        running = true
+        worker = Thread({
+            val samples = ShortArray(960)
+            try {
+                output.play()
+                while (running) {
+                    val request = flushRequest
+                    if (request != null) {
+                        output.pause()
+                        output.flush()
+                        NativeSdr.discardAudio()
+                        output.play()
+                        flushRequest = null
+                        request.countDown()
+                    }
+                    val count = NativeSdr.readAudio(samples)
+                    if (count == 0) {
+                        Thread.sleep(4)
+                        continue
+                    }
+                    var offset = 0
+                    while (running && flushRequest == null && offset < count) {
+                        val written = output.write(
+                            samples, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING
+                        )
+                        if (written < 0) break
+                        if (written == 0) {
+                            Thread.sleep(2)
+                            continue
+                        }
+                        offset += written
+                    }
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (_: IllegalStateException) {
+                // The audio route may disappear while USB reception is still active.
+            } finally {
+                flushRequest?.countDown()
+                flushRequest = null
+                runCatching { output.pause() }
+                runCatching { output.flush() }
+                output.release()
+            }
+        }, "SdrAudio").also { it.start() }
+        return true
+    }
+
+    /** Flushes queued PCM on the audio thread before the new frequency is shown. */
+    fun flushAfterTune(): Boolean {
+        if (!running || worker?.isAlive != true) return false
+        val request = CountDownLatch(1)
+        flushRequest = request
+        return request.await(300, TimeUnit.MILLISECONDS)
+    }
+
+    fun stop() {
+        running = false
+        worker?.join(1_000)
+        if (worker?.isAlive == true) {
+            worker?.interrupt()
+            worker?.join(1_000)
+        }
+        worker = null
+        track = null
+    }
+}

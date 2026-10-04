@@ -1,0 +1,113 @@
+package com.example.sdr
+
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbManager
+import java.util.concurrent.Executors
+
+/** Owns the USB connection for one continuous native receiver stream. */
+class ReceiverSession(private val usbManager: UsbManager) {
+    private val executor = Executors.newSingleThreadExecutor()
+    private var connection: UsbDeviceConnection? = null
+    private val audio = AudioOutput()
+    private val tuneLock = Any()
+    private var pendingTune: Pair<Long, (Int) -> Unit>? = null
+    private var tuneWorkerScheduled = false
+    private val gainLock = Any()
+    private var pendingGain: Pair<ReceiverGain, (Int) -> Unit>? = null
+    private var gainWorkerScheduled = false
+
+    fun start(device: UsbDevice, frequencyHz: Long, mode: DemodulationMode, gain: ReceiverGain, onResult: (Int) -> Unit) {
+        executor.execute {
+            if (connection != null) {
+                onResult(-100)
+                return@execute
+            }
+            val opened = usbManager.openDevice(device)
+            if (opened == null) {
+                onResult(-101)
+                return@execute
+            }
+            NativeSdr.setDemodulation(mode.nativeId)
+            NativeSdr.setGainControls(gain.rfAgc, gain.gainTenthsDb, gain.audioAgc)
+            var result = NativeSdr.startStream(opened.fileDescriptor, frequencyHz)
+            if (result == 0 && !audio.start()) {
+                NativeSdr.stopStream()
+                result = -102
+            }
+            if (result == 0) {
+                connection = opened
+            } else {
+                opened.close()
+            }
+            onResult(result)
+        }
+    }
+
+    fun stop(onDone: () -> Unit = {}) {
+        executor.execute {
+            audio.stop()
+            NativeSdr.stopStream()
+            connection?.close()
+            connection = null
+            onDone()
+        }
+    }
+
+    fun stats(): LongArray = NativeSdr.streamStats()
+    fun spectrum(): FloatArray = NativeSdr.spectrum()
+    fun spectrumGeneration(): Long = NativeSdr.spectrumGeneration()
+
+    fun setMode(mode: DemodulationMode) {
+        executor.execute {
+            NativeSdr.setDemodulation(mode.nativeId)
+            audio.flushAfterTune()
+        }
+    }
+
+    fun setGain(gain: ReceiverGain, onResult: (Int) -> Unit) {
+        synchronized(gainLock) {
+            pendingGain = gain to onResult
+            if (gainWorkerScheduled) return
+            gainWorkerScheduled = true
+        }
+        executor.execute {
+            while (true) {
+                val request = synchronized(gainLock) {
+                    val next = pendingGain
+                    pendingGain = null
+                    if (next == null) gainWorkerScheduled = false
+                    next
+                } ?: break
+                val value = request.first
+                request.second(NativeSdr.setGainControls(value.rfAgc, value.gainTenthsDb, value.audioAgc))
+            }
+        }
+    }
+
+    fun tune(frequencyHz: Long, onResult: (Int) -> Unit) {
+        synchronized(tuneLock) {
+            pendingTune = frequencyHz to onResult
+            if (tuneWorkerScheduled) return
+            tuneWorkerScheduled = true
+        }
+        executor.execute {
+            while (true) {
+                val request = synchronized(tuneLock) {
+                    val next = pendingTune
+                    pendingTune = null
+                    if (next == null) tuneWorkerScheduled = false
+                    next
+                } ?: break
+                val result = NativeSdr.setFrequency(request.first)
+                if (result == 0) audio.flushAfterTune()
+                request.second(result)
+            }
+        }
+    }
+
+    fun close() {
+        stop()
+        executor.shutdown()
+    }
+}
