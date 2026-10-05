@@ -17,6 +17,16 @@ class WaterfallView(context: Context) : View(context) {
     private val paint = Paint().apply { isFilterBitmap = true }
     private var lastSpectrum: FloatArray? = null
     private var centerFrequencyHz = 0L
+    private val sourceRect = Rect(0, 0, plotWidth, plotHeight)
+    private val destinationRect = Rect()
+
+    fun setViewport(start: Float, end: Float) {
+        val left = (start * plotWidth).toInt().coerceIn(0, plotWidth - 1)
+        val right = (end * plotWidth).toInt().coerceIn(left + 1, plotWidth)
+        if (sourceRect.left == left && sourceRect.right == right) return
+        sourceRect.set(left, 0, right, plotHeight)
+        invalidate()
+    }
     private val palette = IntArray(256) { index ->
         val t = index / 255f
         when {
@@ -49,6 +59,7 @@ class WaterfallView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawBitmap(bitmap, null, Rect(0, 0, width, height), paint)
+        destinationRect.set(0, 0, width, height)
+        canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
     }
 }

@@ -14,7 +14,7 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     fun hzForSpeed(dpPerSecond: Float, previousHz: Long = 1_000L): Long = fixedHz ?: when {
         dpPerSecond >= 1500f -> 50_000L
         previousHz == 50_000L && dpPerSecond >= 350f -> 50_000L
-        dpPerSecond >= 300f -> 10_000L
+        dpPerSecond >= 700f -> 10_000L
         previousHz >= 10_000L && dpPerSecond >= 150f -> 10_000L
         else -> 1_000L
     }

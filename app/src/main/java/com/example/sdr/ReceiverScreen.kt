@@ -65,6 +65,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
@@ -114,7 +115,15 @@ fun ReceiverScreen(
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
-    val channelOffsetHz = currentFrequencyHz - spectrumCenterFrequencyHz
+    var zoom by remember { mutableStateOf(1f) }
+    val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
+    val centerMargin = (spectrumSpanHz - visibleSpanHz) / 2L
+    val visibleCenterHz = if (zoom == 1f) spectrumCenterFrequencyHz else currentFrequencyHz.coerceIn(
+        spectrumCenterFrequencyHz - centerMargin, spectrumCenterFrequencyHz + centerMargin
+    )
+    val channelOffsetHz = currentFrequencyHz - visibleCenterHz
+    val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat().coerceIn(0f, 1f)
+    val viewportEnd = (viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz).coerceIn(0f, 1f)
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = { selected = it })
         Column(
@@ -196,35 +205,60 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, spectrumSpanHz, receiveBandwidthHz, channelOffsetHz, Modifier.fillMaxSize())
+                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, viewportStart, viewportEnd, Modifier.fillMaxSize())
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
-                            val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
+                            val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                             val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
                             Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(currentFrequencyHz), color = ivory, fontSize = 11.sp)
                             }
                             Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
                             Text(
-                                "SPAN %.1f MHz  •  %s %d kHz".format(Locale.US, spectrumSpanHz / 1_000_000.0, demodulationMode.label, receiveBandwidthHz / 1_000),
+                                "SPAN %d kHz  •  %s %d kHz".format(Locale.US, visibleSpanHz / 1_000, demodulationMode.label, receiveBandwidthHz / 1_000),
                                 Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 4.dp),
                                 color = muted, fontSize = 11.sp
                             )
                         }
                     }
                     if (selected != "Spectrum") {
-                        Box(Modifier.fillMaxWidth().weight(1f)) {
+                        Box(Modifier.fillMaxWidth().weight(1f).pointerInput(Unit) {
+                            val minimumDistance = 24.dp.toPx()
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var previousDistance = 0f
+                                var previousIds: List<androidx.compose.ui.input.pointer.PointerId> = emptyList()
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val fingers = event.changes.filter { it.pressed }
+                                    if (fingers.size == 2) {
+                                        val ids = fingers.map { it.id }
+                                        val distance = abs(fingers[0].position.x - fingers[1].position.x)
+                                        if (ids == previousIds && distance >= minimumDistance && previousDistance >= minimumDistance) {
+                                            zoom = (zoom * distance / previousDistance).coerceIn(1f, 16f)
+                                            fingers.forEach { it.consume() }
+                                        }
+                                        previousDistance = distance
+                                        previousIds = ids
+                                    } else {
+                                        previousDistance = 0f
+                                        previousIds = emptyList()
+                                    }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        }) {
                             AndroidView(
                                 factory = { WaterfallView(it) },
                                 update = { view ->
+                                    view.setViewport(viewportStart, viewportEnd)
                                     val values = waterfallState.value
                                     if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = 31.dp)
                             )
                             Canvas(Modifier.fillMaxSize().padding(start = 31.dp).clipToBounds()) {
-                                val center = size.width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
-                                val channelWidth = size.width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
+                                val center = size.width * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
+                                val channelWidth = size.width * (receiveBandwidthHz.toFloat() / visibleSpanHz)
                                 val channelLeft = center - channelWidth / 2f
                                 val channelRight = center + channelWidth / 2f
                                 drawRect(
@@ -245,7 +279,7 @@ fun ReceiverScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         for (fraction in listOf(-0.5, -0.25, 0.0, 0.25, 0.5)) {
-                            Text("%.3f".format(Locale.US, (spectrumCenterFrequencyHz + spectrumSpanHz * fraction) / 1_000_000.0), color = muted, fontSize = 11.sp)
+                            Text("%.3f".format(Locale.US, (visibleCenterHz + visibleSpanHz * fraction) / 1_000_000.0), color = muted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -446,14 +480,15 @@ private fun VerticalEncoder(
     val notch = with(density) { 18.dp.toPx() }
     val scope = rememberCoroutineScope()
     var flingJob by remember { mutableStateOf<Job?>(null) }
+    var idleJob by remember { mutableStateOf<Job?>(null) }
     fun rotate(amount: Float, speed: Float) {
+        val stepHz = currentMode.hzForSpeed(speed / density.density, activeStepHz)
+        activeStepHz = stepHz
         travel += amount
         phase = (phase - amount) % pitch
         val steps = (travel / notch).toInt()
         if (steps != 0) {
             travel -= steps * notch
-            val stepHz = currentMode.hzForSpeed(speed / density.density, activeStepHz)
-            activeStepHz = stepHz
             currentStep(steps * stepHz)
         }
     }
@@ -468,14 +503,22 @@ private fun VerticalEncoder(
                 detectVerticalDragGestures(
                     onDragStart = {
                         flingJob?.cancel()
+                        idleJob?.cancel()
+                        activeStepHz = currentMode.fixedHz ?: 1_000L
                         tracker = VelocityTracker()
                         filteredSpeed = 0f
                         travel = 0f
                         lastEventTime = android.os.SystemClock.uptimeMillis()
                         tracker.addPosition(lastEventTime, it)
                     },
-                    onDragCancel = { flingJob?.cancel(); travel = 0f },
+                    onDragCancel = {
+                        idleJob?.cancel()
+                        flingJob?.cancel()
+                        activeStepHz = currentMode.fixedHz ?: 1_000L
+                        travel = 0f
+                    },
                     onDragEnd = {
+                        idleJob?.cancel()
                         val rawVelocity = -tracker.calculateVelocity().y
                         val limit = 1600f * density.density
                         // A short flick must retain its release speed: the drag smoothing
@@ -492,7 +535,10 @@ private fun VerticalEncoder(
                                     velocity *= exp(-1.8f * dt)
                                 }
                                 travel = 0f
+                                activeStepHz = currentMode.fixedHz ?: 1_000L
                             }
+                        } else {
+                            activeStepHz = currentMode.fixedHz ?: 1_000L
                         }
                     },
                     onVerticalDrag = { change, dragAmount ->
@@ -504,6 +550,17 @@ private fun VerticalEncoder(
                         val blend = 1f - exp(-dt / 0.08f)
                         filteredSpeed += blend * (speed - filteredSpeed)
                         rotate(-dragAmount, filteredSpeed)
+                        idleJob?.cancel()
+                        val position = change.position
+                        idleJob = scope.launch {
+                            delay(150)
+                            filteredSpeed = 0f
+                            travel = 0f
+                            activeStepHz = currentMode.fixedHz ?: 1_000L
+                            tracker = VelocityTracker()
+                            lastEventTime = android.os.SystemClock.uptimeMillis()
+                            tracker.addPosition(lastEventTime, position)
+                        }
                     }
                 )
             }
@@ -526,6 +583,7 @@ private fun VerticalEncoder(
                     Row(
                         Modifier.fillMaxWidth().height(36.dp).clickable {
                             flingJob?.cancel()
+                            idleJob?.cancel()
                             onTuningStepChange(option)
                             menuExpanded = false
                         }.padding(horizontal = 10.dp),
@@ -638,6 +696,8 @@ private fun AmberSpectrum(
     spectrumSpanHz: Int,
     receiveBandwidthHz: Int,
     channelOffsetHz: Long,
+    viewportStart: Float,
+    viewportEnd: Float,
     modifier: Modifier = Modifier
 ) {
     val axisPaint = remember {
@@ -671,13 +731,16 @@ private fun AmberSpectrum(
         if (values.isNotEmpty()) {
             val trace = Path()
             val fill = Path()
-            val columns = minOf(512, values.size)
+            val startBin = (viewportStart * values.size).toInt().coerceIn(0, values.lastIndex)
+            val endBin = (viewportEnd * values.size).toInt().coerceIn(startBin + 1, values.size)
+            val binCount = endBin - startBin
+            val columns = minOf(512, binCount)
             for (index in 0 until columns) {
-                val first = index * values.size / columns
-                val last = (index + 1) * values.size / columns
+                val first = startBin + index * binCount / columns
+                val last = startBin + (index + 1) * binCount / columns
                 var db = values[first]
                 for (bin in first + 1 until last) db = maxOf(db, values[bin])
-                val x = left + width * index / (columns - 1)
+                val x = left + width * index / maxOf(1, columns - 1)
                 val y = bottom - ((db + 120f) / 120f).coerceIn(0f, 1f) * height
                 if (index == 0) {
                     trace.moveTo(x, y)
