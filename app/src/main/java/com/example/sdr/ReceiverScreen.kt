@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
@@ -187,6 +189,7 @@ fun ReceiverScreen(
                 ) {
             Box(
                 Modifier.fillMaxWidth().weight(1f)
+                    .clipToBounds()
                     .border(1.dp, edge, RoundedCornerShape(6.dp))
                     .background(Color(0xFF0C0E10), RoundedCornerShape(6.dp))
             ) {
@@ -194,8 +197,11 @@ fun ReceiverScreen(
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                             AmberSpectrum(spectrumState, spectrumSpanHz, receiveBandwidthHz, channelOffsetHz, Modifier.fillMaxSize())
-                            val markerOffset = 15.5.dp + (maxWidth - 31.dp) * (channelOffsetHz.toFloat() / spectrumSpanHz)
-                            Box(Modifier.align(Alignment.TopCenter).offset(x = markerOffset).padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            var markerWidthPx by remember { mutableStateOf(0) }
+                            val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
+                            val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
+                            val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
+                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(currentFrequencyHz), color = ivory, fontSize = 11.sp)
                             }
                             Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
@@ -216,7 +222,7 @@ fun ReceiverScreen(
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = 31.dp)
                             )
-                            Canvas(Modifier.fillMaxSize().padding(start = 31.dp)) {
+                            Canvas(Modifier.fillMaxSize().padding(start = 31.dp).clipToBounds()) {
                                 val center = size.width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
                                 val channelWidth = size.width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
                                 val channelLeft = center - channelWidth / 2f
@@ -679,6 +685,7 @@ private fun AmberSpectrum(
         val channelWidth = width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
         val channelLeft = center - channelWidth / 2f
         val channelRight = center + channelWidth / 2f
+        clipRect(left = left, top = top, right = size.width, bottom = bottom) {
         drawRect(
             Brush.horizontalGradient(
                 listOf(Color(0x19F7BA6D), Color(0x38F7BA6D), Color(0x19F7BA6D)),
@@ -689,6 +696,7 @@ private fun AmberSpectrum(
         drawLine(Color(0xB3F7BA6D), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
         drawLine(Color(0xB3F7BA6D), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
         drawLine(Color(0xC9FFC073), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
+        }
     }
 }
 
