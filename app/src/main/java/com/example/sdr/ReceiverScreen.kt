@@ -520,7 +520,7 @@ private fun VerticalEncoder(
                     onDragEnd = {
                         idleJob?.cancel()
                         val rawVelocity = -tracker.calculateVelocity().y
-                        val limit = 2700f * density.density
+                        val limit = 4500f * density.density
                         // A short flick must retain its release speed: the drag smoothing
                         // can still be catching up when the finger leaves the screen.
                         var velocity = rawVelocity.coerceIn(-limit, limit)
@@ -544,7 +544,7 @@ private fun VerticalEncoder(
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(2700f * density.density)
+                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(4500f * density.density)
                         val dt = ((change.uptimeMillis - lastEventTime) / 1000f).coerceIn(0f, 0.1f)
                         lastEventTime = change.uptimeMillis
                         val blend = 1f - exp(-dt / 0.08f)
@@ -617,34 +617,59 @@ private fun VerticalEncoder(
 
 @Composable
 private fun SignalMeter(dbfs: Float, modifier: Modifier = Modifier) {
-    Column(
-        modifier.border(1.dp, edge, RoundedCornerShape(5.dp))
-            .background(surface, RoundedCornerShape(5.dp))
-            .padding(horizontal = 7.dp, vertical = 3.dp),
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("S", color = warm, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Box(Modifier.weight(1f))
-            Text("1   3   5   7   9  +20", color = muted, fontSize = 10.sp)
-            Box(Modifier.weight(1f))
-            Text("%.0f dBFS".format(Locale.US, dbfs), color = ivory, fontSize = 10.sp)
-        }
-        Canvas(Modifier.fillMaxWidth().height(11.dp)) {
-            val segments = 24
-            val lit = (((dbfs + 90f) / 75f) * segments).roundToInt().coerceIn(0, segments)
-            val gap = 2.dp.toPx()
-            val barWidth = (size.width - gap * (segments - 1)) / segments
-            for (index in 0 until segments) {
-                drawRect(
-                    if (index >= lit) Color(0xFF35302B) else if (index >= 19) Color(0xFFFF8D55) else warm,
-                    Offset(index * (barWidth + gap), 0f), Size(barWidth, size.height)
-                )
-            }
+    // Relative display only: raw dBFS is not calibrated antenna power.
+    val level = (dbfs + 90f).coerceIn(0f, 84f)
+    val reading = if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
+        else "≈S9 +${(level - 54f).roundToInt()}"
+    val labelPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = android.graphics.Paint.Align.CENTER
         }
     }
+    Canvas(
+        modifier.border(1.dp, edge, RoundedCornerShape(5.dp))
+            .background(surface, RoundedCornerShape(5.dp))
+            .semantics { contentDescription = "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
+    ) {
+        val left = 10.dp.toPx()
+        val right = maxOf(left + 1f, size.width - 96.dp.toPx())
+        val width = right - left
+        val barTop = size.height - 11.dp.toPx()
+        val barHeight = 6.dp.toPx()
+        val labelY = 13.dp.toPx()
+        val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
+        labelPaint.textSize = 10.sp.toPx()
+        for ((value, label) in ticks) {
+            val x = left + width * value / 84f
+            labelPaint.color = if (value > 54f) android.graphics.Color.rgb(255, 141, 85)
+                else android.graphics.Color.rgb(212, 194, 169)
+            drawContext.canvas.nativeCanvas.drawText(label, x, labelY, labelPaint)
+            drawLine(edge, Offset(x, labelY + 2.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), 1.dp.toPx())
+        }
+        val segments = 42
+        val gap = 1.dp.toPx()
+        val segmentWidth = maxOf(1f, (width - gap * (segments - 1)) / segments)
+        for (index in 0 until segments) {
+            val threshold = (index + 1) * 84f / segments
+            drawRect(
+                if (level < threshold) Color(0xFF35302B)
+                else if (threshold > 54f) Color(0xFFFF8D55) else warm,
+                Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight)
+            )
+        }
+        val cursorX = left + width * level / 84f
+        drawLine(ivory, Offset(cursorX, barTop - 2.dp.toPx()), Offset(cursorX, barTop + barHeight + 2.dp.toPx()), 1.dp.toPx())
+        val readoutX = right + (size.width - right) / 2f
+        labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
+        labelPaint.textSize = 14.sp.toPx()
+        labelPaint.isFakeBoldText = true
+        drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 15.dp.toPx(), labelPaint)
+        labelPaint.isFakeBoldText = false
+        labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
+        labelPaint.textSize = 9.sp.toPx()
+        drawContext.canvas.nativeCanvas.drawText("%.0f dBFS".format(Locale.US, dbfs), readoutX, size.height - 5.dp.toPx(), labelPaint)
+    }
 }
-
 @Composable
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(
