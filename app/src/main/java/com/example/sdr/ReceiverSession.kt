@@ -45,7 +45,7 @@ class ReceiverSession(private val usbManager: UsbManager) {
                 return@execute
             }
             NativeSdr.setDemodulation(mode.nativeId)
-            NativeSdr.setGainControls(gain.rfAgc, gain.gainTenthsDb, gain.audioAgc)
+            NativeSdr.setGainControls(gain.rfAgc, gain.gainTenthsDb, gain.audioAgc, gain.biasT)
             var result = NativeSdr.startStream(opened.fileDescriptor, frequencyHz)
             if (result == 0 && !audio.start()) {
                 NativeSdr.stopStream()
@@ -100,7 +100,7 @@ class ReceiverSession(private val usbManager: UsbManager) {
                     next
                 } ?: break
                 val value = request.first
-                request.second(NativeSdr.setGainControls(value.rfAgc, value.gainTenthsDb, value.audioAgc))
+                request.second(NativeSdr.setGainControls(value.rfAgc, value.gainTenthsDb, value.audioAgc, value.biasT))
             }
         }
     }

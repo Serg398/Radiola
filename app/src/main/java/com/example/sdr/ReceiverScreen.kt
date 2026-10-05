@@ -134,7 +134,7 @@ fun ReceiverScreen(
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Box(Modifier.fillMaxWidth().height(90.dp)) {
-                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.align(Alignment.TopStart).width(180.dp))
+                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.align(Alignment.TopStart).width(210.dp))
                 Row(
                     Modifier.align(Alignment.TopCenter).offset(x = (-40).dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -406,6 +406,7 @@ private fun GainPanel(gain: ReceiverGain, gainSteps: List<Int>, onChange: (Recei
         Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             AgcToggle("RF AGC", gain.rfAgc, Modifier.weight(0.85f)) { onChange(gain.copy(rfAgc = !gain.rfAgc)) }
             AgcToggle("AUDIO AGC", gain.audioAgc, Modifier.weight(1f)) { onChange(gain.copy(audioAgc = !gain.audioAgc)) }
+            AgcToggle("BIAS-T", gain.biasT, Modifier.weight(0.85f)) { onChange(gain.copy(biasT = !gain.biasT)) }
         }
         Row(Modifier.fillMaxWidth().height(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("GAIN", color = muted, fontSize = 10.sp)

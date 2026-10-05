@@ -43,6 +43,7 @@ struct StreamState {
     AudioAgc audio_agc;
     std::atomic<bool> audio_agc_enabled{true};
     bool rf_agc = true; // Protected by stream_mutex.
+    bool bias_t = false; // Protected by stream_mutex.
     int gain_tenths_db = 197;
     std::atomic<int> demodulation{0}; // 0=WFM, 1=AM, 2=NFM, 3=USB, 4=LSB, 5=CW
     int active_demodulation = 0; // IQ callback thread only
@@ -188,6 +189,7 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     if (result == 0) result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(plan.centerHz));
     if (result == 0) result = rtlsdr_set_agc_mode(stream.device, 0);
     if (result == 0) result = apply_rf_gain();
+    if (result == 0) result = rtlsdr_set_bias_tee(stream.device, stream.bias_t ? 1 : 0);
     if (result == 0) result = rtlsdr_reset_buffer(stream.device);
     if (result != 0) {
         if (stream.device) rtlsdr_close(stream.device);
@@ -247,11 +249,18 @@ Java_com_example_sdr_NativeSdr_setDemodulation(JNIEnv *, jobject, jint mode) {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_example_sdr_NativeSdr_setGainControls(JNIEnv *, jobject, jboolean rf_agc, jint gain, jboolean audio_agc) {
+Java_com_example_sdr_NativeSdr_setGainControls(JNIEnv *, jobject, jboolean rf_agc, jint gain, jboolean audio_agc, jboolean bias_t) {
     std::lock_guard<std::mutex> lock(stream_mutex);
     stream.rf_agc = rf_agc;
     stream.gain_tenths_db = std::clamp(static_cast<int>(gain), -100, 600);
     stream.audio_agc_enabled = audio_agc;
+    if (stream.bias_t != static_cast<bool>(bias_t)) {
+        if (stream.device) {
+            const int result = rtlsdr_set_bias_tee(stream.device, bias_t ? 1 : 0);
+            if (result != 0) return result;
+        }
+        stream.bias_t = bias_t;
+    }
     return apply_rf_gain();
 }
 
@@ -328,6 +337,7 @@ Java_com_example_sdr_NativeSdr_stopStream(JNIEnv *, jobject) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     if (stream.worker.joinable()) stream.worker.join();
+    rtlsdr_set_bias_tee(stream.device, 0);
     rtlsdr_close(stream.device);
     stream.device = nullptr;
     close(stream.fd);

@@ -13,7 +13,7 @@ object NativeSdr {
     external fun receiverRates(): IntArray
     external fun setFrequency(frequencyHz: Long): Int
     external fun setDemodulation(mode: Int)
-    external fun setGainControls(rfAgc: Boolean, gainTenthsDb: Int, audioAgc: Boolean): Int
+    external fun setGainControls(rfAgc: Boolean, gainTenthsDb: Int, audioAgc: Boolean, biasT: Boolean): Int
     external fun tunerGains(): IntArray
     external fun spectrum(): SpectrumFrame
     external fun spectrumGeneration(): Long
