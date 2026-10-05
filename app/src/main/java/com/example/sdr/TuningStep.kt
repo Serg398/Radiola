@@ -9,12 +9,14 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     KHZ_500("500 kHz", 500_000L),
     MHZ_1("1 MHz", 1_000_000L);
 
-    fun hzForSpeed(pixelsPerSecond: Float): Long = fixedHz ?: when {
-        pixelsPerSecond < 250f -> 1_000L
-        pixelsPerSecond < 700f -> 10_000L
-        pixelsPerSecond < 1400f -> 50_000L
-        pixelsPerSecond < 3000f -> 100_000L
-        else -> 500_000L
+    // Speeds in dp/s give the same feel on displays with different pixel densities.
+    // Different up/down thresholds prevent step chatter near a speed boundary.
+    fun hzForSpeed(dpPerSecond: Float, previousHz: Long = 1_000L): Long = fixedHz ?: when {
+        dpPerSecond >= 1500f -> 50_000L
+        previousHz == 50_000L && dpPerSecond >= 350f -> 50_000L
+        dpPerSecond >= 300f -> 10_000L
+        previousHz >= 10_000L && dpPerSecond >= 150f -> 10_000L
+        else -> 1_000L
     }
 
     fun shortLabel(hz: Long): String = if (hz >= 1_000_000L) "${hz / 1_000_000}M" else "${hz / 1000}k"

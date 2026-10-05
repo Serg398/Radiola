@@ -443,7 +443,7 @@ private fun VerticalEncoder(
     var phase by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
     val pitch = with(density) { 17.dp.toPx() }
-    val notch = with(density) { 13.dp.toPx() }
+    val notch = with(density) { 18.dp.toPx() }
     val scope = rememberCoroutineScope()
     var flingJob by remember { mutableStateOf<Job?>(null) }
     fun rotate(amount: Float, speed: Float) {
@@ -452,7 +452,7 @@ private fun VerticalEncoder(
         val steps = (travel / notch).toInt()
         if (steps != 0) {
             travel -= steps * notch
-            val stepHz = currentMode.hzForSpeed(speed)
+            val stepHz = currentMode.hzForSpeed(speed / density.density, activeStepHz)
             activeStepHz = stepHz
             currentStep(steps * stepHz)
         }
@@ -464,33 +464,45 @@ private fun VerticalEncoder(
             .pointerInput(Unit) {
                 var tracker = VelocityTracker()
                 var filteredSpeed = 0f
+                var lastEventTime = 0L
                 detectVerticalDragGestures(
                     onDragStart = {
                         flingJob?.cancel()
                         tracker = VelocityTracker()
                         filteredSpeed = 0f
+                        travel = 0f
+                        lastEventTime = android.os.SystemClock.uptimeMillis()
+                        tracker.addPosition(lastEventTime, it)
                     },
+                    onDragCancel = { flingJob?.cancel(); travel = 0f },
                     onDragEnd = {
                         val rawVelocity = -tracker.calculateVelocity().y
-                        var velocity = (if (rawVelocity < 0f) -filteredSpeed else filteredSpeed).coerceIn(-4000f, 4000f)
-                        if (abs(velocity) > 200f) {
+                        val limit = 1600f * density.density
+                        // A short flick must retain its release speed: the drag smoothing
+                        // can still be catching up when the finger leaves the screen.
+                        var velocity = rawVelocity.coerceIn(-limit, limit)
+                        if (abs(velocity) > 120f * density.density) {
                             flingJob = scope.launch {
                                 var previousTime = withFrameNanos { it }
-                                while (abs(velocity) > 25f) {
+                                while (abs(velocity) > 20f * density.density) {
                                     val now = withFrameNanos { it }
                                     val dt = ((now - previousTime) / 1_000_000_000f).coerceIn(0f, 0.05f)
                                     previousTime = now
                                     rotate(velocity * dt, abs(velocity))
-                                    velocity *= exp(-5f * dt)
+                                    velocity *= exp(-1.8f * dt)
                                 }
+                                travel = 0f
                             }
                         }
                     },
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(4000f)
-                        filteredSpeed = filteredSpeed * 0.75f + speed * 0.25f
+                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(1600f * density.density)
+                        val dt = ((change.uptimeMillis - lastEventTime) / 1000f).coerceIn(0f, 0.1f)
+                        lastEventTime = change.uptimeMillis
+                        val blend = 1f - exp(-dt / 0.08f)
+                        filteredSpeed += blend * (speed - filteredSpeed)
                         rotate(-dragAmount, filteredSpeed)
                     }
                 )
