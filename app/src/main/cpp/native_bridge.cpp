@@ -14,6 +14,7 @@
 #include "wfm_demodulator.h"
 #include "am_demodulator.h"
 #include "audio_agc.h"
+#include "tuning_plan.h"
 
 namespace {
 struct StreamState {
@@ -27,6 +28,10 @@ struct StreamState {
     std::array<float, 1024> spectrum{};
     std::mutex spectrum_mutex;
     std::atomic<uint64_t> spectrum_generation{0};
+    int64_t spectrum_center_hz = 0; // Protected by spectrum_mutex.
+    std::atomic<uint64_t> tuning{0}; // Upper 32 bits: RF center; lower 32: signed channel offset.
+    std::atomic<uint64_t> hardware_tunes{0};
+    std::atomic<uint64_t> digital_tunes{0};
     WfmDemodulator wfm;
     AmDemodulator am;
     AudioAgc audio_agc;
@@ -35,7 +40,7 @@ struct StreamState {
     int gain_tenths_db = 197;
     std::atomic<int> demodulation{0}; // 0 = WFM, 1 = AM
     int active_demodulation = 0; // IQ callback thread only
-    std::atomic<bool> reset_audio{false};
+    std::atomic<bool> retune_audio{false};
     std::array<int16_t, 16384> audio{};
     std::atomic<uint32_t> audio_head{0};
     std::atomic<uint32_t> audio_tail{0};
@@ -45,6 +50,10 @@ struct StreamState {
 
 StreamState stream;
 std::mutex stream_mutex;
+
+uint64_t pack_tuning(const TuningPlan& plan) {
+    return (static_cast<uint64_t>(plan.centerHz) << 32) | static_cast<uint32_t>(plan.offsetHz);
+}
 
 int apply_rf_gain() {
     if (!stream.device) return 0;
@@ -66,12 +75,19 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     stream.bytes.fetch_add(length, std::memory_order_relaxed);
     stream.blocks.fetch_add(1, std::memory_order_relaxed);
     const int mode = stream.demodulation.load(std::memory_order_acquire);
-    if (stream.reset_audio.exchange(false) || mode != stream.active_demodulation) {
+    const uint64_t tuning = stream.tuning.load(std::memory_order_acquire);
+    const int offsetHz = static_cast<int32_t>(tuning & 0xffffffffu);
+    const bool retuned = stream.retune_audio.exchange(false);
+    if (mode != stream.active_demodulation) {
         stream.wfm.reset();
         stream.am.reset();
         stream.audio_agc.reset();
         stream.active_demodulation = mode;
+    } else if (retuned && mode == 0) {
+        stream.wfm.retune();
     }
+    stream.wfm.setFrequencyOffset(offsetHz);
+    stream.am.setFrequencyOffset(offsetHz);
     std::array<int16_t, 2048> pcm{};
     const size_t audio_count = mode == 1
         ? stream.am.process(samples, length, pcm.data(), pcm.size())
@@ -141,6 +157,7 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     }
     std::lock_guard<std::mutex> lock(stream.spectrum_mutex);
     stream.spectrum = frame;
+    stream.spectrum_center_hz = static_cast<int64_t>(tuning >> 32);
     stream.spectrum_generation.fetch_add(1, std::memory_order_relaxed);
 }
 }
@@ -152,8 +169,9 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.fd = dup(fd);
     if (stream.fd < 0) return -101;
     int result = rtlsdr_open_fd(&stream.device, stream.fd);
+    const auto plan = TuningPlan::forFrequency(frequency_hz, 0);
     if (result == 0) result = rtlsdr_set_sample_rate(stream.device, WfmDemodulator::inputSampleRate);
-    if (result == 0) result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(frequency_hz));
+    if (result == 0) result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(plan.centerHz));
     if (result == 0) result = rtlsdr_set_agc_mode(stream.device, 0);
     if (result == 0) result = apply_rf_gain();
     if (result == 0) result = rtlsdr_reset_buffer(stream.device);
@@ -168,11 +186,14 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.blocks = 0;
     stream.last_error = 0;
     stream.spectrum_generation = 0;
+    stream.tuning.store(pack_tuning(plan), std::memory_order_release);
+    stream.hardware_tunes = 1;
+    stream.digital_tunes = 0;
     stream.wfm.reset();
     stream.am.reset();
     stream.audio_agc.reset();
     stream.active_demodulation = stream.demodulation.load();
-    stream.reset_audio = false;
+    stream.retune_audio = false;
     stream.audio_head = 0;
     stream.audio_tail = 0;
     stream.audio_produced = 0;
@@ -190,9 +211,17 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_example_sdr_NativeSdr_setFrequency(JNIEnv *, jobject, jlong frequency_hz) {
     std::lock_guard<std::mutex> lock(stream_mutex);
     if (!stream.device) return -1;
-    const int result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(frequency_hz));
-    if (result == 0) stream.reset_audio = true;
-    return result;
+    const auto plan = TuningPlan::forFrequency(frequency_hz, static_cast<int64_t>(stream.tuning.load() >> 32));
+    if (plan.hardwareRetune) {
+        const int result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(plan.centerHz));
+        if (result != 0) return result;
+        stream.hardware_tunes.fetch_add(1, std::memory_order_relaxed);
+        stream.retune_audio = true;
+    } else {
+        stream.digital_tunes.fetch_add(1, std::memory_order_relaxed);
+    }
+    stream.tuning.store(pack_tuning(plan), std::memory_order_release);
+    return 0;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -248,16 +277,25 @@ Java_com_example_sdr_NativeSdr_discardAudio(JNIEnv *, jobject) {
     stream.audio_tail.store(head, std::memory_order_release);
 }
 
-extern "C" JNIEXPORT jfloatArray JNICALL
+extern "C" JNIEXPORT jobject JNICALL
 Java_com_example_sdr_NativeSdr_spectrum(JNIEnv *env, jobject) {
     std::array<float, 1024> copy;
+    int64_t center;
+    uint64_t generation;
     {
         std::lock_guard<std::mutex> lock(stream.spectrum_mutex);
         copy = stream.spectrum;
+        center = stream.spectrum_center_hz;
+        generation = stream.spectrum_generation.load(std::memory_order_relaxed);
     }
-    jfloatArray result = env->NewFloatArray(copy.size());
-    if (result) env->SetFloatArrayRegion(result, 0, copy.size(), copy.data());
-    return result;
+    jfloatArray bins = env->NewFloatArray(copy.size());
+    if (!bins) return nullptr;
+    env->SetFloatArrayRegion(bins, 0, copy.size(), copy.data());
+    jclass frameClass = env->FindClass("com/example/sdr/SpectrumFrame");
+    if (!frameClass) return nullptr;
+    jmethodID constructor = env->GetMethodID(frameClass, "<init>", "([FJJ)V");
+    if (!constructor) return nullptr;
+    return env->NewObject(frameClass, constructor, bins, static_cast<jlong>(center), static_cast<jlong>(generation));
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -289,10 +327,14 @@ Java_com_example_sdr_NativeSdr_streamStats(JNIEnv *env, jobject) {
         static_cast<jlong>(stream.running.load()),
         static_cast<jlong>(stream.last_error.load()),
         static_cast<jlong>(stream.audio_produced.load()),
-        static_cast<jlong>(stream.audio_dropped.load())
+        static_cast<jlong>(stream.audio_dropped.load()),
+        static_cast<jlong>(stream.tuning.load() >> 32),
+        static_cast<jlong>(static_cast<int32_t>(stream.tuning.load() & 0xffffffffu)),
+        static_cast<jlong>(stream.hardware_tunes.load()),
+        static_cast<jlong>(stream.digital_tunes.load())
     };
-    jlongArray result = env->NewLongArray(6);
-    if (result) env->SetLongArrayRegion(result, 0, 6, values);
+    jlongArray result = env->NewLongArray(10);
+    if (result) env->SetLongArrayRegion(result, 0, 10, values);
     return result;
 }
 

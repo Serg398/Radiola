@@ -3,6 +3,8 @@ package com.example.sdr
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Process
+import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -47,7 +49,10 @@ class AudioOutput {
         track = output
         running = true
         worker = Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
             val samples = ShortArray(960)
+            var writtenSamples = 0L
+            var flushes = 0
             try {
                 output.play()
                 while (running) {
@@ -57,6 +62,7 @@ class AudioOutput {
                         output.flush()
                         NativeSdr.discardAudio()
                         output.play()
+                        ++flushes
                         flushRequest = null
                         request.countDown()
                     }
@@ -76,6 +82,7 @@ class AudioOutput {
                             continue
                         }
                         offset += written
+                        writtenSamples += written
                     }
                 }
             } catch (_: InterruptedException) {
@@ -83,6 +90,7 @@ class AudioOutput {
             } catch (_: IllegalStateException) {
                 // The audio route may disappear while USB reception is still active.
             } finally {
+                Log.d("SdrAudio", "stopped: samples=$writtenSamples underruns=${output.underrunCount} flushes=$flushes")
                 flushRequest?.countDown()
                 flushRequest = null
                 runCatching { output.pause() }
@@ -93,8 +101,8 @@ class AudioOutput {
         return true
     }
 
-    /** Flushes queued PCM on the audio thread before the new frequency is shown. */
-    fun flushAfterTune(): Boolean {
+    /** Used for changing demodulation mode; frequency tuning keeps playback continuous. */
+    fun flushForModeChange(): Boolean {
         if (!running || worker?.isAlive != true) return false
         val request = CountDownLatch(1)
         flushRequest = request

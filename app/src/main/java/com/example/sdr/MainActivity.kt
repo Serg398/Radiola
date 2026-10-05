@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private var frequencyHz by mutableStateOf(100_000_000L)
     private var requestedFrequencyHz: Long? = null
     private val spectrumState = mutableStateOf(FloatArray(0))
+    private var spectrumCenterFrequencyHz by mutableStateOf(0L)
     private val waterfallState = mutableStateOf(FloatArray(0))
     private var lastSpectrumGeneration = 0L
     private var lastWaterfallGeneration = 0L
@@ -100,10 +101,13 @@ class MainActivity : ComponentActivity() {
             lastStreamBytes = stats[0]
             lastStreamTime = now
             if (stats[2] == 1L) {
-                val bins = receiverSession.spectrum()
+                val frame = receiverSession.spectrum()
+                val bins = frame.bins
                 var peak = -90f
-                for (index in 470..554) {
-                    if (index !in 509..515 && bins[index] > peak) peak = bins[index]
+                val centerBin = (bins.size / 2.0 + (frequencyHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
+                val halfBins = maxOf(1, demodulationMode.bandwidthHz * bins.size / (2 * receiverRates[0]))
+                for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
+                    if (bins[index] > peak) peak = bins[index]
                 }
                 signalDbfs = peak
             }
@@ -129,14 +133,15 @@ class MainActivity : ComponentActivity() {
                 val waterfallChanged = updateWaterfall && generation != lastWaterfallGeneration
                 if (spectrumChanged || waterfallChanged) {
                     val frame = receiverSession.spectrum()
+                    spectrumCenterFrequencyHz = frame.centerFrequencyHz
                     if (spectrumChanged) {
-                        lastSpectrumGeneration = generation
-                        spectrumState.value = frame
+                        lastSpectrumGeneration = frame.generation
+                        spectrumState.value = frame.bins
                         spectrumFramesInWindow++
                     }
                     if (waterfallChanged) {
-                        lastWaterfallGeneration = generation
-                        waterfallState.value = frame
+                        lastWaterfallGeneration = frame.generation
+                        waterfallState.value = frame.bins
                         waterfallFramesInWindow++
                     }
                 }
@@ -182,6 +187,7 @@ class MainActivity : ComponentActivity() {
                 frequencyInput = frequencyInput,
                 currentFrequencyHz = frequencyHz,
                 spectrumSpanHz = receiverRates[0],
+                spectrumCenterFrequencyHz = spectrumCenterFrequencyHz.takeIf { it > 0 } ?: frequencyHz,
                 receiveBandwidthHz = demodulationMode.bandwidthHz,
                 demodulationMode = demodulationMode,
                 receiverGain = receiverGain,

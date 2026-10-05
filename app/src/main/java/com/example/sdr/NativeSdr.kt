@@ -15,7 +15,7 @@ object NativeSdr {
     external fun setDemodulation(mode: Int)
     external fun setGainControls(rfAgc: Boolean, gainTenthsDb: Int, audioAgc: Boolean): Int
     external fun tunerGains(): IntArray
-    external fun spectrum(): FloatArray
+    external fun spectrum(): SpectrumFrame
     external fun spectrumGeneration(): Long
     external fun readAudio(output: ShortArray): Int
     external fun discardAudio()

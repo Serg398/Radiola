@@ -29,12 +29,15 @@ const std::array<float, tapsCount>& audioFilter() {
 }
 
 void WfmDemodulator::reset() {
+    mixer_.reset();
     sumI_ = 0.0f;
     sumQ_ = 0.0f;
     iqCount_ = 0;
     previousI_ = 0.0f;
     previousQ_ = 0.0f;
     havePrevious_ = false;
+    discardPhaseOnce_ = false;
+    lastPhase_ = 0.0f;
     discriminatorHistory_.fill(0.0f);
     historyPosition_ = 0;
     audioCount_ = 0;
@@ -48,8 +51,11 @@ size_t WfmDemodulator::process(
     size_t produced = 0;
     const auto& coefficients = audioFilter();
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
-        sumI_ += static_cast<float>(iq[byte]) - 127.5f;
-        sumQ_ += static_cast<float>(iq[byte + 1]) - 127.5f;
+        float mixedI, mixedQ;
+        mixer_.mix(static_cast<float>(iq[byte]) - 127.5f,
+            static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
+        sumI_ += mixedI;
+        sumQ_ += mixedQ;
         if (++iqCount_ < iqDecimation) continue;
 
         const float currentI = sumI_ / iqDecimation;
@@ -61,7 +67,9 @@ size_t WfmDemodulator::process(
         if (havePrevious_) {
             const float cross = previousI_ * currentQ - previousQ_ * currentI;
             const float dot = previousI_ * currentI + previousQ_ * currentQ;
-            const float phase = std::atan2(cross, dot);
+            const float phase = discardPhaseOnce_ ? lastPhase_ : std::atan2(cross, dot);
+            discardPhaseOnce_ = false;
+            lastPhase_ = phase;
             discriminatorHistory_[historyPosition_] = phase;
             historyPosition_ = (historyPosition_ + 1) % tapsCount;
             if (++audioCount_ == audioDecimation) {

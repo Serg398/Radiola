@@ -16,6 +16,7 @@ class WaterfallView(context: Context) : View(context) {
     private val bitmap = Bitmap.createBitmap(plotWidth, plotHeight, Bitmap.Config.ARGB_8888)
     private val paint = Paint().apply { isFilterBitmap = true }
     private var lastSpectrum: FloatArray? = null
+    private var centerFrequencyHz = 0L
     private val palette = IntArray(256) { index ->
         val t = index / 255f
         when {
@@ -25,7 +26,12 @@ class WaterfallView(context: Context) : View(context) {
         }
     }
 
-    fun updateSpectrum(spectrum: FloatArray) {
+    fun updateSpectrum(spectrum: FloatArray, centerHz: Long) {
+        if (centerHz != centerFrequencyHz) {
+            centerFrequencyHz = centerHz
+            pixels.fill(Color.rgb(1, 10, 54))
+            lastSpectrum = null
+        }
         if (spectrum.isEmpty() || spectrum === lastSpectrum) return
         lastSpectrum = spectrum
         System.arraycopy(pixels, 0, pixels, plotWidth, (plotHeight - 1) * plotWidth)

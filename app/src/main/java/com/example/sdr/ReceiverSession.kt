@@ -4,6 +4,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
 import java.util.concurrent.Executors
+import android.util.Log
 
 /** Owns the USB connection for one continuous native receiver stream. */
 class ReceiverSession(private val usbManager: UsbManager) {
@@ -47,6 +48,8 @@ class ReceiverSession(private val usbManager: UsbManager) {
     fun stop(onDone: () -> Unit = {}) {
         executor.execute {
             audio.stop()
+            val stats = NativeSdr.streamStats()
+            Log.d("SdrTuning", "hardware_tunes=${stats[8]} digital_tunes=${stats[9]}")
             NativeSdr.stopStream()
             connection?.close()
             connection = null
@@ -55,13 +58,13 @@ class ReceiverSession(private val usbManager: UsbManager) {
     }
 
     fun stats(): LongArray = NativeSdr.streamStats()
-    fun spectrum(): FloatArray = NativeSdr.spectrum()
+    fun spectrum(): SpectrumFrame = NativeSdr.spectrum()
     fun spectrumGeneration(): Long = NativeSdr.spectrumGeneration()
 
     fun setMode(mode: DemodulationMode) {
         executor.execute {
             NativeSdr.setDemodulation(mode.nativeId)
-            audio.flushAfterTune()
+            audio.flushForModeChange()
         }
     }
 
@@ -100,7 +103,6 @@ class ReceiverSession(private val usbManager: UsbManager) {
                     next
                 } ?: break
                 val result = NativeSdr.setFrequency(request.first)
-                if (result == 0) audio.flushAfterTune()
                 request.second(result)
             }
         }

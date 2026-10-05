@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -84,6 +85,7 @@ fun ReceiverScreen(
     frequencyInput: String,
     currentFrequencyHz: Long,
     spectrumSpanHz: Int,
+    spectrumCenterFrequencyHz: Long,
     receiveBandwidthHz: Int,
     demodulationMode: DemodulationMode,
     receiverGain: ReceiverGain,
@@ -110,6 +112,7 @@ fun ReceiverScreen(
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
+    val channelOffsetHz = currentFrequencyHz - spectrumCenterFrequencyHz
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = { selected = it })
         Column(
@@ -189,9 +192,10 @@ fun ReceiverScreen(
             ) {
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
-                        Box(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, spectrumSpanHz, receiveBandwidthHz, Modifier.fillMaxSize())
-                            Box(Modifier.align(Alignment.TopCenter).padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                            AmberSpectrum(spectrumState, spectrumSpanHz, receiveBandwidthHz, channelOffsetHz, Modifier.fillMaxSize())
+                            val markerOffset = 15.5.dp + (maxWidth - 31.dp) * (channelOffsetHz.toFloat() / spectrumSpanHz)
+                            Box(Modifier.align(Alignment.TopCenter).offset(x = markerOffset).padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(currentFrequencyHz), color = ivory, fontSize = 11.sp)
                             }
                             Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
@@ -208,12 +212,12 @@ fun ReceiverScreen(
                                 factory = { WaterfallView(it) },
                                 update = { view ->
                                     val values = waterfallState.value
-                                    if (values.isNotEmpty()) view.updateSpectrum(values)
+                                    if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = 31.dp)
                             )
                             Canvas(Modifier.fillMaxSize().padding(start = 31.dp)) {
-                                val center = size.width / 2f
+                                val center = size.width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
                                 val channelWidth = size.width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
                                 val channelLeft = center - channelWidth / 2f
                                 val channelRight = center + channelWidth / 2f
@@ -234,8 +238,8 @@ fun ReceiverScreen(
                         Modifier.fillMaxWidth().height(18.dp).padding(start = 31.dp, end = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        for (offset in listOf(-1.2, -0.6, 0.0, 0.6, 1.2)) {
-                            Text("%.1f".format(Locale.US, currentFrequencyHz / 1_000_000.0 + offset), color = muted, fontSize = 11.sp)
+                        for (fraction in listOf(-0.5, -0.25, 0.0, 0.25, 0.5)) {
+                            Text("%.3f".format(Locale.US, (spectrumCenterFrequencyHz + spectrumSpanHz * fraction) / 1_000_000.0), color = muted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -615,6 +619,7 @@ private fun AmberSpectrum(
     valuesState: State<FloatArray>,
     spectrumSpanHz: Int,
     receiveBandwidthHz: Int,
+    channelOffsetHz: Long,
     modifier: Modifier = Modifier
 ) {
     val axisPaint = remember {
@@ -670,7 +675,7 @@ private fun AmberSpectrum(
             drawPath(fill, Brush.verticalGradient(listOf(Color(0xB3EEA54E), Color(0x665C3D20), Color.Transparent), startY = top, endY = bottom))
             drawPath(trace, warm, style = Stroke(1.dp.toPx()))
         }
-        val center = left + width / 2f
+        val center = left + width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
         val channelWidth = width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
         val channelLeft = center - channelWidth / 2f
         val channelRight = center + channelWidth / 2f
@@ -697,6 +702,7 @@ private fun ReceiverPreview() {
         usbCheckResult = "USB connected", streaming = true, streamPending = false,
         frequencyInput = "100.500", currentFrequencyHz = 100_500_000L,
         spectrumSpanHz = 2_400_000, receiveBandwidthHz = 240_000,
+        spectrumCenterFrequencyHz = 100_500_000L,
         spectrumState = remember { mutableStateOf(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }) },
         waterfallState = remember { mutableStateOf(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }) },
         waterfallFrameRate = WaterfallFrameRate.FPS_30, actualSpectrumFps = 30, actualWaterfallFps = 30,

@@ -30,6 +30,7 @@ const std::array<float, tapsCount>& channelFilter() {
 }
 
 void AmDemodulator::reset() {
+    mixer_.reset();
     historyI_.fill(0.0f);
     historyQ_.fill(0.0f);
     historyPosition_ = 0;
@@ -47,8 +48,11 @@ size_t AmDemodulator::process(
     const auto& coefficients = channelFilter();
     size_t produced = 0;
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
-        sumI_ += static_cast<float>(iq[byte]) - 127.5f;
-        sumQ_ += static_cast<float>(iq[byte + 1]) - 127.5f;
+        float mixedI, mixedQ;
+        mixer_.mix(static_cast<float>(iq[byte]) - 127.5f,
+            static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
+        sumI_ += mixedI;
+        sumQ_ += mixedQ;
         if (++iqCount_ < iqDecimation) continue;
 
         historyI_[historyPosition_] = sumI_ / iqDecimation;
