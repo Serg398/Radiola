@@ -18,6 +18,8 @@
 #include "tuning_plan.h"
 
 namespace {
+constexpr int spectrumSize = 8192;
+constexpr int fftStages = 13;
 struct StreamState {
     rtlsdr_dev_t *device = nullptr;
     int fd = -1;
@@ -26,7 +28,7 @@ struct StreamState {
     std::atomic<uint64_t> blocks{0};
     std::atomic<int> running{0};
     std::atomic<int> last_error{0};
-    std::array<float, 1024> spectrum{};
+    std::array<float, spectrumSize> spectrum{};
     std::mutex spectrum_mutex;
     std::atomic<uint64_t> spectrum_generation{0};
     int64_t spectrum_center_hz = 0; // Protected by spectrum_mutex.
@@ -112,9 +114,9 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     }
     stream.audio_head.store(head, std::memory_order_release);
     stream.audio_produced.fetch_add(audio_count, std::memory_order_relaxed);
-    if (length < 2048) return;
+    if (length < spectrumSize * 2) return;
 
-    constexpr int n = 1024;
+    constexpr int n = spectrumSize;
     constexpr float pi = 3.14159265358979323846f;
     static const auto window = [] {
         std::array<float, n> result{};
@@ -124,8 +126,8 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         return result;
     }();
     static const auto stage_steps = [] {
-        std::array<std::complex<float>, 10> result{};
-        for (int stage = 0; stage < 10; ++stage) {
+        std::array<std::complex<float>, fftStages> result{};
+        for (int stage = 0; stage < fftStages; ++stage) {
             const float angle = -2.0f * pi / (1 << (stage + 1));
             result[stage] = {std::cos(angle), std::sin(angle)};
         }
@@ -287,7 +289,7 @@ Java_com_example_sdr_NativeSdr_discardAudio(JNIEnv *, jobject) {
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_example_sdr_NativeSdr_spectrum(JNIEnv *env, jobject) {
-    std::array<float, 1024> copy;
+    std::array<float, spectrumSize> copy;
     int64_t center;
     uint64_t generation;
     {
