@@ -12,9 +12,9 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     // Speeds in dp/s give the same feel on displays with different pixel densities.
     // Different up/down thresholds prevent step chatter near a speed boundary.
     fun hzForSpeed(dpPerSecond: Float, previousHz: Long = 1_000L): Long = fixedHz ?: when {
-        dpPerSecond >= 2300f -> 50_000L
+        dpPerSecond >= 2500f -> 50_000L
         previousHz == 50_000L && dpPerSecond >= 350f -> 50_000L
-        dpPerSecond >= 1000f -> 10_000L
+        dpPerSecond >= 1200f -> 10_000L
         previousHz >= 10_000L && dpPerSecond >= 150f -> 10_000L
         else -> 1_000L
     }
