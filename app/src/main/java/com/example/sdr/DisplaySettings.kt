@@ -5,6 +5,16 @@ import android.content.Context
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
 
+    fun receiverSquelch() = ReceiverSquelch(
+        preferences.getBoolean("squelch_enabled", false),
+        preferences.getFloat("squelch_threshold", -65f).coerceIn(-90f, -6f)
+    )
+
+    fun saveReceiverSquelch(value: ReceiverSquelch) {
+        preferences.edit().putBoolean("squelch_enabled", value.enabled)
+            .putFloat("squelch_threshold", value.thresholdDbfs).apply()
+    }
+
     fun waterfallFrameRate(): WaterfallFrameRate =
         WaterfallFrameRate.fromStored(preferences.getString("waterfall_frame_rate", null))
 

@@ -17,6 +17,7 @@
 #include "am_demodulator.h"
 #include "audio_agc.h"
 #include "tuning_plan.h"
+#include "squelch.h"
 
 namespace {
 constexpr int spectrumSize = 8192;
@@ -41,6 +42,12 @@ struct StreamState {
     SsbDemodulator ssb;
     AmDemodulator am;
     AudioAgc audio_agc;
+    Squelch squelch;
+    // One atomic snapshot keeps enabled and threshold coherent during dragging.
+    std::atomic<int> squelch_setting{65}; // Positive means disabled; negative is enabled threshold.
+    std::atomic<bool> squelch_open{true};
+    float channel_signal = -180.f; // IQ producer only, previous FFT block.
+
     std::atomic<bool> audio_agc_enabled{true};
     bool rf_agc = true; // Protected by stream_mutex.
     bool bias_t = false; // Protected by stream_mutex.
@@ -108,6 +115,9 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size())
         : stream.wfm.process(samples, length, pcm.data(), pcm.size());
     stream.audio_agc.process(pcm.data(), audio_count, stream.audio_agc_enabled.load(std::memory_order_relaxed));
+    const int sql = stream.squelch_setting.load(std::memory_order_relaxed);
+    stream.squelch_open.store(stream.squelch.process(pcm.data(), audio_count,
+        sql < 0, -static_cast<float>(std::abs(sql)), stream.channel_signal), std::memory_order_relaxed);
     uint32_t head = stream.audio_head.load(std::memory_order_relaxed);
     const uint32_t tail = stream.audio_tail.load(std::memory_order_acquire);
     for (size_t sample = 0; sample < audio_count; ++sample) {
@@ -170,6 +180,13 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         const float power = std::norm(values[(i + n / 2) % n]) / (n * n);
         frame[i] = 10.0f * std::log10(power + 1.0e-18f);
     }
+    const int bandwidth = mode == 0 ? 240000 : mode == 1 ? 12000 : mode == 2 ? 12500 : mode == 5 ? 500 : 2700;
+    const int passband_offset = mode == 3 ? 1500 : mode == 4 ? -1500 : 0;
+    const int center_bin = static_cast<int>(std::lround(n / 2.0 + (offsetHz + passband_offset) * static_cast<double>(n) / WfmDemodulator::inputSampleRate));
+    const int half_bins = std::max(1, bandwidth * n / (2 * WfmDemodulator::inputSampleRate));
+    stream.channel_signal = -180.f;
+    for (int i = std::max(0, center_bin - half_bins); i <= std::min(n - 1, center_bin + half_bins); ++i)
+        stream.channel_signal = std::max(stream.channel_signal, frame[i]);
     std::lock_guard<std::mutex> lock(stream.spectrum_mutex);
     stream.spectrum = frame;
     stream.spectrum_center_hz = static_cast<int64_t>(tuning >> 32);
@@ -210,6 +227,9 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.nfm.reset();
     stream.ssb.reset();
     stream.audio_agc.reset();
+    stream.squelch.reset();
+    stream.channel_signal = -180.f;
+    stream.squelch_open = false;
     stream.active_demodulation = stream.demodulation.load();
     stream.retune_audio = false;
     stream.audio_head = 0;
@@ -418,4 +438,15 @@ Java_com_example_sdr_NativeSdr_captureIq(JNIEnv *env, jobject, jint fd, jlong fr
     rtlsdr_close(device);
     close(native_fd);
     return env->NewStringUTF(message);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_sdr_NativeSdr_setSquelch(JNIEnv *, jobject, jboolean enabled, jfloat threshold) {
+    const int db = static_cast<int>(std::lround(std::clamp(threshold, -90.f, -6.f)));
+    stream.squelch_setting.store(enabled ? db : -db, std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_example_sdr_NativeSdr_squelchOpen(JNIEnv *, jobject) {
+    return stream.squelch_open.load(std::memory_order_relaxed);
 }

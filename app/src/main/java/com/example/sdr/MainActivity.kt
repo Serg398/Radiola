@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
     private var gainSteps by mutableStateOf(ReceiverGain.defaultSteps)
     private var actualSpectrumFps by mutableStateOf(0)
     private var actualWaterfallFps by mutableStateOf(0)
+    private var receiverSquelch by mutableStateOf(ReceiverSquelch())
+    private var squelchOpen by mutableStateOf(true)
     private var signalDbfs by mutableStateOf(-90f)
     private var batteryPercent by mutableStateOf(-1)
     private var batteryCharging by mutableStateOf(false)
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
                             if (bins[index] > peak) peak = bins[index]
                         }
                         signalDbfs = peak
+                        squelchOpen = NativeSdr.squelchOpen()
                         lastSpectrumGeneration = frame.generation
                         spectrumState.value = frame.bins
                         spectrumFramesInWindow++
@@ -183,6 +186,8 @@ class MainActivity : ComponentActivity() {
         waterfallFrameRate = displaySettings.waterfallFrameRate()
         tuningStep = displaySettings.tuningStep()
         receiverGain = displaySettings.receiverGain()
+        receiverSquelch = displaySettings.receiverSquelch()
+        NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
@@ -208,6 +213,13 @@ class MainActivity : ComponentActivity() {
                 actualSpectrumFps = actualSpectrumFps,
                 actualWaterfallFps = actualWaterfallFps,
                 signalDbfs = signalDbfs,
+                receiverSquelch = receiverSquelch,
+                squelchOpen = streaming && squelchOpen,
+                onSquelchChange = {
+                    receiverSquelch = it
+                    NativeSdr.setSquelch(it.enabled, it.thresholdDbfs)
+                    displaySettings.saveReceiverSquelch(it)
+                },
                 batteryPercent = batteryPercent,
                 batteryCharging = batteryCharging,
                 onRequestPermission = ::requestUsbPermission,

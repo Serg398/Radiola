@@ -18,5 +18,7 @@ object NativeSdr {
     external fun spectrum(): SpectrumFrame
     external fun spectrumGeneration(): Long
     external fun readAudio(output: ShortArray): Int
+    external fun setSquelch(enabled: Boolean, thresholdDbfs: Float)
+    external fun squelchOpen(): Boolean
     external fun discardAudio()
 }

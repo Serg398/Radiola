@@ -1,6 +1,8 @@
 package com.example.sdr
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -114,7 +116,10 @@ fun ReceiverScreen(
     onTuningStepChange: (TuningStep) -> Unit,
     onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
     batteryPercent: Int = -1,
-    batteryCharging: Boolean = false
+    batteryCharging: Boolean = false,
+    receiverSquelch: ReceiverSquelch = ReceiverSquelch(),
+    squelchOpen: Boolean = true,
+    onSquelchChange: (ReceiverSquelch) -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
@@ -203,7 +208,7 @@ fun ReceiverScreen(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SignalMeter(signalDbfs, Modifier.weight(1f).fillMaxHeight())
+                    SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
                     Text("MODE", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
@@ -673,7 +678,20 @@ private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier
 }
 
 @Composable
-private fun SignalMeter(dbfs: Float, modifier: Modifier = Modifier) {
+private fun SignalMeter(
+    dbfs: Float, squelch: ReceiverSquelch, open: Boolean,
+    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier
+) {
+    val currentSquelch by rememberUpdatedState(squelch)
+    val changeSquelch by rememberUpdatedState(onSquelchChange)
+    var meterWidth by remember { mutableStateOf(1) }
+    val density = LocalDensity.current
+    fun setThreshold(x: Float) {
+        val left = with(density) { 10.dp.toPx() }
+        val right = maxOf(left + 1f, meterWidth - with(density) { 86.dp.toPx() })
+        val db = (-90f + 84f * ((x - left) / (right - left)).coerceIn(0f, 1f)).roundToInt().toFloat()
+        changeSquelch(currentSquelch.copy(thresholdDbfs = db))
+    }
     // Relative display only: raw dBFS is not calibrated antenna power.
     val level = (dbfs + 90f).coerceIn(0f, 84f)
     val reading = if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
@@ -683,48 +701,83 @@ private fun SignalMeter(dbfs: Float, modifier: Modifier = Modifier) {
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
-    Canvas(
-        modifier.border(1.dp, edge, RoundedCornerShape(5.dp))
-            .background(surface, RoundedCornerShape(5.dp))
-            .semantics { contentDescription = "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
-    ) {
-        val left = 10.dp.toPx()
-        val right = maxOf(left + 1f, size.width - 96.dp.toPx())
-        val width = right - left
-        val barTop = size.height - 11.dp.toPx()
-        val barHeight = 6.dp.toPx()
-        val labelY = 13.dp.toPx()
-        val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
-        labelPaint.textSize = 10.sp.toPx()
-        for ((value, label) in ticks) {
-            val x = left + width * value / 84f
-            labelPaint.color = if (value > 54f) android.graphics.Color.rgb(255, 141, 85)
-                else android.graphics.Color.rgb(212, 194, 169)
-            drawContext.canvas.nativeCanvas.drawText(label, x, labelY, labelPaint)
-            drawLine(edge, Offset(x, labelY + 2.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), 1.dp.toPx())
+    Row(modifier.border(1.dp, edge, RoundedCornerShape(5.dp))
+        .background(surface, RoundedCornerShape(5.dp)), verticalAlignment = Alignment.CenterVertically) {
+        Canvas(
+            Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
+                .pointerInput(Unit) { detectTapGestures(onTap = { setThreshold(it.x) }) }
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { setThreshold(it.x) },
+                        onDrag = { change, _ -> change.consume(); setThreshold(change.position.x) }
+                    )
+                }
+                .semantics {
+                    progressBarRangeInfo = ProgressBarRangeInfo(squelch.thresholdDbfs, -90f..-6f, 83)
+                    setProgress { changeSquelch(currentSquelch.copy(thresholdDbfs = it.coerceIn(-90f, -6f))); true }
+                }
+                .background(surface, RoundedCornerShape(5.dp))
+                .semantics { contentDescription = "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
+        ) {
+            val left = 10.dp.toPx()
+            val right = maxOf(left + 1f, size.width - 86.dp.toPx())
+            val width = right - left
+            val barTop = size.height - 11.dp.toPx()
+            val barHeight = 6.dp.toPx()
+            val labelY = 13.dp.toPx()
+            val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
+            labelPaint.textSize = 10.sp.toPx()
+            for ((value, label) in ticks) {
+                val x = left + width * value / 84f
+                labelPaint.color = if (value > 54f) android.graphics.Color.rgb(255, 141, 85)
+                    else android.graphics.Color.rgb(212, 194, 169)
+                drawContext.canvas.nativeCanvas.drawText(label, x, labelY, labelPaint)
+                drawLine(edge, Offset(x, labelY + 2.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), 1.dp.toPx())
+            }
+            val segments = 42
+            val gap = 1.dp.toPx()
+            val segmentWidth = maxOf(1f, (width - gap * (segments - 1)) / segments)
+            for (index in 0 until segments) {
+                val threshold = (index + 1) * 84f / segments
+                drawRect(
+                    if (level < threshold) Color(0xFF35302B)
+                    else if (threshold > 54f) Color(0xFFFF8D55) else warm,
+                    Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight)
+                )
+            }
+            val cursorX = left + width * level / 84f
+            drawLine(ivory, Offset(cursorX, barTop - 2.dp.toPx()), Offset(cursorX, barTop + barHeight + 2.dp.toPx()), 1.dp.toPx())
+            val sqlX = left + width * (squelch.thresholdDbfs + 90f) / 84f
+            val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
+            drawLine(sqlColor, Offset(sqlX, barTop - 3.dp.toPx()), Offset(sqlX, size.height), 1.5.dp.toPx())
+            val triangle = Path().apply {
+                moveTo(sqlX, barTop - 1.dp.toPx())
+                lineTo(sqlX - 4.dp.toPx(), barTop - 6.dp.toPx())
+                lineTo(sqlX + 4.dp.toPx(), barTop - 6.dp.toPx())
+                close()
+            }
+            drawPath(triangle, sqlColor)
+            val readoutX = right + (size.width - right) / 2f
+            labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
+            labelPaint.textSize = 14.sp.toPx()
+            labelPaint.isFakeBoldText = true
+            drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 15.dp.toPx(), labelPaint)
+            labelPaint.isFakeBoldText = false
+            labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
+            labelPaint.textSize = 9.sp.toPx()
+            drawContext.canvas.nativeCanvas.drawText("SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs), readoutX, size.height - 5.dp.toPx(), labelPaint)
         }
-        val segments = 42
-        val gap = 1.dp.toPx()
-        val segmentWidth = maxOf(1f, (width - gap * (segments - 1)) / segments)
-        for (index in 0 until segments) {
-            val threshold = (index + 1) * 84f / segments
-            drawRect(
-                if (level < threshold) Color(0xFF35302B)
-                else if (threshold > 54f) Color(0xFFFF8D55) else warm,
-                Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight)
-            )
+        Column(
+            Modifier.width(46.dp).fillMaxHeight()
+                .background(if (squelch.enabled) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
+                .clickable { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
+                .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+        ) {
+            Text("SQL", color = if (squelch.enabled) warm else muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
+                color = if (squelch.enabled && open) warm else muted, fontSize = 8.sp)
         }
-        val cursorX = left + width * level / 84f
-        drawLine(ivory, Offset(cursorX, barTop - 2.dp.toPx()), Offset(cursorX, barTop + barHeight + 2.dp.toPx()), 1.dp.toPx())
-        val readoutX = right + (size.width - right) / 2f
-        labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
-        labelPaint.textSize = 14.sp.toPx()
-        labelPaint.isFakeBoldText = true
-        drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 15.dp.toPx(), labelPaint)
-        labelPaint.isFakeBoldText = false
-        labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
-        labelPaint.textSize = 9.sp.toPx()
-        drawContext.canvas.nativeCanvas.drawText("%.0f dBFS".format(Locale.US, dbfs), readoutX, size.height - 5.dp.toPx(), labelPaint)
     }
 }
 @Composable
