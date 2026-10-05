@@ -136,7 +136,7 @@ fun ReceiverScreen(
             Box(Modifier.fillMaxWidth().height(90.dp)) {
                 GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.align(Alignment.TopStart).width(210.dp))
                 Row(
-                    Modifier.align(Alignment.TopCenter).offset(x = (-40).dp),
+                    Modifier.align(Alignment.TopCenter).offset(x = (-25).dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -144,7 +144,7 @@ fun ReceiverScreen(
                         BasicTextField(
                             value = frequencyInput,
                             onValueChange = onFrequencyInput,
-                            modifier = Modifier.width(225.dp),
+                            modifier = Modifier.width(225.dp).alignByBaseline(),
                             singleLine = true,
                             textStyle = TextStyle(color = ivory, fontSize = 48.sp, fontWeight = FontWeight.Light),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -154,12 +154,12 @@ fun ReceiverScreen(
                     } else {
                         Text(
                             formatFrequency(currentFrequencyHz),
-                            Modifier.clickable { editingFrequency = true },
+                            Modifier.alignByBaseline().clickable { editingFrequency = true },
                             color = ivory, fontSize = 52.sp, fontWeight = FontWeight.Light,
                             letterSpacing = 1.sp, maxLines = 1
                         )
                     }
-                    Text("MHz", color = muted, fontSize = 17.sp)
+                    Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp)
                 }
                 Row(Modifier.align(Alignment.TopEnd).offset(y = 17.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
