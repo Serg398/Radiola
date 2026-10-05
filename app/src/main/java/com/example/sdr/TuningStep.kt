@@ -4,6 +4,7 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     AUTO("AUTO", null),
     KHZ_1("1 kHz", 1_000L),
     KHZ_10("10 kHz", 10_000L),
+    KHZ_12_5("12,5 kHz", 12_500L),
     KHZ_25("25 kHz", 25_000L),
     KHZ_50("50 kHz", 50_000L),
     KHZ_100("100 kHz", 100_000L),
@@ -22,7 +23,11 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
         else -> 1_000L
     }
 
-    fun shortLabel(hz: Long): String = if (hz >= 1_000_000L) "${hz / 1_000_000}M" else "${hz / 1000}k"
+    fun shortLabel(hz: Long): String = when {
+        hz == 12_500L -> "12,5k"
+        hz >= 1_000_000L -> "${hz / 1_000_000}M"
+        else -> "${hz / 1000}k"
+    }
 
     companion object {
         fun fromStored(value: String?): TuningStep = entries.firstOrNull { it.name == value } ?: KHZ_100

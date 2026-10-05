@@ -12,6 +12,7 @@
 #include <cmath>
 #include <rtl-sdr.h>
 #include "wfm_demodulator.h"
+#include "nfm_demodulator.h"
 #include "am_demodulator.h"
 #include "audio_agc.h"
 #include "tuning_plan.h"
@@ -33,12 +34,13 @@ struct StreamState {
     std::atomic<uint64_t> hardware_tunes{0};
     std::atomic<uint64_t> digital_tunes{0};
     WfmDemodulator wfm;
+    NfmDemodulator nfm;
     AmDemodulator am;
     AudioAgc audio_agc;
     std::atomic<bool> audio_agc_enabled{true};
     bool rf_agc = true; // Protected by stream_mutex.
     int gain_tenths_db = 197;
-    std::atomic<int> demodulation{0}; // 0 = WFM, 1 = AM
+    std::atomic<int> demodulation{0}; // 0 = WFM, 1 = AM, 2 = NFM
     int active_demodulation = 0; // IQ callback thread only
     std::atomic<bool> retune_audio{false};
     std::array<int16_t, 16384> audio{};
@@ -81,16 +83,21 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     if (mode != stream.active_demodulation) {
         stream.wfm.reset();
         stream.am.reset();
+        stream.nfm.reset();
         stream.audio_agc.reset();
         stream.active_demodulation = mode;
     } else if (retuned && mode == 0) {
         stream.wfm.retune();
+    } else if (retuned && mode == 2) {
+        stream.nfm.retune();
     }
     stream.wfm.setFrequencyOffset(offsetHz);
     stream.am.setFrequencyOffset(offsetHz);
+    stream.nfm.setFrequencyOffset(offsetHz);
     std::array<int16_t, 2048> pcm{};
     const size_t audio_count = mode == 1
         ? stream.am.process(samples, length, pcm.data(), pcm.size())
+        : mode == 2 ? stream.nfm.process(samples, length, pcm.data(), pcm.size())
         : stream.wfm.process(samples, length, pcm.data(), pcm.size());
     stream.audio_agc.process(pcm.data(), audio_count, stream.audio_agc_enabled.load(std::memory_order_relaxed));
     uint32_t head = stream.audio_head.load(std::memory_order_relaxed);
@@ -191,6 +198,7 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.digital_tunes = 0;
     stream.wfm.reset();
     stream.am.reset();
+    stream.nfm.reset();
     stream.audio_agc.reset();
     stream.active_demodulation = stream.demodulation.load();
     stream.retune_audio = false;
@@ -226,7 +234,7 @@ Java_com_example_sdr_NativeSdr_setFrequency(JNIEnv *, jobject, jlong frequency_h
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_sdr_NativeSdr_setDemodulation(JNIEnv *, jobject, jint mode) {
-    if (mode != 0 && mode != 1) return;
+    if (mode < 0 || mode > 2) return;
     stream.demodulation.store(mode, std::memory_order_release);
 }
 

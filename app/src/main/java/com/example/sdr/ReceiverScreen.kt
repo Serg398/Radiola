@@ -185,7 +185,8 @@ fun ReceiverScreen(
                     SignalMeter(signalDbfs, Modifier.weight(1f).fillMaxHeight())
                     Text("MODE", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
-                    ModePill("FM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
+                    ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
+                    ModePill("FM", demodulationMode == DemodulationMode.NFM) { onDemodulationModeChange(DemodulationMode.NFM) }
                     ModePill("USB", false)
                     ModePill("LSB", false)
                     ModePill("CW", false)
