@@ -84,6 +84,8 @@ class WaterfallView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val checkpoint = canvas.save()
+        canvas.clipRect(0, 0, width, height)
         val firstRows = plotHeight - newestRow
         // Integer pixel heights keep old rows rigid while scrolling. Scaling each
         // ring segment separately to a rounded split made its rows wobble every frame.
@@ -99,5 +101,6 @@ class WaterfallView(context: Context) : View(context) {
             destinationRect.set(0, splitY, width, plotHeight * rowHeight)
             canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
         }
+        canvas.restoreToCount(checkpoint)
     }
 }

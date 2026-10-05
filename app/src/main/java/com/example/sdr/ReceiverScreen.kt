@@ -122,6 +122,7 @@ fun ReceiverScreen(
         spectrumCenterFrequencyHz - centerMargin, spectrumCenterFrequencyHz + centerMargin
     )
     val channelOffsetHz = currentFrequencyHz - visibleCenterHz
+    val passbandOffsetHz = channelOffsetHz + demodulationMode.passbandOffsetHz
     val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat().coerceIn(0f, 1f)
     val viewportEnd = (viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz).coerceIn(0f, 1f)
     Row(Modifier.fillMaxSize().background(backdrop)) {
@@ -187,9 +188,9 @@ fun ReceiverScreen(
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
                     ModePill("FM", demodulationMode == DemodulationMode.NFM) { onDemodulationModeChange(DemodulationMode.NFM) }
-                    ModePill("USB", false)
-                    ModePill("LSB", false)
-                    ModePill("CW", false)
+                    ModePill("USB", demodulationMode == DemodulationMode.USB) { onDemodulationModeChange(DemodulationMode.USB) }
+                    ModePill("LSB", demodulationMode == DemodulationMode.LSB) { onDemodulationModeChange(DemodulationMode.LSB) }
+                    ModePill("CW", demodulationMode == DemodulationMode.CW) { onDemodulationModeChange(DemodulationMode.CW) }
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -206,7 +207,7 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, viewportStart, viewportEnd, Modifier.fillMaxSize())
+                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.passbandOffsetHz, viewportStart, viewportEnd, Modifier.fillMaxSize())
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
@@ -216,7 +217,8 @@ fun ReceiverScreen(
                             }
                             Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
                             Text(
-                                "SPAN %d kHz  •  %s %d kHz".format(Locale.US, visibleSpanHz / 1_000, demodulationMode.label, receiveBandwidthHz / 1_000),
+                                "SPAN %d kHz  •  %s %s".format(Locale.US, visibleSpanHz / 1_000, demodulationMode.label,
+                                    if (receiveBandwidthHz < 1000) "$receiveBandwidthHz Hz" else "%.1f kHz".format(Locale.US, receiveBandwidthHz / 1000.0)),
                                 Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 4.dp),
                                 color = muted, fontSize = 11.sp
                             )
@@ -260,8 +262,9 @@ fun ReceiverScreen(
                             Canvas(Modifier.fillMaxSize().padding(start = 31.dp).clipToBounds()) {
                                 val center = size.width * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                                 val channelWidth = size.width * (receiveBandwidthHz.toFloat() / visibleSpanHz)
-                                val channelLeft = center - channelWidth / 2f
-                                val channelRight = center + channelWidth / 2f
+                                val passbandCenter = size.width * (0.5f + passbandOffsetHz.toFloat() / visibleSpanHz)
+                                val channelLeft = passbandCenter - channelWidth / 2f
+                                val channelRight = passbandCenter + channelWidth / 2f
                                 drawRect(
                                     Brush.horizontalGradient(
                                         listOf(Color(0x14F7BA6D), Color(0x33F7BA6D), Color(0x14F7BA6D)),
@@ -269,8 +272,8 @@ fun ReceiverScreen(
                                     ),
                                     Offset(channelLeft, 0f), Size(channelWidth, size.height)
                                 )
-                                drawLine(Color(0xB3F7BA6D), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
-                                drawLine(Color(0xB3F7BA6D), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
+                                drawLine(Color(0x80F7BA6D), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
+                                drawLine(Color(0x80F7BA6D), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
                                 drawLine(Color(0xC9FFC073), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
                             }
                         }
@@ -722,6 +725,7 @@ private fun AmberSpectrum(
     spectrumSpanHz: Int,
     receiveBandwidthHz: Int,
     channelOffsetHz: Long,
+    passbandOffsetHz: Int,
     viewportStart: Float,
     viewportEnd: Float,
     modifier: Modifier = Modifier
@@ -784,8 +788,9 @@ private fun AmberSpectrum(
         }
         val center = left + width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
         val channelWidth = width * (receiveBandwidthHz.toFloat() / spectrumSpanHz)
-        val channelLeft = center - channelWidth / 2f
-        val channelRight = center + channelWidth / 2f
+        val passbandCenter = center + width * passbandOffsetHz / spectrumSpanHz
+        val channelLeft = passbandCenter - channelWidth / 2f
+        val channelRight = passbandCenter + channelWidth / 2f
         clipRect(left = left, top = top, right = size.width, bottom = bottom) {
         drawRect(
             Brush.horizontalGradient(
@@ -794,8 +799,8 @@ private fun AmberSpectrum(
             ),
             Offset(channelLeft, top), Size(channelWidth, height)
         )
-        drawLine(Color(0xB3F7BA6D), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
-        drawLine(Color(0xB3F7BA6D), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
+        drawLine(Color(0x80F7BA6D), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
+        drawLine(Color(0x80F7BA6D), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
         drawLine(Color(0xC9FFC073), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
         }
     }

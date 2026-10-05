@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
                     if (spectrumChanged) {
                         val bins = frame.bins
                         var peak = -90f
-                        val centerBin = (bins.size / 2.0 + (frequencyHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
+                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.passbandOffsetHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
                         val halfBins = maxOf(1, demodulationMode.bandwidthHz * bins.size / (2 * receiverRates[0]))
                         for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
                             if (bins[index] > peak) peak = bins[index]
