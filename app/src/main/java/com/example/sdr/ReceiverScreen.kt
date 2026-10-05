@@ -520,7 +520,7 @@ private fun VerticalEncoder(
                     onDragEnd = {
                         idleJob?.cancel()
                         val rawVelocity = -tracker.calculateVelocity().y
-                        val limit = 1600f * density.density
+                        val limit = 2500f * density.density
                         // A short flick must retain its release speed: the drag smoothing
                         // can still be catching up when the finger leaves the screen.
                         var velocity = rawVelocity.coerceIn(-limit, limit)
@@ -544,7 +544,7 @@ private fun VerticalEncoder(
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
                         tracker.addPosition(change.uptimeMillis, change.position)
-                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(1600f * density.density)
+                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(2500f * density.density)
                         val dt = ((change.uptimeMillis - lastEventTime) / 1000f).coerceIn(0f, 0.1f)
                         lastEventTime = change.uptimeMillis
                         val blend = 1f - exp(-dt / 0.08f)
