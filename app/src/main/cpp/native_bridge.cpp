@@ -37,6 +37,8 @@ struct StreamState {
     std::atomic<uint64_t> tuning{0}; // Upper 32 bits: RF center; lower 32: signed channel offset.
     std::atomic<uint64_t> hardware_tunes{0};
     std::atomic<uint64_t> digital_tunes{0};
+    std::atomic<bool> wfm_stereo_enabled{false};
+    std::atomic<bool> wfm_stereo_locked{false};
     WfmDemodulator wfm;
     NfmDemodulator nfm;
     SsbDemodulator ssb;
@@ -55,7 +57,7 @@ struct StreamState {
     std::atomic<int> demodulation{0}; // 0=WFM, 1=AM, 2=NFM, 3=USB, 4=LSB, 5=CW
     int active_demodulation = 0; // IQ callback thread only
     std::atomic<bool> retune_audio{false};
-    std::array<int16_t, 16384> audio{};
+    std::array<int16_t, 32768> audio{};
     std::atomic<uint32_t> audio_head{0};
     std::atomic<uint32_t> audio_tail{0};
     std::atomic<uint64_t> audio_produced{0};
@@ -108,16 +110,24 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     stream.am.setFrequencyOffset(offsetHz);
     stream.nfm.setFrequencyOffset(offsetHz);
     stream.ssb.setFrequencyOffset(offsetHz);
-    std::array<int16_t, 2048> pcm{};
-    const size_t audio_count = mode == 1
-        ? stream.am.process(samples, length, pcm.data(), pcm.size())
-        : mode == 2 ? stream.nfm.process(samples, length, pcm.data(), pcm.size())
-        : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size())
+    stream.wfm.setStereo(stream.wfm_stereo_enabled.load(std::memory_order_relaxed));
+    std::array<int16_t, 4096> pcm{};
+    size_t audio_count = mode == 1
+        ? stream.am.process(samples, length, pcm.data(), pcm.size() / 2)
+        : mode == 2 ? stream.nfm.process(samples, length, pcm.data(), pcm.size() / 2)
+        : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size() / 2)
         : stream.wfm.process(samples, length, pcm.data(), pcm.size());
-    stream.audio_agc.process(pcm.data(), audio_count, stream.audio_agc_enabled.load(std::memory_order_relaxed));
+    stream.wfm_stereo_locked.store(mode == 0 && stream.wfm.stereoLocked(), std::memory_order_relaxed);
+    const size_t frames = mode == 0 ? audio_count / 2 : audio_count;
+    if (mode != 0) {
+        // Expand backwards so every mode uses the same stereo AudioTrack and ring.
+        for (size_t i = audio_count; i-- > 0;) pcm[2 * i] = pcm[2 * i + 1] = pcm[i];
+        audio_count *= 2;
+    }
+    stream.audio_agc.process(pcm.data(), audio_count, stream.audio_agc_enabled.load(std::memory_order_relaxed), 2);
     const int sql = stream.squelch_setting.load(std::memory_order_relaxed);
     stream.squelch_open.store(stream.squelch.process(pcm.data(), audio_count,
-        sql < 0, -static_cast<float>(std::abs(sql)), stream.channel_signal), std::memory_order_relaxed);
+        sql < 0, -static_cast<float>(std::abs(sql)), stream.channel_signal, 2), std::memory_order_relaxed);
     uint32_t head = stream.audio_head.load(std::memory_order_relaxed);
     const uint32_t tail = stream.audio_tail.load(std::memory_order_acquire);
     for (size_t sample = 0; sample < audio_count; ++sample) {
@@ -129,7 +139,7 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         }
     }
     stream.audio_head.store(head, std::memory_order_release);
-    stream.audio_produced.fetch_add(audio_count, std::memory_order_relaxed);
+    stream.audio_produced.fetch_add(frames, std::memory_order_relaxed);
     if (length < spectrumSize * 2) return;
 
     constexpr int n = spectrumSize;
@@ -304,7 +314,7 @@ Java_com_example_sdr_NativeSdr_readAudio(JNIEnv *env, jobject, jshortArray outpu
     const uint32_t head = stream.audio_head.load(std::memory_order_acquire);
     const uint32_t available = head - tail;
     const uint32_t requested = static_cast<uint32_t>(env->GetArrayLength(output));
-    const uint32_t count = std::min<uint32_t>({available, requested, samples.size()});
+    const uint32_t count = std::min<uint32_t>({available, requested, samples.size()}) & ~1u;
     for (uint32_t i = 0; i < count; ++i) {
         samples[i] = stream.audio[(tail + i) & (stream.audio.size() - 1)];
     }
@@ -449,4 +459,13 @@ Java_com_example_sdr_NativeSdr_setSquelch(JNIEnv *, jobject, jboolean enabled, j
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_sdr_NativeSdr_squelchOpen(JNIEnv *, jobject) {
     return stream.squelch_open.load(std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_sdr_NativeSdr_setWfmStereo(JNIEnv *, jobject, jboolean enabled) {
+    stream.wfm_stereo_enabled.store(enabled, std::memory_order_relaxed);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_example_sdr_NativeSdr_wfmStereoLocked(JNIEnv *, jobject) {
+    return stream.wfm_stereo_locked.load(std::memory_order_relaxed);
 }

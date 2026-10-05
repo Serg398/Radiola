@@ -119,7 +119,10 @@ fun ReceiverScreen(
     batteryCharging: Boolean = false,
     receiverSquelch: ReceiverSquelch = ReceiverSquelch(),
     squelchOpen: Boolean = true,
-    onSquelchChange: (ReceiverSquelch) -> Unit = {}
+    onSquelchChange: (ReceiverSquelch) -> Unit = {},
+    wfmStereoEnabled: Boolean = false,
+    wfmStereoLocked: Boolean = false,
+    onWfmStereoChange: (Boolean) -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
@@ -171,10 +174,10 @@ fun ReceiverScreen(
                             frequencyText,
                             Modifier.alignByBaseline().clickable { editingFrequency = true },
                             color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light,
-                            letterSpacing = 1.sp, maxLines = 1
+                            letterSpacing = (frequencyFontSize.value / 52f).sp, maxLines = 1
                         )
                     }
-                    Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp)
+                    Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp, maxLines = 1, softWrap = false)
                 }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -209,6 +212,10 @@ fun ReceiverScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
+                    StereoToggle(
+                        demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
+                        onWfmStereoChange
+                    )
                     Text("MODE", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
@@ -374,7 +381,7 @@ fun ReceiverScreen(
                         TubeIcon(Modifier.width(30.dp).height(47.dp))
                         Column(Modifier.padding(start = 8.dp)) {
                             Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
-                            Text("${demodulationMode.label}  •  MONO  •  48 kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
+                            Text("${demodulationMode.label}  •  ${if (demodulationMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  48 kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
                             Text("Volume: phone buttons", color = muted, fontSize = 11.sp, maxLines = 1)
                         }
                     }
@@ -780,6 +787,23 @@ private fun SignalMeter(
         }
     }
 }
+@Composable
+private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, onChange: (Boolean) -> Unit) {
+    val active = available && enabled
+    Column(
+        Modifier.width(60.dp).height(36.dp)
+            .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
+            .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
+            .clickable(enabled = available) { onChange(!enabled) }
+            .semantics { contentDescription = "WFM stereo ${if (active) "enabled" else "disabled"}, pilot ${if (locked) "locked" else "absent"}" },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+    ) {
+        Text(if (active) "STEREO" else "MONO", color = if (active) warm else if (available) ivory else muted.copy(alpha = 0.5f), fontSize = 10.sp)
+        Text(if (!available) "WFM" else if (!enabled) "FORCED" else if (locked) "LOCK" else "AUTO",
+            color = if (active && locked) warm else muted, fontSize = 8.sp)
+    }
+}
+
 @Composable
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(

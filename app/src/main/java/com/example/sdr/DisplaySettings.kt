@@ -5,6 +5,12 @@ import android.content.Context
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
 
+    fun wfmStereoEnabled(): Boolean = preferences.getBoolean("wfm_stereo", false)
+
+    fun saveWfmStereo(enabled: Boolean) {
+        preferences.edit().putBoolean("wfm_stereo", enabled).apply()
+    }
+
     fun receiverSquelch() = ReceiverSquelch(
         preferences.getBoolean("squelch_enabled", false),
         preferences.getFloat("squelch_threshold", -65f).coerceIn(-90f, -6f)

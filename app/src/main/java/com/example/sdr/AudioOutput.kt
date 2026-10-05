@@ -9,7 +9,7 @@ import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Plays 48 kHz mono PCM produced by the selected native demodulator. */
+/** Plays 48 kHz interleaved stereo PCM produced by the selected native demodulator. */
 class AudioOutput {
     @Volatile private var running = false
     @Volatile private var receiving = false
@@ -21,7 +21,7 @@ class AudioOutput {
         if (running && worker?.isAlive == true) return true
         val startedAt = SystemClock.elapsedRealtime()
         val minimum = AudioTrack.getMinBufferSize(
-            48_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+            48_000, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT
         )
         if (minimum <= 0) return false
         val output = try {
@@ -36,12 +36,12 @@ class AudioOutput {
                     AudioFormat.Builder()
                         .setSampleRate(48_000)
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                         .build()
                 )
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .setBufferSizeInBytes(maxOf(minimum, 1_920))
+                .setBufferSizeInBytes(maxOf(minimum, 3_840))
                 .build()
         } catch (_: Exception) {
             return false
@@ -54,7 +54,7 @@ class AudioOutput {
         running = true
         worker = Thread({
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-            val samples = ShortArray(960)
+            val samples = ShortArray(1_920)
             var writtenSamples = 0L
             var flushes = 0
             var firstPcm = true

@@ -3,31 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-constexpr float pi = 3.14159265358979323846f;
-constexpr int tapsCount = 81;
-
-const std::array<float, tapsCount>& audioFilter() {
-    static const auto coefficients = [] {
-        std::array<float, tapsCount> result{};
-        constexpr float cutoff = 15000.0f / WfmDemodulator::channelBandwidthHz;
-        float sum = 0.0f;
-        for (int i = 0; i < tapsCount; ++i) {
-            const int position = i - (tapsCount - 1) / 2;
-            const float sinc = position == 0
-                ? 2.0f * cutoff
-                : std::sin(2.0f * pi * cutoff * position) / (pi * position);
-            const float hamming = 0.54f - 0.46f * std::cos(2.0f * pi * i / (tapsCount - 1));
-            result[i] = sinc * hamming;
-            sum += result[i];
-        }
-        for (float& coefficient : result) coefficient /= sum;
-        return result;
-    }();
-    return coefficients;
-}
-}
-
 void WfmDemodulator::reset() {
     mixer_.reset();
     sumI_ = 0.0f;
@@ -38,18 +13,13 @@ void WfmDemodulator::reset() {
     havePrevious_ = false;
     discardPhaseOnce_ = false;
     lastPhase_ = 0.0f;
-    discriminatorHistory_.fill(0.0f);
-    historyPosition_ = 0;
-    audioCount_ = 0;
-    dcEstimate_ = 0.0f;
-    deemphasis_ = 0.0f;
+    decoder_.reset();
 }
 
 size_t WfmDemodulator::process(
     const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity
 ) {
     size_t produced = 0;
-    const auto& coefficients = audioFilter();
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
         float mixedI, mixedQ;
         mixer_.mix(static_cast<float>(iq[byte]) - 127.5f,
@@ -70,25 +40,10 @@ size_t WfmDemodulator::process(
             const float phase = discardPhaseOnce_ ? lastPhase_ : std::atan2(cross, dot);
             discardPhaseOnce_ = false;
             lastPhase_ = phase;
-            discriminatorHistory_[historyPosition_] = phase;
-            historyPosition_ = (historyPosition_ + 1) % tapsCount;
-            if (++audioCount_ == audioDecimation) {
-                audioCount_ = 0;
-                float filtered = 0.0f;
-                int position = historyPosition_;
-                for (float coefficient : coefficients) {
-                    position = position == 0 ? tapsCount - 1 : position - 1;
-                    filtered += coefficient * discriminatorHistory_[position];
-                }
-                // Remove carrier offset, then apply 50 us broadcast FM de-emphasis.
-                dcEstimate_ += 0.001f * (filtered - dcEstimate_);
-                const float audio = filtered - dcEstimate_;
-                deemphasis_ += 0.294f * (audio - deemphasis_);
-                if (produced < capacity) {
-                    output[produced++] = static_cast<int16_t>(
-                        std::clamp(deemphasis_ * 13000.0f, -32767.0f, 32767.0f)
-                    );
-                }
+            int16_t left, right;
+            if (decoder_.process(phase, stereoEnabled_, left, right) && produced + 2 <= capacity) {
+                output[produced++] = left;
+                output[produced++] = right;
             }
         }
         previousI_ = currentI;

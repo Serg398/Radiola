@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
     private var gainSteps by mutableStateOf(ReceiverGain.defaultSteps)
     private var actualSpectrumFps by mutableStateOf(0)
     private var actualWaterfallFps by mutableStateOf(0)
+    private var wfmStereoEnabled by mutableStateOf(false)
+    private var wfmStereoLocked by mutableStateOf(false)
     private var receiverSquelch by mutableStateOf(ReceiverSquelch())
     private var squelchOpen by mutableStateOf(true)
     private var signalDbfs by mutableStateOf(-90f)
@@ -147,6 +149,7 @@ class MainActivity : ComponentActivity() {
                         }
                         signalDbfs = peak
                         squelchOpen = NativeSdr.squelchOpen()
+                        wfmStereoLocked = NativeSdr.wfmStereoLocked()
                         lastSpectrumGeneration = frame.generation
                         spectrumState.value = frame.bins
                         spectrumFramesInWindow++
@@ -186,6 +189,8 @@ class MainActivity : ComponentActivity() {
         waterfallFrameRate = displaySettings.waterfallFrameRate()
         tuningStep = displaySettings.tuningStep()
         receiverGain = displaySettings.receiverGain()
+        wfmStereoEnabled = displaySettings.wfmStereoEnabled()
+        NativeSdr.setWfmStereo(wfmStereoEnabled)
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
@@ -213,6 +218,13 @@ class MainActivity : ComponentActivity() {
                 actualSpectrumFps = actualSpectrumFps,
                 actualWaterfallFps = actualWaterfallFps,
                 signalDbfs = signalDbfs,
+                wfmStereoEnabled = wfmStereoEnabled,
+                wfmStereoLocked = streaming && wfmStereoLocked,
+                onWfmStereoChange = {
+                    wfmStereoEnabled = it
+                    NativeSdr.setWfmStereo(it)
+                    displaySettings.saveWfmStereo(it)
+                },
                 receiverSquelch = receiverSquelch,
                 squelchOpen = streaming && squelchOpen,
                 onSquelchChange = {
