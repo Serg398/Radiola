@@ -67,13 +67,19 @@ int main() {
     const bool digitalFmPassed = check<WfmDemodulator>("digital WFM", digitalFm, true, true);
     const auto initial = TuningPlan::forFrequency(100000000, 0);
     const auto smallStep = TuningPlan::forFrequency(100001000, initial.centerHz);
-    const auto boundary = TuningPlan::forFrequency(initial.centerHz + 800000, initial.centerHz);
-    const auto outside = TuningPlan::forFrequency(initial.centerHz + 800001, initial.centerHz);
+    const auto boundary = TuningPlan::forFrequency(initial.centerHz + 1000000, initial.centerHz);
+    const auto outside = TuningPlan::forFrequency(initial.centerHz + 1000001, initial.centerHz);
+    const auto outsideDown = TuningPlan::forFrequency(initial.centerHz - 1000001, initial.centerHz);
+    const auto continueUp = TuningPlan::forFrequency(initial.centerHz + 1001001, outside.centerHz);
+    const auto continueDown = TuningPlan::forFrequency(initial.centerHz - 1001001, outsideDown.centerHz);
     const auto maximum = TuningPlan::forFrequency(1766000000, 0);
     const bool planPassed = initial.hardwareRetune && initial.offsetHz == -250000
         && !smallStep.hardwareRetune && smallStep.offsetHz == -249000
-        && !boundary.hardwareRetune && outside.hardwareRetune && outside.offsetHz == -250000
+        && !boundary.hardwareRetune && outside.hardwareRetune && outside.offsetHz == -1000000
+        && outsideDown.hardwareRetune && outsideDown.offsetHz == 1000000
+        && !continueUp.hardwareRetune && continueUp.offsetHz == -999000
+        && !continueDown.hardwareRetune && continueDown.offsetHz == 999000
         && maximum.centerHz == 1766000000 && maximum.offsetHz == 0;
-    std::printf("%s tuning plan: small steps keep RF center; large steps recenter\n", planPassed ? "PASS" : "FAIL");
+    std::printf("%s tuning plan: band crossings move to the opposite edge in both directions\n", planPassed ? "PASS" : "FAIL");
     return amPassed && fmPassed && digitalAmPassed && digitalFmPassed && planPassed ? 0 : 1;
 }
