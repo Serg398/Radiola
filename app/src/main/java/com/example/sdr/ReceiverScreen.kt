@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,16 +128,25 @@ fun ReceiverScreen(
     val passbandOffsetHz = channelOffsetHz + demodulationMode.passbandOffsetHz
     val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat().coerceIn(0f, 1f)
     val viewportEnd = (viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz).coerceIn(0f, 1f)
+    val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = { selected = it })
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(start = 7.dp, end = 7.dp, top = 5.dp, bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            Modifier.weight(1f).fillMaxHeight().padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(Modifier.fillMaxWidth().height(90.dp)) {
-                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.align(Alignment.TopStart).width(210.dp))
+            Box(Modifier.fillMaxWidth().height(100.dp)) {
+                Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(210.dp))
+                BoxWithConstraints(Modifier.weight(1f)) {
+                val frequencyText = formatFrequency(currentFrequencyHz)
+                val frequencyStyle = TextStyle(fontSize = 52.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp)
+                val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
+                val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 17.sp)).size.width
+                val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - 6.dp.toPx() } - unitsWidth
+                val frequencyFontSize = (52f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
                 Row(
-                    Modifier.align(Alignment.TopCenter).offset(x = (-25).dp),
+                    Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -144,34 +154,35 @@ fun ReceiverScreen(
                         BasicTextField(
                             value = frequencyInput,
                             onValueChange = onFrequencyInput,
-                            modifier = Modifier.width(225.dp).alignByBaseline(),
+                            modifier = Modifier.weight(1f).alignByBaseline(),
                             singleLine = true,
-                            textStyle = TextStyle(color = ivory, fontSize = 48.sp, fontWeight = FontWeight.Light),
+                            textStyle = TextStyle(color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             cursorBrush = SolidColor(warm)
                         )
                         Text("✓", Modifier.clickable { onTune(); editingFrequency = false }, color = warm, fontSize = 36.sp)
                     } else {
                         Text(
-                            formatFrequency(currentFrequencyHz),
+                            frequencyText,
                             Modifier.alignByBaseline().clickable { editingFrequency = true },
-                            color = ivory, fontSize = 52.sp, fontWeight = FontWeight.Light,
+                            color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light,
                             letterSpacing = 1.sp, maxLines = 1
                         )
                     }
                     Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp)
                 }
-                Row(Modifier.align(Alignment.TopEnd).offset(y = 17.dp), verticalAlignment = Alignment.CenterVertically) {
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(Modifier.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
                     Text(
-                        if (connected && permitted) "  CONNECTED" else "  DISCONNECTED",
+                        if (connected && permitted) "CONNECTED" else "DISCONNECTED",
                         color = muted, fontSize = 10.sp, letterSpacing = 0.5.sp
                     )
-                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.padding(start = 8.dp))
+                    BatteryIndicator(batteryPercent, batteryCharging)
                     SmallAction(
                         if (streaming) "STOP" else if (!permitted) "USB ACCESS" else "START",
                         !streamPending && connected,
-                        Modifier.padding(start = 12.dp).width(if (!permitted) 95.dp else 76.dp)
+                        Modifier.width(if (!permitted) 95.dp else 76.dp)
                     ) {
                         when {
                             !permitted -> onRequestPermission()
@@ -179,7 +190,13 @@ fun ReceiverScreen(
                             else -> onStartStream()
                         }
                     }
-                    Text("    ☰  ", Modifier.clickable { selected = "Settings" }, color = ivory, fontSize = 23.sp)
+                    Canvas(Modifier.width(30.dp).height(32.dp).clickable { selected = "Settings" }.padding(6.dp)) {
+                        for (line in 0..2) {
+                            val y = size.height * (0.2f + 0.3f * line)
+                            drawLine(ivory, Offset(0f, y), Offset(size.width, y), 1.5.dp.toPx())
+                        }
+                    }
+                }
                 }
                 Row(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(36.dp),
@@ -198,8 +215,8 @@ fun ReceiverScreen(
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 Column(
-                    Modifier.fillMaxSize().padding(end = 79.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    Modifier.fillMaxSize().padding(end = 82.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
             Box(
                 Modifier.fillMaxWidth().weight(1f)
@@ -313,7 +330,7 @@ fun ReceiverScreen(
             Row(Modifier.fillMaxWidth().height(86.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
                     Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (streaming) "ON AIR" else "READY", color = if (streaming) warm else ivory, fontSize = 18.sp)
                         Box(Modifier.weight(1f))
                         Text("%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
@@ -332,12 +349,12 @@ fun ReceiverScreen(
                 }
                 ControlCard(Modifier.weight(0.98f).fillMaxHeight()) {
                     Text("DISPLAY", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Spectrum", color = ivory, fontSize = 13.sp)
                         Text("30 FPS", color = warm, fontSize = 13.sp)
                     }
                     Row(
-                        Modifier.fillMaxWidth().height(27.dp).clickable {
+                        Modifier.fillMaxWidth().height(24.dp).clickable {
                             onWaterfallFrameRateChange(if (waterfallFrameRate == WaterfallFrameRate.FPS_30) WaterfallFrameRate.FPS_60 else WaterfallFrameRate.FPS_30)
                         },
                         verticalAlignment = Alignment.CenterVertically
@@ -348,7 +365,7 @@ fun ReceiverScreen(
                     }
                 }
                 ControlCard(Modifier.weight(0.95f).fillMaxHeight()) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                         TubeIcon(Modifier.width(30.dp).height(47.dp))
                         Column(Modifier.padding(start = 8.dp)) {
                             Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
@@ -377,18 +394,18 @@ fun ReceiverScreen(
 @Composable
 private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
     Column(Modifier.width(108.dp).fillMaxHeight().background(Color(0xFF171819))) {
-        Text("SDR", Modifier.padding(start = 13.dp, top = 6.dp), color = warm, fontSize = 31.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
-        Text("GOOD SIGNALS", Modifier.padding(start = 13.dp, top = 1.dp, bottom = 8.dp), color = muted, fontSize = 11.sp, letterSpacing = 0.2.sp)
+        Text("SDR", Modifier.padding(start = 13.dp, top = 8.dp), color = warm, fontSize = 31.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
+        Text("GOOD SIGNALS", Modifier.padding(start = 13.dp, top = 1.dp, bottom = 19.dp), color = muted, fontSize = 11.sp, letterSpacing = 0.2.sp)
         listOf("Receiver" to "◉", "Spectrum" to "▥", "Waterfall" to "≋", "Bookmarks" to "☆", "Record" to "○", "Settings" to "⚙").forEach { (name, icon) ->
             val available = name in setOf("Receiver", "Spectrum", "Waterfall", "Settings")
             Row(
-                Modifier.fillMaxWidth().height(38.dp)
+                Modifier.fillMaxWidth().height(36.dp)
                     .background(if (selected == name) Color(0xFF35291D) else Color.Transparent)
                     .clickable(enabled = available) { onSelect(name) }
                     .padding(start = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(icon, color = if (selected == name) warm else muted, fontSize = 19.sp)
+                Text(icon, Modifier.width(22.dp), color = if (selected == name) warm else muted, fontSize = 19.sp)
                 Text(name, Modifier.padding(start = 8.dp), color = if (available) ivory else Color(0xFF5A5753), fontSize = 12.sp, maxLines = 1)
             }
         }
@@ -403,12 +420,12 @@ private fun GainPanel(gain: ReceiverGain, gainSteps: List<Int>, onChange: (Recei
     val currentChange by rememberUpdatedState(onChange)
     val index = gainSteps.indices.minByOrNull { kotlin.math.abs(gainSteps[it] - gain.gainTenthsDb) } ?: 0
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             AgcToggle("RF AGC", gain.rfAgc, Modifier.weight(0.85f)) { onChange(gain.copy(rfAgc = !gain.rfAgc)) }
             AgcToggle("AUDIO AGC", gain.audioAgc, Modifier.weight(1f)) { onChange(gain.copy(audioAgc = !gain.audioAgc)) }
             AgcToggle("BIAS-T", gain.biasT, Modifier.weight(0.85f)) { onChange(gain.copy(biasT = !gain.biasT)) }
         }
-        Row(Modifier.fillMaxWidth().height(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("GAIN", color = muted, fontSize = 10.sp)
             Box(Modifier.weight(1f))
             Text(if (gain.rfAgc) "AUTO" else "%.1f dB".format(Locale.US, gain.gainTenthsDb / 10f), color = if (gain.rfAgc) muted else warm, fontSize = 10.sp)
@@ -501,9 +518,8 @@ private fun VerticalEncoder(
         }
     }
     Column(
-        modifier.padding(start = 5.dp, end = 5.dp, bottom = 3.dp)
-            .border(1.dp, edge, RoundedCornerShape(12.dp))
-            .background(surface, RoundedCornerShape(12.dp))
+        modifier.border(1.dp, edge, RoundedCornerShape(6.dp))
+            .background(surface, RoundedCornerShape(6.dp))
             .pointerInput(Unit) {
                 var tracker = VelocityTracker()
                 var filteredSpeed = 0f
@@ -714,7 +730,7 @@ private fun SignalMeter(dbfs: Float, modifier: Modifier = Modifier) {
 @Composable
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(
-        Modifier.width(41.dp).height(32.dp)
+        Modifier.width(41.dp).height(36.dp)
             .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
             .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
@@ -728,7 +744,7 @@ private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = nu
 private fun ControlCard(modifier: Modifier, content: @Composable () -> Unit) {
     Column(
         modifier.border(1.dp, edge, RoundedCornerShape(6.dp))
-            .background(surface, RoundedCornerShape(6.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+            .background(surface, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.SpaceBetween,
         content = { content() }
     )
