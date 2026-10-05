@@ -111,7 +111,9 @@ fun ReceiverScreen(
     onDemodulationModeChange: (DemodulationMode) -> Unit,
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
-    onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit
+    onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
+    batteryPercent: Int = -1,
+    batteryCharging: Boolean = false
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
@@ -163,8 +165,9 @@ fun ReceiverScreen(
                     Box(Modifier.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
                     Text(
                         if (connected && permitted) "  CONNECTED" else "  DISCONNECTED",
-                        color = muted, fontSize = 12.sp, letterSpacing = 1.sp
+                        color = muted, fontSize = 10.sp, letterSpacing = 0.5.sp
                     )
+                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.padding(start = 8.dp))
                     SmallAction(
                         if (streaming) "STOP" else if (!permitted) "USB ACCESS" else "START",
                         !streamPending && connected,
@@ -616,6 +619,39 @@ private fun VerticalEncoder(
             drawLine(warm, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx())
         }
         Text("▲  ▼", color = warm, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier = Modifier) {
+    val tint = if (percent in 0..20 && !charging) Color(0xFFFF8D55) else muted
+    Row(
+        modifier.semantics {
+            contentDescription = if (percent < 0) "Battery level unavailable" else "Battery $percent percent${if (charging) ", charging" else ""}"
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Canvas(Modifier.width(18.dp).height(10.dp)) {
+            val bodyWidth = size.width - 2.dp.toPx()
+            drawRoundRect(tint, size = Size(bodyWidth, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx()), style = Stroke(1.dp.toPx()))
+            drawRect(tint, Offset(bodyWidth, size.height * 0.3f), Size(2.dp.toPx(), size.height * 0.4f))
+            val inset = 2.dp.toPx()
+            drawRect(tint.copy(alpha = 0.6f), Offset(inset, inset), Size(maxOf(0f, bodyWidth - 2 * inset) * percent.coerceIn(0, 100) / 100f, maxOf(0f, size.height - 2 * inset)))
+            if (charging) {
+                val bolt = Path().apply {
+                    moveTo(bodyWidth * 0.6f, 0f)
+                    lineTo(bodyWidth * 0.3f, size.height * 0.6f)
+                    lineTo(bodyWidth * 0.5f, size.height * 0.6f)
+                    lineTo(bodyWidth * 0.4f, size.height)
+                    lineTo(bodyWidth * 0.75f, size.height * 0.4f)
+                    lineTo(bodyWidth * 0.55f, size.height * 0.4f)
+                    close()
+                }
+                drawPath(bolt, warm)
+            }
+        }
+        Text(if (percent < 0) "—%" else "$percent%", color = tint, fontSize = 11.sp, maxLines = 1)
     }
 }
 

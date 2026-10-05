@@ -9,6 +9,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbManager
 import android.os.Bundle
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -79,6 +80,17 @@ class MainActivity : ComponentActivity() {
     private var actualSpectrumFps by mutableStateOf(0)
     private var actualWaterfallFps by mutableStateOf(0)
     private var signalDbfs by mutableStateOf(-90f)
+    private var batteryPercent by mutableStateOf(-1)
+    private var batteryCharging by mutableStateOf(false)
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            batteryPercent = if (level >= 0 && scale > 0) (level * 100f / scale).roundToInt().coerceIn(0, 100) else -1
+            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            batteryCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        }
+    }
     private val spectrumGate = FrameGate(30)
     private val waterfallGate = FrameGate(30)
     private var fpsWindowStartNanos = 0L
@@ -196,6 +208,8 @@ class MainActivity : ComponentActivity() {
                 actualSpectrumFps = actualSpectrumFps,
                 actualWaterfallFps = actualWaterfallFps,
                 signalDbfs = signalDbfs,
+                batteryPercent = batteryPercent,
+                batteryCharging = batteryCharging,
                 onRequestPermission = ::requestUsbPermission,
                 onCheckConnection = ::checkUsbConnection,
                 onCaptureIq = ::captureIq,
@@ -218,6 +232,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         receiverSession.prepareAudio()
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), RECEIVER_NOT_EXPORTED)
         registerReceiver(
             usbReceiver,
             IntentFilter().apply {
@@ -261,6 +276,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        unregisterReceiver(batteryReceiver)
         receiverSession.releaseIdleAudio()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
