@@ -100,17 +100,6 @@ class MainActivity : ComponentActivity() {
             val samplesPerSecond = (stats[0] - lastStreamBytes) * 500L / elapsed
             lastStreamBytes = stats[0]
             lastStreamTime = now
-            if (stats[2] == 1L) {
-                val frame = receiverSession.spectrum()
-                val bins = frame.bins
-                var peak = -90f
-                val centerBin = (bins.size / 2.0 + (frequencyHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
-                val halfBins = maxOf(1, demodulationMode.bandwidthHz * bins.size / (2 * receiverRates[0]))
-                for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
-                    if (bins[index] > peak) peak = bins[index]
-                }
-                signalDbfs = peak
-            }
             usbCheckResult = if (stats[2] == 1L) {
                 "IQ: %.2f млн отсчётов/с · %s: %.1f тыс. аудиоотсчётов".format(
                     samplesPerSecond / 1_000_000.0, demodulationMode.label, stats[4] / 1_000.0
@@ -135,6 +124,14 @@ class MainActivity : ComponentActivity() {
                     val frame = receiverSession.spectrum()
                     spectrumCenterFrequencyHz = frame.centerFrequencyHz
                     if (spectrumChanged) {
+                        val bins = frame.bins
+                        var peak = -90f
+                        val centerBin = (bins.size / 2.0 + (frequencyHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
+                        val halfBins = maxOf(1, demodulationMode.bandwidthHz * bins.size / (2 * receiverRates[0]))
+                        for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
+                            if (bins[index] > peak) peak = bins[index]
+                        }
+                        signalDbfs = peak
                         lastSpectrumGeneration = frame.generation
                         spectrumState.value = frame.bins
                         spectrumFramesInWindow++
