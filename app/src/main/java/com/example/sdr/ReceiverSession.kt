@@ -17,6 +17,21 @@ class ReceiverSession(private val usbManager: UsbManager) {
     private val gainLock = Any()
     private var pendingGain: Pair<ReceiverGain, (Int) -> Unit>? = null
     private var gainWorkerScheduled = false
+    private var audioWarmupEnabled = false
+
+    fun prepareAudio() {
+        executor.execute {
+            audioWarmupEnabled = true
+            audio.start()
+        }
+    }
+
+    fun releaseIdleAudio() {
+        executor.execute {
+            audioWarmupEnabled = false
+            if (connection == null) audio.stop()
+        }
+    }
 
     fun start(device: UsbDevice, frequencyHz: Long, mode: DemodulationMode, gain: ReceiverGain, onResult: (Int) -> Unit) {
         executor.execute {
@@ -37,6 +52,7 @@ class ReceiverSession(private val usbManager: UsbManager) {
                 result = -102
             }
             if (result == 0) {
+                audio.setReceiving(true)
                 connection = opened
             } else {
                 opened.close()
@@ -47,12 +63,13 @@ class ReceiverSession(private val usbManager: UsbManager) {
 
     fun stop(onDone: () -> Unit = {}) {
         executor.execute {
-            audio.stop()
+            audio.setReceiving(false)
             val stats = NativeSdr.streamStats()
             Log.d("SdrTuning", "hardware_tunes=${stats[8]} digital_tunes=${stats[9]}")
             NativeSdr.stopStream()
             connection?.close()
             connection = null
+            if (!audioWarmupEnabled) audio.stop()
             onDone()
         }
     }
@@ -110,6 +127,7 @@ class ReceiverSession(private val usbManager: UsbManager) {
 
     fun close() {
         stop()
+        executor.execute { audio.stop() }
         executor.shutdown()
     }
 }

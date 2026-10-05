@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -11,11 +12,14 @@ import java.util.concurrent.TimeUnit
 /** Plays 48 kHz mono PCM produced by the selected native demodulator. */
 class AudioOutput {
     @Volatile private var running = false
+    @Volatile private var receiving = false
     private var track: AudioTrack? = null
     private var worker: Thread? = null
     @Volatile private var flushRequest: CountDownLatch? = null
 
     fun start(): Boolean {
+        if (running && worker?.isAlive == true) return true
+        val startedAt = SystemClock.elapsedRealtime()
         val minimum = AudioTrack.getMinBufferSize(
             48_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
@@ -53,9 +57,14 @@ class AudioOutput {
             val samples = ShortArray(960)
             var writtenSamples = 0L
             var flushes = 0
+            var firstPcm = true
+            var firstPlayback = true
             try {
-                output.play()
                 while (running) {
+                    if (firstPlayback && output.playbackHeadPosition > 0) {
+                        Log.d("SdrAudio", "playback_started_ms=${SystemClock.elapsedRealtime() - startedAt} route=${output.routedDevice?.type}")
+                        firstPlayback = false
+                    }
                     val request = flushRequest
                     if (request != null) {
                         output.pause()
@@ -66,12 +75,25 @@ class AudioOutput {
                         flushRequest = null
                         request.countDown()
                     }
-                    val count = NativeSdr.readAudio(samples)
+                    val count = if (receiving) NativeSdr.readAudio(samples) else {
+                        samples.fill(0)
+                        samples.size
+                    }
                     if (count == 0) {
                         Thread.sleep(4)
                         continue
                     }
                     var offset = 0
+                    if (firstPcm) {
+                        // Prime the track before playback so the route starts with audio ready.
+                        val primed = output.write(samples, 0, count, AudioTrack.WRITE_NON_BLOCKING)
+                        output.play()
+                        Log.d("SdrAudio", "first_pcm_ms=${SystemClock.elapsedRealtime() - startedAt} buffer_frames=${output.bufferSizeInFrames} route=${output.routedDevice?.type}")
+                        firstPcm = false
+                        if (primed < 0) break
+                        offset = primed
+                        writtenSamples += primed
+                    }
                     while (running && flushRequest == null && offset < count) {
                         val written = output.write(
                             samples, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING
@@ -109,7 +131,14 @@ class AudioOutput {
         return request.await(300, TimeUnit.MILLISECONDS)
     }
 
+    fun setReceiving(enabled: Boolean) {
+        receiving = enabled
+        if (!enabled) flushForModeChange()
+        Log.d("SdrAudio", "receiving=$enabled; track_kept_open=$running")
+    }
+
     fun stop() {
+        receiving = false
         running = false
         worker?.join(1_000)
         if (worker?.isAlive == true) {

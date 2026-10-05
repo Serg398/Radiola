@@ -220,6 +220,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        receiverSession.prepareAudio()
         registerReceiver(
             usbReceiver,
             IntentFilter().apply {
@@ -263,6 +264,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        receiverSession.releaseIdleAudio()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         unregisterReceiver(usbReceiver)
