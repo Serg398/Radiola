@@ -1,0 +1,72 @@
+{
+  "rates": {
+    "iqHz": 2400000,
+    "channelHz": 240000,
+    "audioHz": 48000
+  },
+  "antiAlias": {
+    "halfBandTaps": 63,
+    "postTaps": 201,
+    "cutoffHz": 120000,
+    "passbandHz": 100000,
+    "stopbandHz": 140000,
+    "minimumStopbandDb": 70,
+    "maximumRippleDb": 0.1
+  },
+  "modes": [
+    {
+      "name": "WFM",
+      "label": "WFM",
+      "id": 0,
+      "bandwidthHz": 240000,
+      "offsetHz": 0,
+      "filterCutoffHz": 120000,
+      "inputCutoffHz": 120000
+    },
+    {
+      "name": "AM",
+      "label": "AM",
+      "id": 1,
+      "bandwidthHz": 12000,
+      "offsetHz": 0,
+      "filterCutoffHz": 6000,
+      "inputCutoffHz": 6000
+    },
+    {
+      "name": "NFM",
+      "label": "FM",
+      "id": 2,
+      "bandwidthHz": 12500,
+      "offsetHz": 0,
+      "filterCutoffHz": 6250,
+      "inputCutoffHz": 6250
+    },
+    {
+      "name": "USB",
+      "label": "USB",
+      "id": 3,
+      "bandwidthHz": 2700,
+      "offsetHz": 1500,
+      "filterCutoffHz": 1350,
+      "inputCutoffHz": 5000
+    },
+    {
+      "name": "LSB",
+      "label": "LSB",
+      "id": 4,
+      "bandwidthHz": 2700,
+      "offsetHz": -1500,
+      "filterCutoffHz": 1350,
+      "inputCutoffHz": 5000
+    },
+    {
+      "name": "CW",
+      "label": "CW",
+      "id": 5,
+      "bandwidthHz": 500,
+      "offsetHz": 0,
+      "filterCutoffHz": 250,
+      "inputCutoffHz": 5000
+    }
+  ]
+}

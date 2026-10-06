@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include "dsp_profiles.h"
 
 // ITU-R BS.450 pilot-tone multiplex at 240 kHz -> interleaved L/R at 48 kHz.
 class FmStereoDecoder {
@@ -11,7 +12,7 @@ public:
     bool locked() const { return locked_; }
     bool process(float multiplex, bool enabled, int16_t& left, int16_t& right) {
         constexpr float pi = 3.14159265358979323846f;
-        constexpr float nominal = 2.f * pi * 19000.f / 240000.f;
+        constexpr float nominal = 2.f * pi * 19000.f / DspProfiles::channelRate;
         const float sine = std::sin(phase_), cosine = std::cos(phase_);
         // Two low-pass stages isolate the pilot in a quadrature downconverter.
         constexpr float pilotRate = 0.00392f; // 150 Hz per stage.
@@ -37,7 +38,7 @@ public:
         mono_[position_] = multiplex;
         difference_[position_] = multiplex * (4.f * sine * cosine);
         position_ = (position_ + 1) % taps;
-        if (++decimation_ != 5) return false;
+        if (++decimation_ != DspProfiles::channelRate / DspProfiles::audioRate) return false;
         decimation_ = 0;
         float sum = 0.f, difference = 0.f;
         int pos = position_;
@@ -64,7 +65,7 @@ private:
         static const auto coefficients = [] {
             std::array<float, taps> values{};
             constexpr float pi = 3.14159265358979323846f;
-            constexpr float cutoff = 15000.f / 240000.f;
+            constexpr float cutoff = 15000.f / DspProfiles::channelRate;
             float total = 0.f;
             for (int i = 0; i < taps; ++i) {
                 const int x = i - (taps - 1) / 2;

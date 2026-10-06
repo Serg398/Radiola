@@ -35,6 +35,7 @@ target_include_directories(rtlsdr PUBLIC ${RTL_DIR}/include)
 target_link_libraries(rtlsdr PUBLIC usb1)
 
 add_library(sdr_native SHARED native_bridge.cpp wfm_demodulator.cpp am_demodulator.cpp)
+target_include_directories(sdr_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../build/generated/dsp/cpp)
 target_compile_options(sdr_native PRIVATE -O3)
 find_library(log_library log)
 target_link_libraries(sdr_native PRIVATE rtlsdr ${log_library} m)

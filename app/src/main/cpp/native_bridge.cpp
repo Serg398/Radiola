@@ -198,8 +198,8 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         const float power = std::norm(values[(i + n / 2) % n]) / (n * n);
         frame[i] = 10.0f * std::log10(power + 1.0e-18f);
     }
-    const int bandwidth = mode == 0 ? 240000 : mode == 1 ? 12000 : mode == 2 ? 12500 : mode == 5 ? 500 : 2700;
-    const int passband_offset = mode == 3 ? 1500 : mode == 4 ? -1500 : 0;
+    const int bandwidth = DspProfiles::modes[mode].bandwidthHz;
+    const int passband_offset = DspProfiles::modes[mode].offsetHz;
     const int center_bin = static_cast<int>(std::lround(n / 2.0 + (offsetHz + passband_offset) * static_cast<double>(n) / WfmDemodulator::inputSampleRate));
     const int half_bins = std::max(1, bandwidth * n / (2 * WfmDemodulator::inputSampleRate));
     stream.channel_signal = -180.f;

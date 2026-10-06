@@ -2,42 +2,15 @@
 
 #include <algorithm>
 #include <cmath>
-
-namespace {
-constexpr float pi = 3.14159265358979323846f;
-constexpr int tapsCount = 161;
-constexpr int channelRate = AmDemodulator::inputSampleRate / 10;
-
-const std::array<float, tapsCount>& channelFilter() {
-    static const auto coefficients = [] {
-        std::array<float, tapsCount> result{};
-        constexpr float cutoff = 5000.0f / channelRate;
-        float sum = 0.0f;
-        for (int i = 0; i < tapsCount; ++i) {
-            const int position = i - (tapsCount - 1) / 2;
-            const float sinc = position == 0
-                ? 2.0f * cutoff
-                : std::sin(2.0f * pi * cutoff * position) / (pi * position);
-            const float hamming = 0.54f - 0.46f * std::cos(2.0f * pi * i / (tapsCount - 1));
-            result[i] = sinc * hamming;
-            sum += result[i];
-        }
-        for (float& coefficient : result) coefficient /= sum;
-        return result;
-    }();
-    return coefficients;
-}
-}
+#include "dsp_filters.h"
 
 void AmDemodulator::reset() {
     mixer_.reset();
     historyI_.fill(0.0f);
     historyQ_.fill(0.0f);
     historyPosition_ = 0;
-    iqCount_ = 0;
+    decimator_.reset();
     audioCount_ = 0;
-    sumI_ = 0.0f;
-    sumQ_ = 0.0f;
     carrier_ = 0.0f;
     warmupSamples_ = 960;
 }
@@ -45,21 +18,17 @@ void AmDemodulator::reset() {
 size_t AmDemodulator::process(
     const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity
 ) {
-    const auto& coefficients = channelFilter();
+    const auto& coefficients = DspFilters::amChannel();
     size_t produced = 0;
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
         float mixedI, mixedQ;
         mixer_.mix(static_cast<float>(iq[byte]) - 127.5f,
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
-        sumI_ += mixedI;
-        sumQ_ += mixedQ;
-        if (++iqCount_ < iqDecimation) continue;
-
-        historyI_[historyPosition_] = sumI_ / iqDecimation;
-        historyQ_[historyPosition_] = sumQ_ / iqDecimation;
+        float channelI, channelQ;
+        if (!decimator_.push(mixedI, mixedQ, channelI, channelQ)) continue;
+        historyI_[historyPosition_] = channelI;
+        historyQ_[historyPosition_] = channelQ;
         historyPosition_ = (historyPosition_ + 1) % tapsCount;
-        sumI_ = sumQ_ = 0.0f;
-        iqCount_ = 0;
         if (++audioCount_ < audioDecimation) continue;
         audioCount_ = 0;
 

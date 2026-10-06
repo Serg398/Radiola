@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include "dsp_profiles.h"
 
 // Phase-continuous NCO. Used before IQ decimation, without converting back to 8-bit IQ.
 class FrequencyMixer {
@@ -10,12 +11,15 @@ public:
     void setOffset(int hz) {
         if (hz == offsetHz_) return;
         offsetHz_ = hz;
-        const double angle = -6.28318530717958647692 * hz / 2400000.0;
+        const double angle = -6.28318530717958647692 * hz / static_cast<double>(DspProfiles::iqRate);
         stepReal_ = static_cast<float>(std::cos(angle));
         stepImag_ = static_cast<float>(std::sin(angle));
     }
 
     void mix(float inputI, float inputQ, float& outputI, float& outputQ) {
+        if (offsetHz_ == 0 && real_ == 1.0f && imag_ == 0.0f) {
+            outputI = inputI; outputQ = inputQ; return;
+        }
         outputI = inputI * real_ - inputQ * imag_;
         outputQ = inputI * imag_ + inputQ * real_;
         const float nextReal = real_ * stepReal_ - imag_ * stepImag_;

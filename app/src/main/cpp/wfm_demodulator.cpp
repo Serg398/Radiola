@@ -5,9 +5,7 @@
 
 void WfmDemodulator::reset() {
     mixer_.reset();
-    sumI_ = 0.0f;
-    sumQ_ = 0.0f;
-    iqCount_ = 0;
+    decimator_.reset();
     previousI_ = 0.0f;
     previousQ_ = 0.0f;
     havePrevious_ = false;
@@ -24,15 +22,8 @@ size_t WfmDemodulator::process(
         float mixedI, mixedQ;
         mixer_.mix(static_cast<float>(iq[byte]) - 127.5f,
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
-        sumI_ += mixedI;
-        sumQ_ += mixedQ;
-        if (++iqCount_ < iqDecimation) continue;
-
-        const float currentI = sumI_ / iqDecimation;
-        const float currentQ = sumQ_ / iqDecimation;
-        sumI_ = 0.0f;
-        sumQ_ = 0.0f;
-        iqCount_ = 0;
+        float currentI, currentQ;
+        if (!decimator_.push(mixedI, mixedQ, currentI, currentQ)) continue;
 
         if (havePrevious_) {
             const float cross = previousI_ * currentQ - previousQ_ * currentI;
