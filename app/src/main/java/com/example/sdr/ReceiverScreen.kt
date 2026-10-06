@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
@@ -543,6 +544,19 @@ private fun VerticalEncoder(
     Column(
         modifier.border(1.dp, edge, RoundedCornerShape(6.dp))
             .background(surface, RoundedCornerShape(6.dp))
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    // Brake on contact, before drag detection waits for touch slop.
+                    // Observe without consuming so dragging and the step menu still work.
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    flingJob?.cancel()
+                    flingJob = null
+                    idleJob?.cancel()
+                    idleJob = null
+                    travel = 0f
+                    activeStepHz = currentMode.fixedHz ?: 1_000L
+                }
+            }
             .pointerInput(Unit) {
                 var tracker = VelocityTracker()
                 var filteredSpeed = 0f
