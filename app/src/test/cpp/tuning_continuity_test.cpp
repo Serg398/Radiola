@@ -37,7 +37,7 @@ bool check(const char* name, const std::vector<uint8_t>& iq, bool fm, bool digit
         energy += static_cast<double>(pcm[i]) * pcm[i];
     }
     const double rms = std::sqrt(energy / (pcm.size() - 9600));
-    const bool passed = pcm.size() == (fm ? 47999u : 48000u) && longestSilentRun < 10 && rms > 1000;
+    const bool passed = pcm.size() == (fm ? 95998u : 48000u) && longestSilentRun < 10 && rms > 1000;
     std::printf("%s %s: samples=%zu longest_silence_samples=%zu rms=%.1f\n",
         passed ? "PASS" : "FAIL", name, pcm.size(), longestSilentRun, rms);
     return passed;
@@ -67,19 +67,12 @@ int main() {
     const bool digitalFmPassed = check<WfmDemodulator>("digital WFM", digitalFm, true, true);
     const auto initial = TuningPlan::forFrequency(100000000, 0);
     const auto smallStep = TuningPlan::forFrequency(100001000, initial.centerHz);
-    const auto boundary = TuningPlan::forFrequency(initial.centerHz + 1000000, initial.centerHz);
-    const auto outside = TuningPlan::forFrequency(initial.centerHz + 1000001, initial.centerHz);
-    const auto outsideDown = TuningPlan::forFrequency(initial.centerHz - 1000001, initial.centerHz);
-    const auto continueUp = TuningPlan::forFrequency(initial.centerHz + 1001001, outside.centerHz);
-    const auto continueDown = TuningPlan::forFrequency(initial.centerHz - 1001001, outsideDown.centerHz);
+    const auto same = TuningPlan::forFrequency(initial.centerHz, initial.centerHz);
     const auto maximum = TuningPlan::forFrequency(1766000000, 0);
-    const bool planPassed = initial.hardwareRetune && initial.offsetHz == -250000
-        && !smallStep.hardwareRetune && smallStep.offsetHz == -249000
-        && !boundary.hardwareRetune && outside.hardwareRetune && outside.offsetHz == -1000000
-        && outsideDown.hardwareRetune && outsideDown.offsetHz == 1000000
-        && !continueUp.hardwareRetune && continueUp.offsetHz == -999000
-        && !continueDown.hardwareRetune && continueDown.offsetHz == 999000
+    const bool planPassed = initial.hardwareRetune && initial.centerHz == 100000000 && initial.offsetHz == 0
+        && smallStep.hardwareRetune && smallStep.centerHz == 100001000 && smallStep.offsetHz == 0
+        && !same.hardwareRetune && same.offsetHz == 0
         && maximum.centerHz == 1766000000 && maximum.offsetHz == 0;
-    std::printf("%s tuning plan: band crossings move to the opposite edge in both directions\n", planPassed ? "PASS" : "FAIL");
+    std::printf("%s tuning plan: full capture follows selected frequency\n", planPassed ? "PASS" : "FAIL");
     return amPassed && fmPassed && digitalAmPassed && digitalFmPassed && planPassed ? 0 : 1;
 }

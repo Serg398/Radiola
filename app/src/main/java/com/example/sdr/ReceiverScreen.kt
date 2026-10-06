@@ -128,14 +128,12 @@ fun ReceiverScreen(
     var editingFrequency by remember { mutableStateOf(false) }
     var zoom by remember { mutableStateOf(1f) }
     val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
-    val centerMargin = (spectrumSpanHz - visibleSpanHz) / 2L
-    val visibleCenterHz = if (zoom == 1f) spectrumCenterFrequencyHz else currentFrequencyHz.coerceIn(
-        spectrumCenterFrequencyHz - centerMargin, spectrumCenterFrequencyHz + centerMargin
-    )
-    val channelOffsetHz = currentFrequencyHz - visibleCenterHz
-    val passbandOffsetHz = channelOffsetHz + demodulationMode.passbandOffsetHz
-    val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat().coerceIn(0f, 1f)
-    val viewportEnd = (viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz).coerceIn(0f, 1f)
+    val visibleCenterHz = currentFrequencyHz
+    val channelOffsetHz = 0L
+    val passbandOffsetHz = demodulationMode.passbandOffsetHz.toLong()
+    // Keep the viewport's actual width even while hardware catches up with tuning.
+    val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat()
+    val viewportEnd = viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = { selected = it })
@@ -285,7 +283,8 @@ fun ReceiverScreen(
                             AndroidView(
                                 factory = { WaterfallView(it) },
                                 update = { view ->
-                                    view.setViewport(viewportStart, viewportEnd)
+                                    view.setViewport(0.5f - 0.5f / zoom, 0.5f + 0.5f / zoom)
+                                    view.setTuning(currentFrequencyHz, visibleSpanHz)
                                     val values = waterfallState.value
                                     if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
                                 },
@@ -891,8 +890,8 @@ private fun AmberSpectrum(
         if (values.isNotEmpty()) {
             val trace = Path()
             val fill = Path()
-            val startBin = (viewportStart * values.size).toInt().coerceIn(0, values.lastIndex)
-            val endBin = (viewportEnd * values.size).toInt().coerceIn(startBin + 1, values.size)
+            val startBin = (viewportStart * values.size).toInt().coerceIn(0, values.size)
+            val endBin = (viewportEnd * values.size).toInt().coerceIn(startBin, values.size)
             val binCount = endBin - startBin
             val columns = minOf(512, binCount)
             for (index in 0 until columns) {
@@ -900,7 +899,8 @@ private fun AmberSpectrum(
                 val last = startBin + (index + 1) * binCount / columns
                 var db = values[first]
                 for (bin in first + 1 until last) db = maxOf(db, values[bin])
-                val x = left + width * index / maxOf(1, columns - 1)
+                val fraction = (first.toFloat() / values.size - viewportStart) / (viewportEnd - viewportStart)
+                val x = left + width * fraction
                 val y = bottom - ((db + 120f) / 120f).coerceIn(0f, 1f) * height
                 if (index == 0) {
                     trace.moveTo(x, y)
@@ -911,7 +911,10 @@ private fun AmberSpectrum(
                     fill.lineTo(x, y)
                 }
             }
-            fill.lineTo(size.width, bottom)
+            if (columns > 0) {
+                val endX = left + width * (endBin.toFloat() / values.size - viewportStart) / (viewportEnd - viewportStart)
+                fill.lineTo(endX, bottom)
+            }
             fill.close()
             drawPath(fill, Brush.verticalGradient(listOf(Color(0xB3EEA54E), Color(0x665C3D20), Color.Transparent), startY = top, endY = bottom))
             drawPath(trace, warm, style = Stroke(1.dp.toPx()))

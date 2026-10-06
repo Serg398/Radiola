@@ -23,7 +23,16 @@ class WaterfallView(context: Context) : View(context) {
     private val paint = Paint().apply { isFilterBitmap = false }
     private var newestRow = 0
     private var lastSpectrum: FloatArray? = null
-    private var centerFrequencyHz = 0L
+    private val rowCentersHz = LongArray(plotHeight)
+    private var tuningFrequencyHz = 0L
+    private var visibleSpanHz = 2_400_000
+
+    fun setTuning(frequencyHz: Long, spanHz: Int) {
+        if (tuningFrequencyHz == frequencyHz && visibleSpanHz == spanHz) return
+        tuningFrequencyHz = frequencyHz
+        visibleSpanHz = spanHz.coerceAtLeast(1)
+        invalidate()
+    }
     private val sourceRect = Rect(0, 0, renderWidth, plotHeight)
     private val destinationRect = Rect()
 
@@ -59,16 +68,10 @@ class WaterfallView(context: Context) : View(context) {
     }
 
     fun updateSpectrum(spectrum: FloatArray, centerHz: Long) {
-        if (centerHz != centerFrequencyHz) {
-            centerFrequencyHz = centerHz
-            bitmap.eraseColor(Color.rgb(1, 10, 54))
-            history.fill(0)
-            newestRow = 0
-            lastSpectrum = null
-        }
         if (spectrum.isEmpty() || spectrum === lastSpectrum) return
         lastSpectrum = spectrum
         newestRow = (newestRow + plotHeight - 1) % plotHeight
+        rowCentersHz[newestRow] = centerHz
         for (x in 0 until plotWidth) {
             val first = x * spectrum.size / plotWidth
             val last = (x + 1) * spectrum.size / plotWidth
@@ -86,20 +89,25 @@ class WaterfallView(context: Context) : View(context) {
         super.onDraw(canvas)
         val checkpoint = canvas.save()
         canvas.clipRect(0, 0, width, height)
-        val firstRows = plotHeight - newestRow
-        // Integer pixel heights keep old rows rigid while scrolling. Scaling each
-        // ring segment separately to a rounded split made its rows wobble every frame.
+        canvas.drawColor(palette[0])
+        // Store every row at its own RF center; move history by absolute frequency.
+        // Tuning only translates cached rows, without resampling all FFT history.
         val rowHeight = maxOf(1, (height + plotHeight - 1) / plotHeight)
-        val splitY = firstRows * rowHeight
-        sourceRect.top = newestRow
-        sourceRect.bottom = plotHeight
-        destinationRect.set(0, 0, width, splitY)
-        canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
-        if (newestRow > 0) {
-            sourceRect.top = 0
-            sourceRect.bottom = newestRow
-            destinationRect.set(0, splitY, width, plotHeight * rowHeight)
-            canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
+        var screenRow = 0
+        while (screenRow < plotHeight && screenRow * rowHeight < height) {
+            val row = (newestRow + screenRow) % plotHeight
+            val center = rowCentersHz[row]
+            // At a fixed frequency this remains just two bitmap draws for the ring.
+            var rows = 1
+            while (screenRow + rows < plotHeight && row + rows < plotHeight
+                && rowCentersHz[row + rows] == center) rows++
+            val shift = ((center - tuningFrequencyHz).toDouble() * width / visibleSpanHz).toInt()
+            if (center != 0L && shift > -width && shift < width) {
+                sourceRect.set(0, row, renderWidth, row + rows)
+                destinationRect.set(shift, screenRow * rowHeight, shift + width, (screenRow + rows) * rowHeight)
+                canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
+            }
+            screenRow += rows
         }
         canvas.restoreToCount(checkpoint)
     }
