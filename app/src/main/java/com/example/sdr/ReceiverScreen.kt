@@ -3,7 +3,6 @@ package com.example.sdr
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
@@ -135,25 +134,29 @@ fun ReceiverScreen(
     var zoom by remember { mutableStateOf(1f) }
     val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
     var displayFrequencyHz by remember { mutableStateOf(currentFrequencyHz.toDouble()) }
-    LaunchedEffect(currentFrequencyHz) {
-        val target = currentFrequencyHz.toDouble()
-        // Preserve the current visual position when another encoder step arrives.
-        // Very large direct jumps have no overlapping spectrum to scroll through.
-        if (abs(target - displayFrequencyHz) > spectrumSpanHz * 2.0) {
-            displayFrequencyHz = target
+    var encoderRotating by remember { mutableStateOf(false) }
+    val frequencyMotion = remember { FrequencyMotion(currentFrequencyHz.toDouble()) }
+    val latestFrequencyHz by rememberUpdatedState(currentFrequencyHz)
+    val latestSpanHz by rememberUpdatedState(spectrumSpanHz)
+    // One frame loop per rotation: individual tuning steps never restart it.
+    LaunchedEffect(encoderRotating) {
+        if (!encoderRotating) {
+            frequencyMotion.snapTo(latestFrequencyHz.toDouble())
+            displayFrequencyHz = latestFrequencyHz.toDouble()
             return@LaunchedEffect
         }
         var previousFrame = System.nanoTime()
-        while (abs(target - displayFrequencyHz) > 0.5) {
+        while (encoderRotating) {
             withFrameNanos { frame ->
                 val dt = ((frame - previousFrame) / 1_000_000_000.0).coerceIn(0.0, 0.05)
                 previousFrame = frame
-                displayFrequencyHz += (target - displayFrequencyHz) * (1.0 - kotlin.math.exp(-dt / 0.065))
+                val target = latestFrequencyHz.toDouble()
+                if (abs(target - frequencyMotion.positionHz) > latestSpanHz * 2.0) frequencyMotion.snapTo(target)
+                displayFrequencyHz = frequencyMotion.advance(target, dt)
             }
         }
-        displayFrequencyHz = target
     }
-    val visibleCenterHz = displayFrequencyHz
+    val visibleCenterHz = if (encoderRotating) displayFrequencyHz else currentFrequencyHz.toDouble()
     val channelOffsetHz = 0L
     val passbandOffsetHz = demodulationMode.passbandOffsetHz.toLong()
     // Keep the viewport's actual width even while hardware catches up with tuning.
@@ -300,7 +303,7 @@ fun ReceiverScreen(
                                 factory = { WaterfallView(it) },
                                 update = { view ->
                                     view.setViewport(0.5f - 0.5f / zoom, 0.5f + 0.5f / zoom)
-                                    view.setTuning(displayFrequencyHz.toLong(), visibleSpanHz)
+                                    view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
                                     val values = waterfallState.value
                                     if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
                                 },
@@ -423,6 +426,18 @@ fun ReceiverScreen(
                     tuningStep = tuningStep,
                     onTuningStepChange = onTuningStepChange,
                     onTick = onEncoderTick,
+                    onRotate = {
+                        if (!encoderRotating) {
+                            frequencyMotion.snapTo(currentFrequencyHz.toDouble())
+                            displayFrequencyHz = currentFrequencyHz.toDouble()
+                        }
+                        encoderRotating = true
+                    },
+                    onBrake = {
+                        encoderRotating = false
+                        frequencyMotion.snapTo(currentFrequencyHz.toDouble())
+                        displayFrequencyHz = currentFrequencyHz.toDouble()
+                    },
                     modifier = Modifier.align(Alignment.CenterEnd).width(74.dp).fillMaxHeight()
                 )
             }
@@ -532,8 +547,12 @@ private fun VerticalEncoder(
     tuningStep: TuningStep,
     onTuningStepChange: (TuningStep) -> Unit,
     modifier: Modifier = Modifier,
-    onTick: () -> Unit = {}
+    onTick: () -> Unit = {},
+    onBrake: () -> Unit = {},
+    onRotate: () -> Unit = {}
 ) {
+    val currentRotate by rememberUpdatedState(onRotate)
+    val currentBrake by rememberUpdatedState(onBrake)
     val currentTick by rememberUpdatedState(onTick)
     val currentStep by rememberUpdatedState(onStep)
     val currentMode by rememberUpdatedState(tuningStep)
@@ -542,12 +561,23 @@ private fun VerticalEncoder(
     var travel by remember { mutableStateOf(0f) }
     var phase by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
-    val pitch = with(density) { 17.dp.toPx() }
+    val pitch = with(density) { 18.dp.toPx() }
     val notch = with(density) { 18.dp.toPx() }
     val scope = rememberCoroutineScope()
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var idleJob by remember { mutableStateOf<Job?>(null) }
+    var motionIdleJob by remember { mutableStateOf<Job?>(null) }
+    var lastRotationSpeed by remember { mutableStateOf(0f) }
+    var lastRotationTime by remember { mutableStateOf(0L) }
+    var carrySpeed by remember { mutableStateOf(0f) }
+    var lastRotationDirection by remember { mutableStateOf(0f) }
     fun rotate(amount: Float, speed: Float) {
+        if (amount != 0f) {
+            currentRotate()
+            lastRotationDirection = amount
+            lastRotationSpeed = speed
+            lastRotationTime = android.os.SystemClock.uptimeMillis()
+        }
         val stepHz = currentMode.hzForSpeed(speed / density.density, activeStepHz)
         activeStepHz = stepHz
         travel += amount
@@ -567,81 +597,116 @@ private fun VerticalEncoder(
                     // Brake on contact, before drag detection waits for touch slop.
                     // Observe without consuming so dragging and the step menu still work.
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Continue AUTO speed across a quick finger reposition, while
+                    // still braking physical inertia immediately on contact.
+                    val continuing = currentMode == TuningStep.AUTO && activeStepHz > 1_000L
+                        && android.os.SystemClock.uptimeMillis() - lastRotationTime <= 200
+                    carrySpeed = if (continuing) lastRotationSpeed else 0f
                     flingJob?.cancel()
                     flingJob = null
+                    currentBrake()
                     idleJob?.cancel()
+                    motionIdleJob?.cancel()
                     idleJob = null
                     travel = 0f
-                    activeStepHz = currentMode.fixedHz ?: 1_000L
+                    if (!continuing) activeStepHz = currentMode.fixedHz ?: 1_000L
+                    idleJob = scope.launch {
+                        delay(150)
+                        carrySpeed = 0f
+                        activeStepHz = currentMode.fixedHz ?: 1_000L
+                    }
                 }
             }
             .pointerInput(Unit) {
                 var tracker = VelocityTracker()
                 var filteredSpeed = 0f
                 var lastEventTime = 0L
-                detectVerticalDragGestures(
-                    onDragStart = {
-                        flingJob?.cancel()
-                        idleJob?.cancel()
-                        activeStepHz = currentMode.fixedHz ?: 1_000L
-                        tracker = VelocityTracker()
-                        filteredSpeed = 0f
-                        travel = 0f
-                        lastEventTime = android.os.SystemClock.uptimeMillis()
-                        tracker.addPosition(lastEventTime, it)
-                    },
-                    onDragCancel = {
-                        idleJob?.cancel()
-                        flingJob?.cancel()
-                        activeStepHz = currentMode.fixedHz ?: 1_000L
-                        travel = 0f
-                    },
-                    onDragEnd = {
-                        idleJob?.cancel()
-                        val rawVelocity = -tracker.calculateVelocity().y
-                        val limit = 4500f * density.density
-                        // A short flick must retain its release speed: the drag smoothing
-                        // can still be catching up when the finger leaves the screen.
-                        var velocity = rawVelocity.coerceIn(-limit, limit)
-                        if (abs(velocity) > 120f * density.density) {
-                            flingJob = scope.launch {
-                                var previousTime = withFrameNanos { it }
-                                while (abs(velocity) > 20f * density.density) {
-                                    val now = withFrameNanos { it }
-                                    val dt = ((now - previousTime) / 1_000_000_000f).coerceIn(0f, 0.05f)
-                                    previousTime = now
-                                    rotate(velocity * dt, abs(velocity))
-                                    velocity *= exp(-1.8f * dt)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val pointerId = down.id
+                    tracker = VelocityTracker()
+                    tracker.addPosition(down.uptimeMillis, down.position)
+                    filteredSpeed = carrySpeed
+                    carrySpeed = 0f
+                    lastEventTime = down.uptimeMillis
+                    var lastPosition = down.position
+                    var lastMoveTime = down.uptimeMillis
+                    var previousDirection = -lastRotationDirection
+                    var moved = false
+                    var released = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                            if (!change.pressed) {
+                                tracker.addPosition(change.uptimeMillis, change.position)
+                                released = true
+                                break
+                            }
+                            val dragAmount = change.position.y - lastPosition.y
+                            if (dragAmount == 0f) continue
+                            moved = true
+                            change.consume()
+                            idleJob?.cancel()
+                            motionIdleJob?.cancel()
+                            if (change.uptimeMillis - lastMoveTime >= 150) filteredSpeed = 0f
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            val dt = ((change.uptimeMillis - lastEventTime) / 1000f).coerceIn(0.001f, 0.1f)
+                            val measured = (abs(dragAmount) / dt).coerceAtMost(4500f * density.density)
+                            // Reverse immediately; old AUTO momentum must not mask a fine correction.
+                            if (previousDirection * dragAmount < 0f) {
+                                filteredSpeed = measured
+                                activeStepHz = currentMode.fixedHz ?: 1_000L
+                            } else filteredSpeed = EncoderDynamics.filteredSpeed(filteredSpeed, measured, dt)
+                            previousDirection = dragAmount
+                            lastEventTime = change.uptimeMillis
+                            lastMoveTime = change.uptimeMillis
+                            lastPosition = change.position
+                            rotate(-dragAmount, filteredSpeed)
+                            motionIdleJob = scope.launch { delay(35); currentBrake() }
+                            val position = change.position
+                            idleJob = scope.launch {
+                                delay(150)
+                                currentBrake()
+                                filteredSpeed = 0f
+                                carrySpeed = 0f
+                                travel = 0f
+                                activeStepHz = currentMode.fixedHz ?: 1_000L
+                                tracker = VelocityTracker()
+                                lastEventTime = android.os.SystemClock.uptimeMillis()
+                                tracker.addPosition(lastEventTime, position)
+                            }
+                        }
+                    } finally {
+                        if (moved) {
+                            idleJob?.cancel()
+                            motionIdleJob?.cancel()
+                            val freshRelease = released && android.os.SystemClock.uptimeMillis() - lastMoveTime < 50
+                            var velocity = if (freshRelease) (-tracker.calculateVelocity().y)
+                                .coerceIn(-4500f * density.density, 4500f * density.density) else 0f
+                            if (abs(velocity) > 120f * density.density) {
+                                flingJob = scope.launch {
+                                    // Start integrating on the very next frame, without a two-frame pause.
+                                    var previousTime = System.nanoTime()
+                                    while (abs(velocity) > 20f * density.density) {
+                                        val now = withFrameNanos { it }
+                                        val dt = ((now - previousTime) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                                        previousTime = now
+                                        rotate(EncoderDynamics.displacement(velocity, dt), abs(velocity))
+                                        velocity = EncoderDynamics.decayedVelocity(velocity, dt)
+                                    }
+                                    travel = 0f
+                                    activeStepHz = currentMode.fixedHz ?: 1_000L
+                                    currentBrake()
                                 }
+                            } else {
+                                currentBrake()
                                 travel = 0f
                                 activeStepHz = currentMode.fixedHz ?: 1_000L
                             }
-                        } else {
-                            activeStepHz = currentMode.fixedHz ?: 1_000L
-                        }
-                    },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        val speed = abs(tracker.calculateVelocity().y).coerceAtMost(4500f * density.density)
-                        val dt = ((change.uptimeMillis - lastEventTime) / 1000f).coerceIn(0f, 0.1f)
-                        lastEventTime = change.uptimeMillis
-                        val blend = 1f - exp(-dt / 0.08f)
-                        filteredSpeed += blend * (speed - filteredSpeed)
-                        rotate(-dragAmount, filteredSpeed)
-                        idleJob?.cancel()
-                        val position = change.position
-                        idleJob = scope.launch {
-                            delay(150)
-                            filteredSpeed = 0f
-                            travel = 0f
-                            activeStepHz = currentMode.fixedHz ?: 1_000L
-                            tracker = VelocityTracker()
-                            lastEventTime = android.os.SystemClock.uptimeMillis()
-                            tracker.addPosition(lastEventTime, position)
                         }
                     }
-                )
+                }
             }
             .padding(horizontal = 7.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -663,6 +728,11 @@ private fun VerticalEncoder(
                         Modifier.fillMaxWidth().height(36.dp).clickable {
                             flingJob?.cancel()
                             idleJob?.cancel()
+                            motionIdleJob?.cancel()
+                            currentBrake()
+                            carrySpeed = 0f
+                            lastRotationTime = 0L
+                            activeStepHz = option.fixedHz ?: 1_000L
                             onTuningStepChange(option)
                             menuExpanded = false
                         }.padding(horizontal = 10.dp),

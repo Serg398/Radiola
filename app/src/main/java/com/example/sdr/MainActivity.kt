@@ -491,16 +491,17 @@ class MainActivity : ComponentActivity() {
     private fun stepFrequency(deltaHz: Long) {
         val next = ((requestedFrequencyHz ?: frequencyHz) + deltaHz).coerceIn(500_000L, 1_766_000_000L)
         requestedFrequencyHz = next
+        // Encoder feedback must not wait for USB/tuner I/O. Older acknowledgements
+        // only report status; they must never move the displayed frequency backwards.
+        frequencyHz = next
         frequencyInput = "%.3f".format(java.util.Locale.US, next / 1_000_000.0)
         if (!streaming) {
-            frequencyHz = next
             requestedFrequencyHz = null
             return
         }
         receiverSession.tune(next) { result ->
             runOnUiThread {
-                if (result == 0) frequencyHz = next
-                else usbCheckResult = "Ошибка настройки частоты: $result"
+                if (result != 0) usbCheckResult = "Ошибка настройки частоты: $result"
                 if (requestedFrequencyHz == next) requestedFrequencyHz = null
             }
         }
