@@ -258,9 +258,6 @@ static int r82xx_write(struct r82xx_priv *priv, uint8_t reg, const uint8_t *val,
 {
 	int rc, size, pos = 0;
 
-	/* Store the shadow registers */
-	shadow_store(priv, reg, val, len);
-
 	do {
 		if (len > priv->cfg->max_i2c_msg_len - 1)
 			size = priv->cfg->max_i2c_msg_len - 1;
@@ -282,6 +279,8 @@ static int r82xx_write(struct r82xx_priv *priv, uint8_t reg, const uint8_t *val,
 			return -1;
 		}
 
+        /* Cache only bytes successfully written. Stable RF writes below rely on it. */
+        shadow_store(priv, reg, &val[pos], size);
 		reg += size;
 		len -= size;
 		pos += size;
@@ -316,6 +315,18 @@ static int r82xx_write_reg_mask(struct r82xx_priv *priv, uint8_t reg, uint8_t va
 	val = (rc & ~bit_mask) | (val & bit_mask);
 
 	return r82xx_write(priv, reg, &val, 1);
+}
+
+/* RF path and gain registers are not strobes. Avoid unnecessary I2C traffic
+ * while preserving the original PLL/calibration write sequence. */
+static int r82xx_write_stable_mask(struct r82xx_priv *priv, uint8_t reg,
+                                  uint8_t val, uint8_t mask)
+{
+    int cached = r82xx_read_cache_reg(priv, reg);
+    if (cached < 0) return cached;
+    val = (cached & ~mask) | (val & mask);
+    if (cached == val) return 0;
+    return r82xx_write_reg(priv, reg, val);
 }
 
 static uint8_t r82xx_bitrev(uint8_t byte)
@@ -364,7 +375,8 @@ static int r82xx_read(struct r82xx_priv *priv, uint8_t reg, uint8_t *val, int le
  * r82xx tuning logic
  */
 
-static int r82xx_set_mux(struct r82xx_priv *priv, uint32_t freq)
+static int r82xx_set_mux(struct r82xx_priv *priv, uint32_t freq,
+                         uint32_t rf_freq, int blog_v4, int hf_bypass)
 {
 	const struct r82xx_freq_range *range;
 	int rc;
@@ -380,17 +392,17 @@ static int r82xx_set_mux(struct r82xx_priv *priv, uint32_t freq)
 	range = &freq_ranges[i];
 
 	/* Open Drain */
-	rc = r82xx_write_reg_mask(priv, 0x17, range->open_d, 0x08);
+	rc = r82xx_write_stable_mask(priv, 0x17, (blog_v4 ? ((rf_freq <= MHZ(2.2) || (rf_freq >= MHZ(85) && rf_freq <= MHZ(112)) || (rf_freq >= MHZ(172) && rf_freq <= MHZ(242))) ? 0x00 : 0x08) : range->open_d), 0x08);
 	if (rc < 0)
 		return rc;
 
 	/* RF_MUX,Polymux */
-	rc = r82xx_write_reg_mask(priv, 0x1a, range->rf_mux_ploy, 0xc3);
+	rc = r82xx_write_stable_mask(priv, 0x1a, (hf_bypass ? 0x40 : range->rf_mux_ploy), 0xc3);
 	if (rc < 0)
 		return rc;
 
 	/* TF BAND */
-	rc = r82xx_write_reg(priv, 0x1b, range->tf_c);
+	rc = r82xx_write_stable_mask(priv, 0x1b, hf_bypass ? 0x00 : range->tf_c, 0xff);
 	if (rc < 0)
 		return rc;
 
@@ -411,15 +423,15 @@ static int r82xx_set_mux(struct r82xx_priv *priv, uint32_t freq)
 		val = range->xtal_cap0p | 0x08;
 		break;
 	}
-	rc = r82xx_write_reg_mask(priv, 0x10, val, 0x0b);
+	rc = r82xx_write_stable_mask(priv, 0x10, val, 0x0b);
 	if (rc < 0)
 		return rc;
 
-	rc = r82xx_write_reg_mask(priv, 0x08, 0x00, 0x3f);
+	rc = r82xx_write_stable_mask(priv, 0x08, 0x00, 0x3f);
 	if (rc < 0)
 		return rc;
 
-	rc = r82xx_write_reg_mask(priv, 0x09, 0x00, 0x3f);
+	rc = r82xx_write_stable_mask(priv, 0x09, 0x00, 0x3f);
 
 	return rc;
 }
@@ -1046,10 +1058,10 @@ int r82xx_set_vga_gain(struct r82xx_priv *priv) {
 		rc = r82xx_write_reg_mask(priv, 0x0c, 0x0b, 0x9f);
 	}
 	else {
-		rc = r82xx_write_reg_mask(priv, 0x0c, 0x08, 0x9f); // 16.3 dB
+		rc = r82xx_write_stable_mask(priv, 0x0c, 0x08, 0x9f); // 16.3 dB
 	}*/
 
-	rc = r82xx_write_reg_mask(priv, 0x0c, 0x08, 0x9f); // 16.3 dB
+	rc = r82xx_write_stable_mask(priv, 0x0c, 0x08, 0x9f); // 16.3 dB
 
 	return rc;
 }
@@ -1174,7 +1186,10 @@ int r82xx_set_freq(struct r82xx_priv *priv, uint32_t freq)
 
 	lo_freq = upconvert_freq + priv->int_freq;
 
-	rc = r82xx_set_mux(priv, lo_freq);
+	/* On V4 HF, never re-enable the tracking filter between two LO updates.
+     * The original sequence enabled it here and bypassed it again after PLL tuning. */
+    rc = r82xx_set_mux(priv, lo_freq, freq, is_rtlsdr_blog_v4,
+                      (is_rtlsdr_blog_v4 || is_rtlsdr_blog_v4l) && freq <= MHZ(28.8));
 	if (rc < 0)
 		goto err;
 
@@ -1191,7 +1206,7 @@ int r82xx_set_freq(struct r82xx_priv *priv, uint32_t freq)
 		 * when tuned within the notch band and ON when tuned outside the notch band.
 		 */
 		open_d = (freq <= MHZ(2.2) || (freq >= MHZ(85) && freq <= MHZ(112)) || (freq >= MHZ(172) && freq <= MHZ(242))) ? 0x00 : 0x08;
-		rc = r82xx_write_reg_mask(priv, 0x17, open_d, 0x08);
+		rc = r82xx_write_stable_mask(priv, 0x17, open_d, 0x08);
 
 		if (rc < 0)
 			return rc;
@@ -1201,15 +1216,14 @@ int r82xx_set_freq(struct r82xx_priv *priv, uint32_t freq)
 		 */
 		band = (freq <= MHZ(28.8)) ? HF : ((freq > MHZ(28.8) && freq < MHZ(250)) ? VHF : UHF);
 
-		/* bypass tracking filter for HF to reduce insertion loss,
-		 * the upconverter path doesn't benefit from it.
-		 * Must be outside band-change guard since r82xx_set_mux
-		 * re-applies the tracking filter on every frequency change. */
+		/* Keep the HF tracking bypass explicit. r82xx_set_mux applies the
+		 * same setting before PLL tuning, so these stable writes are no-ops
+		 * during normal HF tuning. */
 		if (band == HF) {
-			rc = r82xx_write_reg_mask(priv, 0x1a, 0x40, 0xc3);
+			rc = r82xx_write_stable_mask(priv, 0x1a, 0x40, 0xc3);
 			if (rc < 0)
 				goto err;
-			rc = r82xx_write_reg(priv, 0x1b, 0x00);
+			rc = r82xx_write_stable_mask(priv, 0x1b, 0x00, 0xff);
 			if (rc < 0)
 				goto err;
 		}
@@ -1253,15 +1267,14 @@ int r82xx_set_freq(struct r82xx_priv *priv, uint32_t freq)
 		 */
 		band = (freq <= MHZ(28.8)) ? HF : UHF;
 
-		/* bypass tracking filter for HF to reduce insertion loss,
-		 * the upconverter path doesn't benefit from it.
-		 * Must be outside band-change guard since r82xx_set_mux
-		 * re-applies the tracking filter on every frequency change. */
+		/* Keep the HF tracking bypass explicit. r82xx_set_mux applies the
+		 * same setting before PLL tuning, so these stable writes are no-ops
+		 * during normal HF tuning. */
 		if (band == HF) {
-			rc = r82xx_write_reg_mask(priv, 0x1a, 0x40, 0xc3);
+			rc = r82xx_write_stable_mask(priv, 0x1a, 0x40, 0xc3);
 			if (rc < 0)
 				goto err;
-			rc = r82xx_write_reg(priv, 0x1b, 0x00);
+			rc = r82xx_write_stable_mask(priv, 0x1b, 0x00, 0xff);
 			if (rc < 0)
 				goto err;
 		}
