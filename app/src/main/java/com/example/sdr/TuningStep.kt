@@ -7,9 +7,7 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     KHZ_12_5("12,5 kHz", 12_500L),
     KHZ_25("25 kHz", 25_000L),
     KHZ_50("50 kHz", 50_000L),
-    KHZ_100("100 kHz", 100_000L),
-    KHZ_500("500 kHz", 500_000L),
-    MHZ_1("1 MHz", 1_000_000L);
+    KHZ_100("100 kHz", 100_000L);
 
     // Speeds in dp/s give the same feel on displays with different pixel densities.
     // Different up/down thresholds prevent step chatter near a speed boundary.
