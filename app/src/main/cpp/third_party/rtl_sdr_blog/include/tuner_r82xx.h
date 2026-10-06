@@ -83,6 +83,7 @@ struct r82xx_priv {
 	uint32_t			rf_freq;
 	uint8_t				fil_cal_code;
 	uint8_t				input;
+	int				manual_gain; /* Preserve VGA setting across frequency changes. */
 	int				has_lock;
 	int				init_done;
 

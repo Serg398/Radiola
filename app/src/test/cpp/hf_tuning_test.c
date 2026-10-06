@@ -52,6 +52,9 @@ int main(void) {
         config.rafael_chip=model==1?CHIP_R820T:CHIP_R828D; config.max_i2c_msg_len=8;
         struct r82xx_priv priv={0}; priv.cfg=&config; priv.rtl_dev=&b; priv.int_freq=3570000;
         priv.xtal_cap_sel=XTAL_LOW_CAP_0P;
+#ifndef BASELINE
+        priv.manual_gain=1;
+#endif
         memcpy(priv.regs,r82xx_init_array,sizeof(priv.regs));
         memcpy(b.regs+REG_SHADOW_START,r82xx_init_array,sizeof(priv.regs));
         for (unsigned f=0; f<sizeof(frequencies)/sizeof(frequencies[0]); f++) {
@@ -77,6 +80,26 @@ int main(void) {
         }
 #ifndef BASELINE
         b.monitor_hf=0;
+        const int gains[]={0,9,197,229,297,229};
+        for (unsigned g=0;g<sizeof(gains)/sizeof(gains[0]);g++) {
+            assert(r82xx_set_gain(&priv,1,gains[g])==0);
+            assert(priv.manual_gain==1);
+            assert((r82xx_read_cache_reg(&priv,0x05)&0x10)==0x10);
+            assert((r82xx_read_cache_reg(&priv,0x07)&0x10)==0);
+            b.writes=b.reads=0;
+            assert(r82xx_set_gain(&priv,1,gains[g])==0);
+            assert(b.writes==0 && b.reads==0);
+        }
+        assert(r82xx_set_gain(&priv,0,0)==0);
+        assert(priv.manual_gain==0);
+        const int auto_vga = r82xx_read_cache_reg(&priv,0x0c)&0x9f;
+        assert(auto_vga==0x0b);
+        assert(r82xx_set_freq(&priv,7102000)==0);
+        assert((r82xx_read_cache_reg(&priv,0x0c)&0x9f)==auto_vga);
+        b.writes=b.reads=0;
+        assert(r82xx_set_gain(&priv,0,0)==0);
+        assert(b.writes==0 && b.reads==0);
+
         int cached=r82xx_read_cache_reg(&priv,0x0c);
         b.fail_next=1;
         assert(r82xx_write_stable_mask(&priv,0x0c,cached^1,0xff)==-5);

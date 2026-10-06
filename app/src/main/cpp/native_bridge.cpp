@@ -18,6 +18,7 @@
 #include "audio_agc.h"
 #include "tuning_plan.h"
 #include "squelch.h"
+#include "rf_gain_controller.h"
 
 namespace {
 constexpr int spectrumSize = 8192;
@@ -54,6 +55,7 @@ struct StreamState {
     bool rf_agc = true; // Protected by stream_mutex.
     bool bias_t = false; // Protected by stream_mutex.
     int gain_tenths_db = 197;
+    RfGainController rf_gain_controller; // Protected by stream_mutex.
     std::atomic<int> demodulation{0}; // 0=WFM, 1=AM, 2=NFM, 3=USB, 4=LSB, 5=CW
     int active_demodulation = 0; // IQ callback thread only
     std::atomic<bool> retune_audio{false};
@@ -73,17 +75,23 @@ uint64_t pack_tuning(const TuningPlan& plan) {
 
 int apply_rf_gain() {
     if (!stream.device) return 0;
-    int result = rtlsdr_set_tuner_gain_mode(stream.device, stream.rf_agc ? 0 : 1);
-    if (result != 0 || stream.rf_agc) return result;
-    std::array<int, 64> gains{};
-    const int count = rtlsdr_get_tuner_gains(stream.device, nullptr);
-    if (count <= 0 || count > static_cast<int>(gains.size())) return -103;
-    rtlsdr_get_tuner_gains(stream.device, gains.data());
-    const auto nearest = std::min_element(gains.begin(), gains.begin() + count, [](int a, int b) {
-        return std::abs(a - stream.gain_tenths_db) < std::abs(b - stream.gain_tenths_db);
-    });
-    result = rtlsdr_set_tuner_gain(stream.device, *nearest);
-    if (result == 0) stream.gain_tenths_db = *nearest;
+    int selectedGain = stream.gain_tenths_db;
+    if (!stream.rf_agc) {
+        std::array<int, 64> gains{};
+        const int count = rtlsdr_get_tuner_gains(stream.device, nullptr);
+        if (count <= 0 || count > static_cast<int>(gains.size())) return -103;
+        rtlsdr_get_tuner_gains(stream.device, gains.data());
+        const auto nearest = std::min_element(gains.begin(), gains.begin() + count, [](int a, int b) {
+            return std::abs(a - stream.gain_tenths_db) < std::abs(b - stream.gain_tenths_db);
+        });
+        selectedGain = *nearest;
+    }
+    const auto tuner = rtlsdr_get_tuner_type(stream.device);
+    const bool combinedManual = tuner == RTLSDR_TUNER_R820T || tuner == RTLSDR_TUNER_R828D;
+    const int result = stream.rf_gain_controller.apply(stream.rf_agc, selectedGain, combinedManual,
+        [](int mode) { return rtlsdr_set_tuner_gain_mode(stream.device, mode); },
+        [](int gain) { return rtlsdr_set_tuner_gain(stream.device, gain); });
+    if (result == 0 && !stream.rf_agc) stream.gain_tenths_db = selectedGain;
     return result;
 }
 
@@ -215,6 +223,7 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     if (result == 0) result = rtlsdr_set_sample_rate(stream.device, WfmDemodulator::inputSampleRate);
     if (result == 0) result = rtlsdr_set_center_freq(stream.device, static_cast<uint32_t>(plan.centerHz));
     if (result == 0) result = rtlsdr_set_agc_mode(stream.device, 0);
+    stream.rf_gain_controller.reset();
     if (result == 0) result = apply_rf_gain();
     if (result == 0) result = rtlsdr_set_bias_tee(stream.device, stream.bias_t ? 1 : 0);
     if (result == 0) result = rtlsdr_reset_buffer(stream.device);
@@ -370,6 +379,7 @@ Java_com_example_sdr_NativeSdr_stopStream(JNIEnv *, jobject) {
     rtlsdr_set_bias_tee(stream.device, 0);
     rtlsdr_close(stream.device);
     stream.device = nullptr;
+    stream.rf_gain_controller.reset();
     close(stream.fd);
     stream.fd = -1;
     stream.running = 0;
