@@ -161,16 +161,16 @@ fun ReceiverScreen(
             Modifier.weight(1f).fillMaxHeight().padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(Modifier.fillMaxWidth().height(100.dp)) {
-                Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.fillMaxWidth().height(80.dp)) {
+                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(210.dp))
                 BoxWithConstraints(Modifier.weight(1f)) {
                 val frequencyText = formatFrequency(currentFrequencyHz)
-                val frequencyStyle = TextStyle(fontSize = 52.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp)
+                val frequencyStyle = TextStyle(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp)
                 val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
                 val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 17.sp)).size.width
                 val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - 6.dp.toPx() } - unitsWidth
-                val frequencyFontSize = (52f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
+                val frequencyFontSize = (44f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
                 Row(
                     Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
@@ -192,18 +192,14 @@ fun ReceiverScreen(
                             frequencyText,
                             Modifier.alignByBaseline().clickable { editingFrequency = true },
                             color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light,
-                            letterSpacing = (frequencyFontSize.value / 52f).sp, maxLines = 1
+                            letterSpacing = (frequencyFontSize.value / 44f).sp, maxLines = 1
                         )
                     }
                     Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp, maxLines = 1, softWrap = false)
                 }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
-                    Text(
-                        if (connected && permitted) "CONNECTED" else "DISCONNECTED",
-                        color = muted, fontSize = 10.sp, letterSpacing = 0.5.sp
-                    )
+                    Box(Modifier.semantics { contentDescription = if (connected && permitted) "USB connected" else "USB disconnected" }.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
                     BatteryIndicator(batteryPercent, batteryCharging)
                     SmallAction(
                         if (streaming) "STOP" else if (!permitted) "USB ACCESS" else "START",
@@ -216,16 +212,11 @@ fun ReceiverScreen(
                             else -> onStartStream()
                         }
                     }
-                    Canvas(Modifier.width(30.dp).height(32.dp).clickable { selected = "Settings" }.padding(6.dp)) {
-                        for (line in 0..2) {
-                            val y = size.height * (0.2f + 0.3f * line)
-                            drawLine(ivory, Offset(0f, y), Offset(size.width, y), 1.5.dp.toPx())
-                        }
-                    }
+
                 }
                 }
                 Row(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(36.dp),
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -358,7 +349,7 @@ fun ReceiverScreen(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().height(86.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
                     Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -426,7 +417,7 @@ fun ReceiverScreen(
 private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
     Column(Modifier.width(108.dp).fillMaxHeight().background(Color(0xFF171819))) {
         Text("SDR", Modifier.padding(start = 13.dp, top = 8.dp), color = warm, fontSize = 31.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
-        Text("GOOD SIGNALS", Modifier.padding(start = 13.dp, top = 1.dp, bottom = 19.dp), color = muted, fontSize = 11.sp, letterSpacing = 0.2.sp)
+        Text("GOOD SIGNALS", Modifier.padding(start = 13.dp, top = 1.dp, bottom = 3.dp), color = muted, fontSize = 11.sp, letterSpacing = 0.2.sp)
         listOf("Receiver" to "◉", "Spectrum" to "▥", "Waterfall" to "≋", "Bookmarks" to "☆", "Record" to "○", "Settings" to "⚙").forEach { (name, icon) ->
             val available = name in setOf("Receiver", "Spectrum", "Waterfall", "Settings")
             Row(
@@ -451,18 +442,18 @@ private fun GainPanel(gain: ReceiverGain, gainSteps: List<Int>, onChange: (Recei
     val currentChange by rememberUpdatedState(onChange)
     val index = gainSteps.indices.minByOrNull { kotlin.math.abs(gainSteps[it] - gain.gainTenthsDb) } ?: 0
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().height(20.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             AgcToggle("RF AGC", gain.rfAgc, Modifier.weight(0.85f)) { onChange(gain.copy(rfAgc = !gain.rfAgc)) }
             AgcToggle("AUDIO AGC", gain.audioAgc, Modifier.weight(1f)) { onChange(gain.copy(audioAgc = !gain.audioAgc)) }
             AgcToggle("BIAS-T", gain.biasT, Modifier.weight(0.85f)) { onChange(gain.copy(biasT = !gain.biasT)) }
         }
-        Row(Modifier.fillMaxWidth().height(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("GAIN", color = muted, fontSize = 10.sp)
             Box(Modifier.weight(1f))
             Text(if (gain.rfAgc) "AUTO" else "%.1f dB".format(Locale.US, gain.gainTenthsDb / 10f), color = if (gain.rfAgc) muted else warm, fontSize = 10.sp)
         }
         Canvas(
-            Modifier.fillMaxWidth().height(18.dp)
+            Modifier.fillMaxWidth().height(16.dp)
                 .semantics {
                     contentDescription = "RF gain"
                     progressBarRangeInfo = ProgressBarRangeInfo(index.toFloat(), 0f..gainSteps.lastIndex.toFloat(), maxOf(0, gainSteps.size - 2))
@@ -777,17 +768,17 @@ private fun SignalMeter(
             val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
             drawLine(sqlColor, Offset(sqlX, barTop - 3.dp.toPx()), Offset(sqlX, size.height), 1.5.dp.toPx())
             val triangle = Path().apply {
-                moveTo(sqlX, barTop - 1.dp.toPx())
-                lineTo(sqlX - 4.dp.toPx(), barTop - 6.dp.toPx())
-                lineTo(sqlX + 4.dp.toPx(), barTop - 6.dp.toPx())
+                moveTo(sqlX, barTop + barHeight + 1.dp.toPx())
+                lineTo(sqlX - 3.dp.toPx(), size.height)
+                lineTo(sqlX + 3.dp.toPx(), size.height)
                 close()
             }
             drawPath(triangle, sqlColor)
             val readoutX = right + (size.width - right) / 2f
             labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
-            labelPaint.textSize = 14.sp.toPx()
+            labelPaint.textSize = 12.sp.toPx()
             labelPaint.isFakeBoldText = true
-            drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 15.dp.toPx(), labelPaint)
+            drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 12.dp.toPx(), labelPaint)
             labelPaint.isFakeBoldText = false
             labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
             labelPaint.textSize = 9.sp.toPx()
@@ -810,7 +801,7 @@ private fun SignalMeter(
 private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, onChange: (Boolean) -> Unit) {
     val active = available && enabled
     Column(
-        Modifier.width(60.dp).height(36.dp)
+        Modifier.width(60.dp).height(28.dp)
             .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
             .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
             .clickable(enabled = available) { onChange(!enabled) }
@@ -826,7 +817,7 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
 @Composable
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(
-        Modifier.width(41.dp).height(36.dp)
+        Modifier.width(41.dp).height(28.dp)
             .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
             .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
