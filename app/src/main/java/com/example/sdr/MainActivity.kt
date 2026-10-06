@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
     private var lastSpectrumGeneration = 0L
     private var lastWaterfallGeneration = 0L
     private var waterfallFrameRate by mutableStateOf(WaterfallFrameRate.FPS_30)
+    private val encoderHaptics by lazy { EncoderHaptics(this) }
+    private var encoderFeedback by mutableStateOf(EncoderFeedback.LIGHT)
     private var tuningStep by mutableStateOf(TuningStep.KHZ_100)
     private var demodulationMode by mutableStateOf(DemodulationMode.WFM)
     private var receiverGain by mutableStateOf(ReceiverGain())
@@ -188,6 +190,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         waterfallFrameRate = displaySettings.waterfallFrameRate()
         tuningStep = displaySettings.tuningStep()
+        encoderFeedback = displaySettings.encoderFeedback()
         receiverGain = displaySettings.receiverGain()
         wfmStereoEnabled = displaySettings.wfmStereoEnabled()
         NativeSdr.setWfmStereo(wfmStereoEnabled)
@@ -215,6 +218,14 @@ class MainActivity : ComponentActivity() {
                 waterfallState = waterfallState,
                 waterfallFrameRate = waterfallFrameRate,
                 tuningStep = tuningStep,
+                encoderFeedback = encoderFeedback,
+                onEncoderTick = { encoderHaptics.tick(encoderFeedback) },
+                onEncoderFeedbackChange = {
+                    encoderFeedback = it
+                    displaySettings.saveEncoderFeedback(it)
+                    if (it == EncoderFeedback.OFF) encoderHaptics.cancel()
+                    else encoderHaptics.tick(it)
+                },
                 actualSpectrumFps = actualSpectrumFps,
                 actualWaterfallFps = actualWaterfallFps,
                 signalDbfs = signalDbfs,
@@ -300,6 +311,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        encoderHaptics.cancel()
         unregisterReceiver(batteryReceiver)
         receiverSession.releaseIdleAudio()
         mainHandler.removeCallbacks(streamPoll)

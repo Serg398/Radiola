@@ -125,7 +125,10 @@ fun ReceiverScreen(
     onSquelchChange: (ReceiverSquelch) -> Unit = {},
     wfmStereoEnabled: Boolean = false,
     wfmStereoLocked: Boolean = false,
-    onWfmStereoChange: (Boolean) -> Unit = {}
+    onWfmStereoChange: (Boolean) -> Unit = {},
+    encoderFeedback: EncoderFeedback = EncoderFeedback.LIGHT,
+    onEncoderFeedbackChange: (EncoderFeedback) -> Unit = {},
+    onEncoderTick: () -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
     var editingFrequency by remember { mutableStateOf(false) }
@@ -339,6 +342,17 @@ fun ReceiverScreen(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
+                        Text("ENCODER FEEDBACK", color = muted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            EncoderFeedback.entries.forEach { option ->
+                                Box(Modifier.weight(1f).height(30.dp)
+                                    .background(if (option == encoderFeedback) Color(0xFF3C2A1D) else surface, RoundedCornerShape(4.dp))
+                                    .border(1.dp, if (option == encoderFeedback) warm else edge, RoundedCornerShape(4.dp))
+                                    .clickable { onEncoderFeedbackChange(option) }, contentAlignment = Alignment.Center) {
+                                    Text(option.label, color = if (option == encoderFeedback) warm else ivory, fontSize = 11.sp)
+                                }
+                            }
+                        }
                         Text("DISPLAY SETTINGS", color = warm, fontSize = 14.sp, letterSpacing = 1.sp)
                         Text("Spectrum  30 FPS · actual $actualSpectrumFps", color = ivory, fontSize = 12.sp)
                         Text(
@@ -408,6 +422,7 @@ fun ReceiverScreen(
                     onStep = onStep,
                     tuningStep = tuningStep,
                     onTuningStepChange = onTuningStepChange,
+                    onTick = onEncoderTick,
                     modifier = Modifier.align(Alignment.CenterEnd).width(74.dp).fillMaxHeight()
                 )
             }
@@ -516,8 +531,10 @@ private fun VerticalEncoder(
     onStep: (Long) -> Unit,
     tuningStep: TuningStep,
     onTuningStepChange: (TuningStep) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTick: () -> Unit = {}
 ) {
+    val currentTick by rememberUpdatedState(onTick)
     val currentStep by rememberUpdatedState(onStep)
     val currentMode by rememberUpdatedState(tuningStep)
     var menuExpanded by remember { mutableStateOf(false) }
@@ -539,6 +556,7 @@ private fun VerticalEncoder(
         if (steps != 0) {
             travel -= steps * notch
             currentStep(steps * stepHz)
+            currentTick()
         }
     }
     Column(

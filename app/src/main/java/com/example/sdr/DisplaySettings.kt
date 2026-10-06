@@ -5,6 +5,14 @@ import android.content.Context
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
 
+    fun encoderFeedback(): EncoderFeedback = EncoderFeedback.entries.firstOrNull {
+        it.name == preferences.getString("encoder_feedback", EncoderFeedback.LIGHT.name)
+    } ?: EncoderFeedback.LIGHT
+
+    fun saveEncoderFeedback(feedback: EncoderFeedback) {
+        preferences.edit().putString("encoder_feedback", feedback.name).apply()
+    }
+
     fun wfmStereoEnabled(): Boolean = preferences.getBoolean("wfm_stereo", false)
 
     fun saveWfmStereo(enabled: Boolean) {
