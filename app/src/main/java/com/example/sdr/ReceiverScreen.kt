@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -128,7 +129,26 @@ fun ReceiverScreen(
     var editingFrequency by remember { mutableStateOf(false) }
     var zoom by remember { mutableStateOf(1f) }
     val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
-    val visibleCenterHz = currentFrequencyHz
+    var displayFrequencyHz by remember { mutableStateOf(currentFrequencyHz.toDouble()) }
+    LaunchedEffect(currentFrequencyHz) {
+        val target = currentFrequencyHz.toDouble()
+        // Preserve the current visual position when another encoder step arrives.
+        // Very large direct jumps have no overlapping spectrum to scroll through.
+        if (abs(target - displayFrequencyHz) > spectrumSpanHz * 2.0) {
+            displayFrequencyHz = target
+            return@LaunchedEffect
+        }
+        var previousFrame = System.nanoTime()
+        while (abs(target - displayFrequencyHz) > 0.5) {
+            withFrameNanos { frame ->
+                val dt = ((frame - previousFrame) / 1_000_000_000.0).coerceIn(0.0, 0.05)
+                previousFrame = frame
+                displayFrequencyHz += (target - displayFrequencyHz) * (1.0 - kotlin.math.exp(-dt / 0.065))
+            }
+        }
+        displayFrequencyHz = target
+    }
+    val visibleCenterHz = displayFrequencyHz
     val channelOffsetHz = 0L
     val passbandOffsetHz = demodulationMode.passbandOffsetHz.toLong()
     // Keep the viewport's actual width even while hardware catches up with tuning.
@@ -284,7 +304,7 @@ fun ReceiverScreen(
                                 factory = { WaterfallView(it) },
                                 update = { view ->
                                     view.setViewport(0.5f - 0.5f / zoom, 0.5f + 0.5f / zoom)
-                                    view.setTuning(currentFrequencyHz, visibleSpanHz)
+                                    view.setTuning(displayFrequencyHz.toLong(), visibleSpanHz)
                                     val values = waterfallState.value
                                     if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
                                 },

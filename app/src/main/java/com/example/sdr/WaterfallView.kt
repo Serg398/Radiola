@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.view.View
 
 /** Stores full FFT rows in a circular bitmap; zoom crops history without losing bins. */
@@ -34,7 +35,7 @@ class WaterfallView(context: Context) : View(context) {
         invalidate()
     }
     private val sourceRect = Rect(0, 0, renderWidth, plotHeight)
-    private val destinationRect = Rect()
+    private val destinationRect = RectF()
 
     fun setViewport(start: Float, end: Float) {
         val left = (start * plotWidth).toInt().coerceIn(0, plotWidth - 1)
@@ -101,10 +102,10 @@ class WaterfallView(context: Context) : View(context) {
             var rows = 1
             while (screenRow + rows < plotHeight && row + rows < plotHeight
                 && rowCentersHz[row + rows] == center) rows++
-            val shift = ((center - tuningFrequencyHz).toDouble() * width / visibleSpanHz).toInt()
+            val shift = ((center - tuningFrequencyHz).toDouble() * width / visibleSpanHz).toFloat()
             if (center != 0L && shift > -width && shift < width) {
                 sourceRect.set(0, row, renderWidth, row + rows)
-                destinationRect.set(shift, screenRow * rowHeight, shift + width, (screenRow + rows) * rowHeight)
+                destinationRect.set(shift, (screenRow * rowHeight).toFloat(), shift + width, ((screenRow + rows) * rowHeight).toFloat())
                 canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
             }
             screenRow += rows
