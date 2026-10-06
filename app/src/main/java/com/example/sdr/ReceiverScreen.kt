@@ -164,7 +164,11 @@ fun ReceiverScreen(
     val viewportEnd = viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
-        Sidebar(selected, onSelect = { selected = it })
+        Sidebar(selected, onSelect = {
+            encoderRotating = false
+            frequencyMotion.snapTo(currentFrequencyHz.toDouble())
+            selected = it
+        })
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -243,6 +247,21 @@ fun ReceiverScreen(
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
+                if (selected == "Settings") {
+                    SettingsPanel(
+                        gain = receiverGain, gainSteps = gainSteps, onGainChange = onReceiverGainChange,
+                        squelch = receiverSquelch, onSquelchChange = onSquelchChange,
+                        mode = demodulationMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
+                        frameRate = waterfallFrameRate, onFrameRateChange = onWaterfallFrameRateChange,
+                        tuningStep = tuningStep, onStepChange = onTuningStepChange,
+                        feedback = encoderFeedback, onFeedbackChange = onEncoderFeedbackChange,
+                        zoom = zoom, onResetZoom = { zoom = 1f },
+                        deviceName = deviceName, connected = connected, permitted = permitted,
+                        streaming = streaming, pending = streamPending,
+                        onPermission = onRequestPermission, onUsbTest = onCheckConnection, onIqTest = onCaptureIq,
+                        onClose = { selected = "Receiver" }
+                    )
+                } else {
                 Column(
                     Modifier.fillMaxSize().padding(end = 82.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -337,36 +356,7 @@ fun ReceiverScreen(
                         }
                     }
                 }
-                if (selected == "Settings") {
-                    Column(
-                        Modifier.align(Alignment.Center).width(280.dp)
-                            .border(1.dp, Color(0xFF76502F), RoundedCornerShape(6.dp))
-                            .background(Color(0xF217191A), RoundedCornerShape(6.dp))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        Text("ENCODER FEEDBACK", color = muted, fontSize = 11.sp)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            EncoderFeedback.entries.forEach { option ->
-                                Box(Modifier.weight(1f).height(30.dp)
-                                    .background(if (option == encoderFeedback) Color(0xFF3C2A1D) else surface, RoundedCornerShape(4.dp))
-                                    .border(1.dp, if (option == encoderFeedback) warm else edge, RoundedCornerShape(4.dp))
-                                    .clickable { onEncoderFeedbackChange(option) }, contentAlignment = Alignment.Center) {
-                                    Text(option.label, color = if (option == encoderFeedback) warm else ivory, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                        Text("DISPLAY SETTINGS", color = warm, fontSize = 14.sp, letterSpacing = 1.sp)
-                        Text("Spectrum  30 FPS · actual $actualSpectrumFps", color = ivory, fontSize = 12.sp)
-                        Text(
-                            "Waterfall  ${waterfallFrameRate.framesPerSecond} FPS · actual $actualWaterfallFps  ⌄",
-                            Modifier.clickable {
-                                onWaterfallFrameRateChange(if (waterfallFrameRate == WaterfallFrameRate.FPS_30) WaterfallFrameRate.FPS_60 else WaterfallFrameRate.FPS_30)
-                            }, color = warm, fontSize = 12.sp
-                        )
-                        Text(if (connected && permitted) "RTL-SDR V4 connected" else "RTL-SDR V4 disconnected", color = muted, fontSize = 12.sp)
-                    }
-                }
+
             }
             Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
@@ -440,6 +430,7 @@ fun ReceiverScreen(
                     },
                     modifier = Modifier.align(Alignment.CenterEnd).width(74.dp).fillMaxHeight()
                 )
+                }
             }
         }
     }
