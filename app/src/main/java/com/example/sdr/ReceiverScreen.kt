@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
@@ -416,23 +417,23 @@ fun ReceiverScreen(
 @Composable
 private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
     Column(Modifier.width(108.dp).fillMaxHeight().background(Color(0xFF171819))) {
-        Text("SDR", Modifier.padding(start = 13.dp, top = 8.dp), color = warm, fontSize = 31.sp, fontWeight = FontWeight.Light, letterSpacing = 2.sp)
-        Text("GOOD SIGNALS", Modifier.padding(start = 13.dp, top = 1.dp, bottom = 3.dp), color = muted, fontSize = 11.sp, letterSpacing = 0.2.sp)
-        listOf("Receiver" to "◉", "Spectrum" to "▥", "Waterfall" to "≋", "Bookmarks" to "☆", "Record" to "○", "Settings" to "⚙").forEach { (name, icon) ->
-            val available = name in setOf("Receiver", "Spectrum", "Waterfall", "Settings")
+        Box(Modifier.fillMaxWidth().height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
+            Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = warm, fontSize = 20.sp,
+                fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
+        }
+        listOf("Receiver" to "◉", "Settings" to "⚙").forEach { (name, icon) ->
             Row(
                 Modifier.fillMaxWidth().height(36.dp)
                     .background(if (selected == name) Color(0xFF35291D) else Color.Transparent)
-                    .clickable(enabled = available) { onSelect(name) }
+                    .clickable { onSelect(name) }
                     .padding(start = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(icon, Modifier.width(22.dp), color = if (selected == name) warm else muted, fontSize = 19.sp)
-                Text(name, Modifier.padding(start = 8.dp), color = if (available) ivory else Color(0xFF5A5753), fontSize = 12.sp, maxLines = 1)
+                Text(name, Modifier.padding(start = 8.dp), color = ivory, fontSize = 12.sp, maxLines = 1)
             }
         }
         Box(Modifier.weight(1f))
-        Text("Good signals\nbetter days", Modifier.padding(start = 12.dp, bottom = 10.dp), color = warm.copy(alpha = 0.8f), fontSize = 12.sp, lineHeight = 15.sp)
     }
 }
 

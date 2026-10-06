@@ -1,4 +1,4 @@
-# SDR для Android
+# Радиола ? SDR для Android
 
 Приложение SDR приёмника для Android с подключением RTL-SDR Blog V4 по USB OTG.
 Интерфейс написан на Kotlin и Jetpack Compose, драйвер и обработка сигнала — на C++ через Android NDK.
