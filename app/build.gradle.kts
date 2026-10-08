@@ -95,15 +95,15 @@ val generateDspProfiles = tasks.register("generateDspProfiles") {
         val kotlin = output.resolve("kotlin/com/example/sdr").apply { mkdirs() }
         val enumOrder = listOf("WFM", "NFM", "AM", "USB", "LSB", "CW")
         val entries = enumOrder.map { name -> modes.first { it["name"] == name } }
-            .joinToString(",\n") { "    ${it["name"]}(\"${it["label"]}\", ${it["id"]}, ${it["bandwidthHz"]}, ${it["offsetHz"]})" }
+            .joinToString(",\n") { "    ${it["name"]}(\"${it["label"]}\", ${it["id"]}, ${it["bandwidthHz"]}, ${it["offsetHz"]}, ${it["minBandwidthHz"]}, ${it["maxBandwidthHz"]}, listOf(${(it["bandwidthPresetsHz"] as List<*>).joinToString(", ")}))" }
         kotlin.resolve("DemodulationMode.kt").writeText("""
             // Generated from src/main/dsp/profiles.json. Edit the descriptor instead.
             package com.example.sdr
-            enum class DemodulationMode(val label: String, val nativeId: Int, val bandwidthHz: Int, val passbandOffsetHz: Int) {
+            enum class DemodulationMode(val label: String, val nativeId: Int, val bandwidthHz: Int, val passbandOffsetHz: Int, val minBandwidthHz: Int, val maxBandwidthHz: Int, val bandwidthPresetsHz: List<Int>) {
             $entries;
             }
         """.trimIndent() + "\n")
-        val profiles = modes.joinToString(",\n") { "    {${it["id"]}, ${it["bandwidthHz"]}, ${it["offsetHz"]}, ${it["filterCutoffHz"]}, ${it["inputCutoffHz"]}}" }
+        val profiles = modes.joinToString(",\n") { "    {${it["id"]}, ${it["bandwidthHz"]}, ${it["offsetHz"]}, ${it["filterCutoffHz"]}, ${it["inputCutoffHz"]}, ${it["minBandwidthHz"]}, ${it["maxBandwidthHz"]}}" }
         val rateText = """
             #pragma once
             #include <array>
@@ -111,7 +111,7 @@ val generateDspProfiles = tasks.register("generateDspProfiles") {
             inline constexpr int iqRate = ${rates["iqHz"]};
             inline constexpr int channelRate = ${rates["channelHz"]};
             inline constexpr int audioRate = ${rates["audioHz"]};
-            struct Profile { int id, bandwidthHz, offsetHz, filterCutoffHz, inputCutoffHz; };
+            struct Profile { int id, bandwidthHz, offsetHz, filterCutoffHz, inputCutoffHz, minBandwidthHz, maxBandwidthHz; };
             inline constexpr std::array<Profile, ${modes.size}> modes = {{
             $profiles
             }};

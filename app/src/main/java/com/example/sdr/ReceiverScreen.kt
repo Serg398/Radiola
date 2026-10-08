@@ -100,6 +100,8 @@ fun ReceiverScreen(
     spectrumSpanHz: Int,
     spectrumCenterFrequencyHz: Long,
     receiveBandwidthHz: Int,
+    bandwidthDefault: Boolean = true,
+    onBandwidthChange: (Int?) -> Unit = {},
     demodulationMode: DemodulationMode,
     receiverGain: ReceiverGain,
     gainSteps: List<Int>,
@@ -163,7 +165,7 @@ fun ReceiverScreen(
     }
     val visibleCenterHz = if (encoderRotating) displayFrequencyHz else currentFrequencyHz.toDouble()
     val channelOffsetHz = 0L
-    val passbandOffsetHz = demodulationMode.passbandOffsetHz.toLong()
+    val passbandOffsetHz = demodulationMode.offsetForBandwidth(receiveBandwidthHz).toLong()
     // Keep the viewport's actual width even while hardware catches up with tuning.
     val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat()
     val viewportEnd = viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz
@@ -237,13 +239,13 @@ fun ReceiverScreen(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("MODE", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
                     ModePill("FM", demodulationMode == DemodulationMode.NFM) { onDemodulationModeChange(DemodulationMode.NFM) }
                     ModePill("USB", demodulationMode == DemodulationMode.USB) { onDemodulationModeChange(DemodulationMode.USB) }
                     ModePill("LSB", demodulationMode == DemodulationMode.LSB) { onDemodulationModeChange(DemodulationMode.LSB) }
                     ModePill("CW", demodulationMode == DemodulationMode.CW) { onDemodulationModeChange(DemodulationMode.CW) }
+                    BandwidthControl(demodulationMode, receiveBandwidthHz, bandwidthDefault, onBandwidthChange)
                     StereoToggle(
                         demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
@@ -280,7 +282,7 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.passbandOffsetHz, viewportStart, viewportEnd, Modifier.fillMaxSize())
+                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.offsetForBandwidth(receiveBandwidthHz), viewportStart, viewportEnd, Modifier.fillMaxSize())
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)

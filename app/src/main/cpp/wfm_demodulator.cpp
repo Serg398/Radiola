@@ -6,6 +6,7 @@
 void WfmDemodulator::reset() {
     mixer_.reset();
     decimator_.reset();
+    channel_.reset();
     previousI_ = 0.0f;
     previousQ_ = 0.0f;
     havePrevious_ = false;
@@ -24,6 +25,9 @@ size_t WfmDemodulator::process(
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
         float currentI, currentQ;
         if (!decimator_.push(mixedI, mixedQ, currentI, currentQ)) continue;
+
+        channel_.push(currentI, currentQ);
+        if (bandwidth_ < channelBandwidthHz) channel_.output(currentI, currentQ);
 
         if (havePrevious_) {
             const float cross = previousI_ * currentQ - previousQ_ * currentI;

@@ -21,7 +21,16 @@
       "bandwidthHz": 240000,
       "offsetHz": 0,
       "filterCutoffHz": 120000,
-      "inputCutoffHz": 120000
+      "inputCutoffHz": 120000,
+      "minBandwidthHz": 100000,
+      "maxBandwidthHz": 240000,
+      "bandwidthPresetsHz": [
+        100000,
+        150000,
+        180000,
+        200000,
+        240000
+      ]
     },
     {
       "name": "AM",
@@ -30,7 +39,17 @@
       "bandwidthHz": 12000,
       "offsetHz": 0,
       "filterCutoffHz": 6000,
-      "inputCutoffHz": 6000
+      "inputCutoffHz": 6000,
+      "minBandwidthHz": 2000,
+      "maxBandwidthHz": 20000,
+      "bandwidthPresetsHz": [
+        3000,
+        4000,
+        6000,
+        9000,
+        12000,
+        16000
+      ]
     },
     {
       "name": "NFM",
@@ -39,7 +58,16 @@
       "bandwidthHz": 12500,
       "offsetHz": 0,
       "filterCutoffHz": 6250,
-      "inputCutoffHz": 6250
+      "inputCutoffHz": 6250,
+      "minBandwidthHz": 6000,
+      "maxBandwidthHz": 25000,
+      "bandwidthPresetsHz": [
+        6250,
+        12500,
+        15000,
+        20000,
+        25000
+      ]
     },
     {
       "name": "USB",
@@ -48,7 +76,17 @@
       "bandwidthHz": 2700,
       "offsetHz": 1500,
       "filterCutoffHz": 1350,
-      "inputCutoffHz": 5000
+      "inputCutoffHz": 5000,
+      "minBandwidthHz": 500,
+      "maxBandwidthHz": 4000,
+      "bandwidthPresetsHz": [
+        1800,
+        2200,
+        2700,
+        3000,
+        3600,
+        4000
+      ]
     },
     {
       "name": "LSB",
@@ -57,7 +95,17 @@
       "bandwidthHz": 2700,
       "offsetHz": -1500,
       "filterCutoffHz": 1350,
-      "inputCutoffHz": 5000
+      "inputCutoffHz": 5000,
+      "minBandwidthHz": 500,
+      "maxBandwidthHz": 4000,
+      "bandwidthPresetsHz": [
+        1800,
+        2200,
+        2700,
+        3000,
+        3600,
+        4000
+      ]
     },
     {
       "name": "CW",
@@ -66,7 +114,17 @@
       "bandwidthHz": 500,
       "offsetHz": 0,
       "filterCutoffHz": 250,
-      "inputCutoffHz": 5000
+      "inputCutoffHz": 5000,
+      "minBandwidthHz": 100,
+      "maxBandwidthHz": 1500,
+      "bandwidthPresetsHz": [
+        100,
+        200,
+        300,
+        500,
+        800,
+        1000
+      ]
     }
   ]
 }

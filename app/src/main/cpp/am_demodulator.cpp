@@ -6,9 +6,8 @@
 
 void AmDemodulator::reset() {
     mixer_.reset();
-    historyI_.fill(0.0f);
-    historyQ_.fill(0.0f);
-    historyPosition_ = 0;
+    setBandwidth(channelBandwidthHz);
+    channel_.reset();
     decimator_.reset();
     audioCount_ = 0;
     carrier_ = 0.0f;
@@ -18,7 +17,6 @@ void AmDemodulator::reset() {
 size_t AmDemodulator::process(
     const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity
 ) {
-    const auto& coefficients = DspFilters::amChannel();
     size_t produced = 0;
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
         float mixedI, mixedQ;
@@ -26,20 +24,13 @@ size_t AmDemodulator::process(
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
         float channelI, channelQ;
         if (!decimator_.push(mixedI, mixedQ, channelI, channelQ)) continue;
-        historyI_[historyPosition_] = channelI;
-        historyQ_[historyPosition_] = channelQ;
-        historyPosition_ = (historyPosition_ + 1) % tapsCount;
+        channel_.push(channelI, channelQ);
         if (++audioCount_ < audioDecimation) continue;
         audioCount_ = 0;
 
         float filteredI = 0.0f;
         float filteredQ = 0.0f;
-        int position = historyPosition_;
-        for (float coefficient : coefficients) {
-            position = position == 0 ? tapsCount - 1 : position - 1;
-            filteredI += coefficient * historyI_[position];
-            filteredQ += coefficient * historyQ_[position];
-        }
+        channel_.output(filteredI, filteredQ);
         const float envelope = std::sqrt(filteredI * filteredI + filteredQ * filteredQ);
         if (warmupSamples_ > 0) {
             --warmupSamples_;

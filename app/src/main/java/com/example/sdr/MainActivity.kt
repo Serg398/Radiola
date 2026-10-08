@@ -207,8 +207,8 @@ class MainActivity : ComponentActivity() {
                     if (spectrumChanged) {
                         val bins = frame.bins
                         var peak = -90f
-                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.passbandOffsetHz - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
-                        val halfBins = maxOf(1, demodulationMode.bandwidthHz * bins.size / (2 * receiverRates[0]))
+                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.offsetForBandwidth(runtime.bandwidth(demodulationMode)) - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
+                        val halfBins = maxOf(1, runtime.bandwidth(demodulationMode) * bins.size / (2 * receiverRates[0]))
                         for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
                             if (bins[index] > peak) peak = bins[index]
                         }
@@ -284,7 +284,9 @@ class MainActivity : ComponentActivity() {
                 currentFrequencyHz = frequencyHz,
                 spectrumSpanHz = receiverRates[0],
                 spectrumCenterFrequencyHz = spectrumCenterFrequencyHz.takeIf { it > 0 } ?: frequencyHz,
-                receiveBandwidthHz = demodulationMode.bandwidthHz,
+                receiveBandwidthHz = runtime.bandwidth(demodulationMode),
+                bandwidthDefault = runtime.bandwidths[demodulationMode] == null,
+                onBandwidthChange = { runtime.setBandwidth(demodulationMode, it) },
                 demodulationMode = demodulationMode,
                 receiverGain = receiverGain,
                 gainSteps = gainSteps,

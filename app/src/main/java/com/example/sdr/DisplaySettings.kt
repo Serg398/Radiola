@@ -4,6 +4,12 @@ import android.content.Context
 
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
+    fun bandwidth(mode: DemodulationMode): Int? = preferences.getInt("bandwidth_${mode.name}", 0)
+        .takeIf { it in mode.minBandwidthHz..mode.maxBandwidthHz }
+    fun saveBandwidth(mode: DemodulationMode, hz: Int?) {
+        if (hz == null) preferences.edit().remove("bandwidth_${mode.name}").apply()
+        else preferences.edit().putInt("bandwidth_${mode.name}", hz.coerceIn(mode.minBandwidthHz, mode.maxBandwidthHz)).apply()
+    }
 
     fun encoderFeedback(): EncoderFeedback = EncoderFeedback.entries.firstOrNull {
         it.name == preferences.getString("encoder_feedback", EncoderFeedback.LIGHT.name)

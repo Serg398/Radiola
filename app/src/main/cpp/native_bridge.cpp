@@ -57,6 +57,7 @@ struct StreamState {
     bool bias_t = false; // Protected by stream_mutex.
     int gain_tenths_db = 197;
     RfGainController rf_gain_controller; // Protected by stream_mutex.
+    std::array<std::atomic<int>, 6> bandwidths{}; // zero selects the profile default
     std::atomic<int> demodulation{0}; // 0=WFM, 1=AM, 2=NFM, 3=USB, 4=LSB, 5=CW
     int active_demodulation = 0; // IQ callback thread only
     std::atomic<bool> retune_audio{false};
@@ -116,6 +117,15 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     } else if (retuned && mode == 2) {
         stream.nfm.retune();
     }
+    const auto& profile = DspProfiles::modes[mode];
+    const int selectedBandwidth = stream.bandwidths[mode].load(std::memory_order_relaxed);
+    const int bandwidth = selectedBandwidth == 0 ? profile.bandwidthHz : selectedBandwidth;
+    const int passband_offset = mode == 3 || mode == 4
+        ? (mode == 3 ? 1 : -1) * (std::abs(profile.offsetHz) - profile.bandwidthHz / 2 + bandwidth / 2) : 0;
+    if (mode == 0) stream.wfm.setBandwidth(bandwidth);
+    else if (mode == 1) stream.am.setBandwidth(bandwidth);
+    else if (mode == 2) stream.nfm.setBandwidth(bandwidth);
+    else stream.ssb.setBandwidth(mode, bandwidth);
     stream.wfm.setFrequencyOffset(offsetHz);
     stream.am.setFrequencyOffset(offsetHz);
     stream.nfm.setFrequencyOffset(offsetHz);
@@ -200,8 +210,6 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         const float power = std::norm(values[(i + n / 2) % n]) / (n * n);
         frame[i] = 10.0f * std::log10(power + 1.0e-18f);
     }
-    const int bandwidth = DspProfiles::modes[mode].bandwidthHz;
-    const int passband_offset = DspProfiles::modes[mode].offsetHz;
     const int center_bin = static_cast<int>(std::lround(n / 2.0 + (offsetHz + passband_offset) * static_cast<double>(n) / WfmDemodulator::inputSampleRate));
     const int half_bins = std::max(1, bandwidth * n / (2 * WfmDemodulator::inputSampleRate));
     stream.channel_signal = -180.f;
@@ -288,6 +296,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_example_sdr_NativeSdr_setDemodulation(JNIEnv *, jobject, jint mode) {
     if (mode < 0 || mode > 5) return;
     stream.demodulation.store(mode, std::memory_order_release);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_sdr_NativeSdr_setBandwidth(JNIEnv *, jobject, jint mode, jint hz) {
+    if (mode < 0 || mode > 5) return;
+    const auto& profile = DspProfiles::modes[mode];
+    stream.bandwidths[mode].store(hz == 0 ? 0 : std::clamp(static_cast<int>(hz), profile.minBandwidthHz, profile.maxBandwidthHz), std::memory_order_release);
 }
 
 extern "C" JNIEXPORT jint JNICALL

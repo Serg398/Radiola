@@ -14,6 +14,7 @@ object NativeSdr {
     external fun setFrequency(frequencyHz: Long): Int
     external fun setWfmStereo(enabled: Boolean)
     external fun wfmStereoLocked(): Boolean
+    external fun setBandwidth(mode: Int, hz: Int)
     external fun setDemodulation(mode: Int)
     external fun setGainControls(rfAgc: Boolean, gainTenthsDb: Int, audioAgc: Boolean, biasT: Boolean): Int
     external fun tunerGains(): IntArray

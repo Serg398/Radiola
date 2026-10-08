@@ -35,6 +35,15 @@ class ReceiverRuntime(private val context: Context) {
     var gain = DisplaySettings(context).receiverGain()
     var stereo = DisplaySettings(context).wfmStereoEnabled()
     var squelch = DisplaySettings(context).receiverSquelch()
+    var bandwidths by mutableStateOf(DemodulationMode.entries.associateWith { DisplaySettings(context).bandwidth(it) })
+        private set
+    fun bandwidth(mode: DemodulationMode) = bandwidths[mode] ?: mode.bandwidthHz
+    fun setBandwidth(mode: DemodulationMode, hz: Int?) {
+        val value = hz?.coerceIn(mode.minBandwidthHz, mode.maxBandwidthHz)
+        bandwidths = bandwidths + (mode to value)
+        DisplaySettings(context).saveBandwidth(mode, value)
+        NativeSdr.setBandwidth(mode.nativeId, value ?: 0)
+    }
     var pendingStart: UsbDevice? = null
         private set
     private var visible = 0
@@ -81,6 +90,7 @@ class ReceiverRuntime(private val context: Context) {
         }
     }
     init {
+        DemodulationMode.entries.forEach { NativeSdr.setBandwidth(it.nativeId, bandwidths[it] ?: 0) }
         ContextCompat.registerReceiver(context, usbReceiver, IntentFilter().apply {
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)

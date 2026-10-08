@@ -50,7 +50,7 @@ try {
     $output = Join-Path $workspace 'app\build\dsp-tests'
     New-Item $output -ItemType Directory -Force -ErrorAction Stop | Out-Null
     $tests = if ($BaselineDirectory) { @('demod_interference_test', 'dsp_benchmark') } else {
-        @('anti_alias_test', 'filter_bandwidth_test', 'am_demodulator_test', 'nfm_demodulator_test', 'ssb_demodulator_test',
+        @('anti_alias_test', 'filter_bandwidth_test', 'channel_bandwidth_test', 'am_demodulator_test', 'nfm_demodulator_test', 'ssb_demodulator_test',
           'wfm_stereo_test', 'tuning_continuity_test', 'audio_agc_test', 'squelch_test',
           'rf_gain_controller_test', 'audio_queue_policy_test', 'hf_tuning_test', 'demod_interference_test', 'dsp_benchmark')
     }
@@ -68,7 +68,7 @@ try {
         } else {
             $compiler = Join-Path $compilerDirectory 'clang++.exe'
             $flags += @('-std=c++17', '-static-libstdc++', "$workspace\app\src\test\cpp\$test.cpp")
-            if ($test -match '^(am_demodulator|wfm_stereo|tuning_continuity|demod_interference|dsp_benchmark)_test$' -or $test -eq 'dsp_benchmark') {
+            if ($test -match '^(am_demodulator|wfm_stereo|tuning_continuity|demod_interference|channel_bandwidth|dsp_benchmark)_test$' -or $test -eq 'dsp_benchmark') {
                 $flags += @("$source\am_demodulator.cpp", "$source\wfm_demodulator.cpp")
             }
         }

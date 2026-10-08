@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "frequency_mixer.h"
 #include "iq_decimator.h"
+#include "channel_filter.h"
 #include "fm_stereo_decoder.h"
 
 class WfmDemodulator {
@@ -12,6 +13,7 @@ public:
     static constexpr int inputSampleRate = DspProfiles::iqRate;
     static constexpr int channelBandwidthHz = DspProfiles::modes[0].bandwidthHz;
     void reset();
+    void setBandwidth(int hz) { bandwidth_ = hz; if (hz < channelBandwidthHz) channel_.configure(hz, DspProfiles::channelRate, 161); }
     void setFrequencyOffset(int hz) { mixer_.setOffset(hz); }
     // Keep the audio filters running; ignore only the first cross-tuning phase difference.
     void retune() { discardPhaseOnce_ = true; }
@@ -24,6 +26,8 @@ public:
 private:
     FrequencyMixer mixer_;
     IqDecimator decimator_;
+    ChannelFilter channel_;
+    int bandwidth_ = channelBandwidthHz;
     float previousI_ = 0.0f;
     float previousQ_ = 0.0f;
     bool havePrevious_ = false;

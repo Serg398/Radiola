@@ -7,6 +7,7 @@
 #include "frequency_mixer.h"
 #include "iq_decimator.h"
 #include "dsp_filters.h"
+#include "channel_filter.h"
 
 // USB/LSB: 150..2850 Hz sideband. CW: +/-250 Hz, heard at 700 Hz.
 // Complex filters select the sideband before product detection.
@@ -14,22 +15,28 @@ class SsbDemodulator {
 public:
     void reset() {
         mixer_.reset();
+        bandwidth_ = 0; filterMode_ = -1;
         inputI_.fill(0); inputQ_.fill(0);
-        channelI_.fill(0); channelQ_.fill(0);
-        inputPosition_ = channelPosition_ = audioCount_ = voiceCount_ = 0;
+        channel_.reset();
+        inputPosition_ = audioCount_ = voiceCount_ = 0;
         decimator_.reset();
         voiceI_ = voiceQ_ = previousAudio_ = dc_ = 0;
         phase_ = tonePhase_ = 0;
+    }
+    void setBandwidth(int mode, int hz) {
+        bandwidth_ = hz;
+        channel_.configure(hz, voiceRate, mode == 5 && hz < 500 ? 513 : 129);
     }
     void setFrequencyOffset(int hz) { mixer_.setOffset(hz); }
     // Native mode IDs: USB=3, LSB=4, CW=5.
     size_t process(const uint8_t* iq, size_t bytes, int mode, int16_t* output, size_t capacity) {
         const auto& inputFilter = DspFilters::ssbInput();
-        const auto& ssbFilter = DspFilters::ssbChannel();
-        const auto& cwFilter = DspFilters::cwChannel();
+        if (bandwidth_ == 0 || mode != filterMode_) {
+            setBandwidth(mode, bandwidth_ == 0 ? DspProfiles::modes[mode].bandwidthHz : bandwidth_);
+            filterMode_ = mode;
+        }
         constexpr float pi = 3.14159265358979323846f;
-        const float shift = DspProfiles::modes[mode].offsetHz;
-        const auto& coefficients = mode == 5 ? cwFilter : ssbFilter;
+        const float shift = mode == 5 ? 0.f : (mode == 3 ? 1.f : -1.f) * (std::abs(DspProfiles::modes[mode].offsetHz) - DspProfiles::modes[mode].bandwidthHz * .5f + bandwidth_ * .5f);
         size_t produced = 0;
         for (size_t byte = 0; byte + 1 < bytes; byte += 2) {
             float mixedI, mixedQ;
@@ -54,15 +61,8 @@ public:
             i = voiceI_ / 4; q = voiceQ_ / 4;
             voiceI_ = voiceQ_ = 0;
             const float c = std::cos(phase_), s = std::sin(phase_);
-            channelI_[channelPosition_] = i*c + q*s;
-            channelQ_[channelPosition_] = q*c - i*s;
-            channelPosition_ = (channelPosition_ + 1) % 129;
-            i = q = 0; position = channelPosition_;
-            for (float coefficient : coefficients) {
-                position = position == 0 ? 128 : position - 1;
-                i += coefficient * channelI_[position];
-                q += coefficient * channelQ_[position];
-            }
+            channel_.push(i*c + q*s, q*c - i*s);
+            channel_.output(i, q);
             float audio;
             if (mode == 5) {
                 audio = i * std::cos(tonePhase_) - q * std::sin(tonePhase_);
@@ -90,8 +90,9 @@ private:
     FrequencyMixer mixer_;
     IqDecimator decimator_;
     std::array<float, 161> inputI_{}, inputQ_{};
-    std::array<float, 129> channelI_{}, channelQ_{};
-    int inputPosition_ = 0, channelPosition_ = 0, audioCount_ = 0, voiceCount_ = 0;
+    ChannelFilter channel_;
+    int bandwidth_ = 0, filterMode_ = -1;
+    int inputPosition_ = 0, audioCount_ = 0, voiceCount_ = 0;
     float voiceI_ = 0, voiceQ_ = 0;
     float phase_ = 0, tonePhase_ = 0, previousAudio_ = 0, dc_ = 0;
 };
