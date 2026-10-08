@@ -64,7 +64,7 @@ APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
 .\scripts\Run-DspTests.ps1
 ```
 
-Скрипт генерирует DSP-профили, компилирует 13 нативных программ через NDK проекта
+Скрипт генерирует DSP-профили, компилирует 14 нативных программ через NDK проекта
 с оптимизацией `-O3` и включёнными assertions, затем запускает их на Android.
 RF-сигнал для тестов синтетический, подключать донгл не требуется.
 Проверяются фильтрация алиасов, полосы, все модуляции, стерео, перестройка,
@@ -96,3 +96,23 @@ SDK берётся из `ANDROID_HOME` либо `%LOCALAPPDATA%\Android\Sdk`;
 
 `ReceiverControllerTest` моделирует блокирующие аппаратные вызовы, отмену START,
 приоритет STOP, потерю USB, объединение настроек и устаревшие ответы.
+
+`AudioRecoveryTest` проверяет ограничение попыток восстановления и зависшие записи.
+`audio_queue_policy_test` проверяет порог 120 мс и переполнение счётчика кольцевой очереди.
+
+Проверки жизненного цикла и audio focus требуют телефона с разрешённым USB-доступом к RTL-SDR.
+После сборки можно запустить их напрямую, сохранив установленное приложение:
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r app/build/outputs/apk/debug/app-debug.apk
+& $adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+& $adb shell am instrument -w -r com.example.sdr.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Перед запуском откройте приложение и разрешите доступ к донглу; без устройства/разрешения
+аппаратные тесты пропускаются. Прямой запуск оставляет приложение установленным.
+Для Gradle-прогонов также задано `android.injected.androidTest.leaveApksInstalledAfterRun=true`.
+Уведомление активного приёма позволяет остановить его в фоне. Потеря audio focus или
+отключение наушников останавливает приём; возобновление выполняется кнопкой START.

@@ -6,6 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiverControllerTest {
+    @Test fun deferredStartWaitsForForegroundServiceAndRemainsCancellable() {
+        val f = Fixture()
+        f.controller.start("usb", 100, DemodulationMode.AM, ReceiverGain(), deferred = true)
+        f.controller.tune(200)
+        f.worker.drain()
+        assertTrue(f.hardware.calls.isEmpty())
+        assertEquals(ReceiverState.Starting, f.controller.snapshot().state)
+        f.controller.stop(); f.worker.drain()
+        f.controller.activateStart(); f.worker.drain()
+        assertEquals(listOf("stop"), f.hardware.calls)
+    }
+    @Test fun foregroundServiceActivatesTheLatestPreparedSettings() {
+        val f = Fixture()
+        f.controller.start("usb", 100, DemodulationMode.AM, ReceiverGain(), deferred = true)
+        f.controller.tune(200)
+        f.controller.activateStart(); f.worker.drain()
+        assertEquals("start:200", f.hardware.calls.first())
+        assertEquals(ReceiverState.Running, f.controller.snapshot().state)
+    }
     private class Worker : Executor {
         val queue = ArrayDeque<Runnable>()
         override fun execute(command: Runnable) { queue.addLast(command) }

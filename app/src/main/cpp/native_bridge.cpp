@@ -1,3 +1,4 @@
+#include "audio_queue_policy.h"
 #include <jni.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -64,6 +65,7 @@ struct StreamState {
     std::atomic<uint32_t> audio_tail{0};
     std::atomic<uint64_t> audio_produced{0};
     std::atomic<uint64_t> audio_dropped{0};
+    std::atomic<uint64_t> audio_trimmed{0};
 };
 
 StreamState stream;
@@ -255,6 +257,7 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.audio_tail = 0;
     stream.audio_produced = 0;
     stream.audio_dropped = 0;
+    stream.audio_trimmed = 0;
     stream.running = 1;
     stream.worker = std::thread([] {
         int result = rtlsdr_read_async(stream.device, on_iq, nullptr, 8, 32768);
@@ -321,6 +324,11 @@ Java_com_example_sdr_NativeSdr_readAudio(JNIEnv *env, jobject, jshortArray outpu
     std::array<jshort, 2048> samples{};
     const uint32_t tail = stream.audio_tail.load(std::memory_order_relaxed);
     const uint32_t head = stream.audio_head.load(std::memory_order_acquire);
+    if (audioQueueOverdue(head, tail)) {
+        stream.audio_tail.store(head, std::memory_order_release);
+        stream.audio_trimmed.fetch_add(head - tail, std::memory_order_relaxed);
+        return 0;
+    }
     const uint32_t available = head - tail;
     const uint32_t requested = static_cast<uint32_t>(env->GetArrayLength(output));
     const uint32_t count = std::min<uint32_t>({available, requested, samples.size()}) & ~1u;
@@ -397,10 +405,12 @@ Java_com_example_sdr_NativeSdr_streamStats(JNIEnv *env, jobject) {
         static_cast<jlong>(stream.tuning.load() >> 32),
         static_cast<jlong>(static_cast<int32_t>(stream.tuning.load() & 0xffffffffu)),
         static_cast<jlong>(stream.hardware_tunes.load()),
-        static_cast<jlong>(stream.digital_tunes.load())
+        static_cast<jlong>(stream.digital_tunes.load()),
+        static_cast<jlong>(stream.audio_trimmed.load()),
+        static_cast<jlong>(std::min<uint32_t>(stream.audio_head.load() - stream.audio_tail.load(), stream.audio.size()) / 2)
     };
-    jlongArray result = env->NewLongArray(10);
-    if (result) env->SetLongArrayRegion(result, 0, 10, values);
+    jlongArray result = env->NewLongArray(12);
+    if (result) env->SetLongArrayRegion(result, 0, 12, values);
     return result;
 }
 

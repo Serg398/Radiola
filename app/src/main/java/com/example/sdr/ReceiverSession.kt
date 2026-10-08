@@ -7,14 +7,15 @@ import android.util.Log
 import java.util.concurrent.Executors
 
 /** USB/native/audio ownership stays on one worker; control state is independently cancellable. */
-class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSnapshot) -> Unit) {
+class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSnapshot) -> Unit,
+    onAudioError: (String, Long) -> Unit = { _, _ -> }) {
     private val executor = Executors.newSingleThreadExecutor()
     private var connection: UsbDeviceConnection? = null
     @Volatile private var requestedDevice: UsbDevice? = null
-    private val audio = AudioOutput()
+    private val audio = AudioOutput { message -> onAudioError(message, controller.snapshot().sessionId) }
     private var audioWarmupEnabled = false
     private var lastLoggedState = ReceiverState.Idle
-    private val controller = ReceiverController(executor, object : ReceiverController.Backend {
+    private val controller: ReceiverController = ReceiverController(executor, object : ReceiverController.Backend {
         override fun available(device: String): Boolean {
             val expected = requestedDevice ?: return false
             val current = usbManager.deviceList[device] ?: return false
@@ -75,12 +76,18 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
         requestedDevice = device
         controller.start(device.deviceName, frequencyHz, mode, gain)
     }
+    fun prepareStart(device: UsbDevice, frequencyHz: Long, mode: DemodulationMode, gain: ReceiverGain) {
+        requestedDevice = device
+        controller.start(device.deviceName, frequencyHz, mode, gain, deferred = true)
+    }
+    fun activateStart() = controller.activateStart()
     fun stop(error: String? = null) = controller.stop(error)
     fun setMode(mode: DemodulationMode) = controller.mode(mode)
     fun setGain(gain: ReceiverGain) = controller.gain(gain)
     fun tune(frequencyHz: Long) = controller.tune(frequencyHz)
     fun close() = controller.close()
     fun stats(): LongArray = NativeSdr.streamStats()
+    fun audioMetrics() = audio.metrics
     fun spectrum(): SpectrumFrame = NativeSdr.spectrum()
     fun spectrumGeneration(): Long = NativeSdr.spectrumGeneration()
 }

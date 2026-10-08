@@ -45,6 +45,7 @@ class ReceiverController(
     private var gain = ReceiverGain()
     private var stop: Command? = null
     private var start: Command? = null
+    private var startReady = true
     private var tune: Command? = null
     private var modeCommand: Command? = null
     private var gainCommand: Command? = null
@@ -65,12 +66,17 @@ class ReceiverController(
     private fun schedule() {
         if (!scheduled) { scheduled = true; executor.execute(::runOne) }
     }
-    fun start(device: String, hz: Long, newMode: DemodulationMode, newGain: ReceiverGain) = synchronized(lock) {
+    fun start(device: String, hz: Long, newMode: DemodulationMode, newGain: ReceiverGain, deferred: Boolean = false) = synchronized(lock) {
         if (closed || active() || snapshot.state == ReceiverState.Stopping) return@synchronized
         mode = newMode; gain = newGain
         publish(snapshot.copy(sessionId = snapshot.sessionId + 1, state = ReceiverState.Starting,
             requestedHz = hz, appliedHz = null, error = null))
-        start = command(Action.Start(device)); schedule()
+        startReady = !deferred
+        start = command(Action.Start(device))
+        if (startReady) schedule()
+    }
+    fun activateStart() = synchronized(lock) {
+        if (!closed && start != null && snapshot.state == ReceiverState.Starting) { startReady = true; schedule() }
     }
     fun stop(error: String? = null) = synchronized(lock) {
         if (closed) return@synchronized
@@ -107,7 +113,8 @@ class ReceiverController(
     }
     private fun runOne() {
         val next = synchronized(lock) {
-            val result = stop ?: start ?: listOfNotNull(tune, modeCommand, gainCommand).minByOrNull { it.id } ?: warm
+            val result = stop ?: start.takeIf { startReady } ?:
+                (if (snapshot.state == ReceiverState.Running) listOfNotNull(tune, modeCommand, gainCommand).minByOrNull { it.id } else null) ?: warm
             when (result?.action) {
                 Action.Stop -> stop = null
                 is Action.Start -> start = null
@@ -122,7 +129,8 @@ class ReceiverController(
         if (next != null) execute(next)
         synchronized(lock) {
             scheduled = false
-            if (stop != null || start != null || tune != null || modeCommand != null || gainCommand != null || warm != null) schedule()
+            if (stop != null || (start != null && startReady) ||
+                (snapshot.state == ReceiverState.Running && (tune != null || modeCommand != null || gainCommand != null)) || warm != null) schedule()
             else if (closed) backend.close()
         }
     }

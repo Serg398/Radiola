@@ -9,143 +9,164 @@ import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Plays 48 kHz interleaved stereo PCM produced by the selected native demodulator. */
-class AudioOutput {
-    @Volatile private var running = false
-    @Volatile private var receiving = false
-    private var track: AudioTrack? = null
-    private var worker: Thread? = null
-    @Volatile private var flushRequest: CountDownLatch? = null
+/** The worker alone owns AudioTrack, including recreation and release. */
+class AudioOutput(private val onFatal: (String) -> Unit = {}) {
+    private class Run {
+        @Volatile var running = true
+        @Volatile var receiving = false
+        @Volatile var flush: CountDownLatch? = null
+        val ready = CountDownLatch(1)
+        @Volatile var initialized = false
+        @Volatile var receivingSince = 0L
+        lateinit var thread: Thread
+    }
+    private var active: Run? = null
+    @Volatile var metrics = AudioMetrics()
+        private set
 
-    fun start(): Boolean {
-        if (running && worker?.isAlive == true) return true
-        val startedAt = SystemClock.elapsedRealtime()
-        val minimum = AudioTrack.getMinBufferSize(
-            48_000, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minimum <= 0) return false
-        val output = try {
-            AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(48_000)
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .build()
-                )
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .setBufferSizeInBytes(maxOf(minimum, 3_840))
-                .build()
-        } catch (_: Exception) {
+    @Synchronized fun start(): Boolean {
+        active?.takeIf { it.running && it.thread.isAlive }?.let { return true }
+        val run = Run()
+        active = run
+        run.thread = Thread({ playback(run) }, "SdrAudio").also { it.start() }
+        if (!run.ready.await(1_000, TimeUnit.MILLISECONDS) || !run.initialized) {
+            run.running = false
             return false
         }
-        if (output.state != AudioTrack.STATE_INITIALIZED) {
-            output.release()
-            return false
-        }
-        track = output
-        running = true
-        worker = Thread({
-            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-            val samples = ShortArray(1_920)
-            var writtenSamples = 0L
-            var flushes = 0
-            var firstPcm = true
-            var firstPlayback = true
-            try {
-                while (running) {
-                    if (firstPlayback && output.playbackHeadPosition > 0) {
-                        Log.d("SdrAudio", "playback_started_ms=${SystemClock.elapsedRealtime() - startedAt} route=${output.routedDevice?.type}")
-                        firstPlayback = false
-                    }
-                    val request = flushRequest
-                    if (request != null) {
-                        output.pause()
-                        output.flush()
-                        NativeSdr.discardAudio()
-                        output.play()
-                        ++flushes
-                        flushRequest = null
-                        request.countDown()
-                    }
-                    val count = if (receiving) NativeSdr.readAudio(samples) else {
-                        samples.fill(0)
-                        samples.size
-                    }
-                    if (count == 0) {
-                        Thread.sleep(4)
-                        continue
-                    }
-                    var offset = 0
-                    if (firstPcm) {
-                        // Prime the track before playback so the route starts with audio ready.
-                        val primed = output.write(samples, 0, count, AudioTrack.WRITE_NON_BLOCKING)
-                        output.play()
-                        Log.d("SdrAudio", "first_pcm_ms=${SystemClock.elapsedRealtime() - startedAt} buffer_frames=${output.bufferSizeInFrames} route=${output.routedDevice?.type}")
-                        firstPcm = false
-                        if (primed < 0) break
-                        offset = primed
-                        writtenSamples += primed
-                    }
-                    while (running && flushRequest == null && offset < count) {
-                        val written = output.write(
-                            samples, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING
-                        )
-                        if (written < 0) break
-                        if (written == 0) {
-                            Thread.sleep(2)
-                            continue
-                        }
-                        offset += written
-                        writtenSamples += written
-                    }
-                }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            } catch (_: IllegalStateException) {
-                // The audio route may disappear while USB reception is still active.
-            } finally {
-                Log.d("SdrAudio", "stopped: samples=$writtenSamples underruns=${output.underrunCount} flushes=$flushes")
-                flushRequest?.countDown()
-                flushRequest = null
-                runCatching { output.pause() }
-                runCatching { output.flush() }
-                output.release()
-            }
-        }, "SdrAudio").also { it.start() }
         return true
     }
-
-    /** Used for changing demodulation mode; frequency tuning keeps playback continuous. */
-    fun flushForModeChange(): Boolean {
-        if (!running || worker?.isAlive != true) return false
+    private fun createTrack(): AudioTrack {
+        val minimum = AudioTrack.getMinBufferSize(48000, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+        check(minimum > 0) { "Unsupported audio format: $minimum" }
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(48000)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+            .setBufferSizeInBytes(maxOf(minimum, 3840)).build()
+        if (track.state != AudioTrack.STATE_INITIALIZED) { track.release(); error("AudioTrack initialization failed") }
+        return track
+    }
+    private fun playback(run: Run) {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+        var output: AudioTrack? = null
+        val recovery = AudioRecovery()
+        val samples = ShortArray(1920)
+        var writtenFrames = 0L
+        var recovered = 0
+        var lastReport = 0L
+        var playing = false
+        var headWrap = 0L
+        var previousHead = 0L
+        var lastReceivingSince = 0L
+        val started = SystemClock.elapsedRealtime()
+        fun release() {
+            output?.let { runCatching { it.pause() }; runCatching { it.flush() }; runCatching { it.release() } }
+            output = null
+        }
+        fun reopen(reason: String) {
+            while (run.running) {
+                check(recovery.recreate(SystemClock.elapsedRealtime())) { "Audio recovery exhausted: $reason" }
+                release()
+                try { output = createTrack() }
+                catch (error: Exception) {
+                    Log.w("SdrAudio", "route not ready: ${error.message}")
+                    Thread.sleep(100)
+                    continue
+                }
+                NativeSdr.discardAudio()
+                playing = false; writtenFrames = 0; previousHead = 0; headWrap = 0
+                recovered++
+                Log.w("SdrAudio", "recreated: $reason recoveries=$recovered")
+                return
+            }
+        }
+        try {
+            output = createTrack()
+            run.initialized = true; run.ready.countDown()
+            while (run.running) {
+                var track = output ?: break
+                val request = run.flush
+                if (request != null) {
+                    try {
+                        track.pause(); track.flush(); NativeSdr.discardAudio()
+                        playing = false; writtenFrames = 0; previousHead = 0; headWrap = 0
+                    } catch (_: IllegalStateException) { reopen("flush on dead output") }
+                    finally { run.flush = null; request.countDown() }
+                    if (!run.running) break
+                    track = output ?: break
+                }
+                val count = if (run.receiving) NativeSdr.readAudio(samples) else {
+                    samples.fill(0); samples.size
+                }
+                if (count == 0) { Thread.sleep(4); continue }
+                if (run.receiving && run.receivingSince != lastReceivingSince) {
+                    lastReceivingSince = run.receivingSince
+                    Log.d("SdrAudio", "first_received_pcm_ms=${SystemClock.elapsedRealtime()-lastReceivingSince} route=${track.routedDevice?.type}")
+                }
+                var offset = 0
+                while (run.running && run.flush == null && offset < count) {
+                    val written = try {
+                        output!!.write(samples, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING)
+                    } catch (_: IllegalStateException) { AudioTrack.ERROR_DEAD_OBJECT }
+                    if (written < 0) {
+                        if (written == AudioTrack.ERROR_BAD_VALUE) error("Invalid audio write: $written")
+                        reopen("write=$written")
+                        // Resume with fresh PCM after a route reset, never replay the old queue.
+                        break
+                    }
+                    if (!recovery.wrote(written, SystemClock.elapsedRealtime())) {
+                        reopen("write stalled"); break
+                    }
+                    if (written == 0) { Thread.sleep(2); continue }
+                    offset += written; writtenFrames += written / 2
+                    if (!playing && writtenFrames >= 960) {
+                        try { output!!.play(); playing = true }
+                        catch (_: IllegalStateException) { reopen("play on dead output"); break }
+                        Log.d("SdrAudio", "play_ms=${SystemClock.elapsedRealtime()-started} buffer_frames=${output!!.bufferSizeInFrames} route=${output!!.routedDevice?.type}")
+                    }
+                }
+                val current = output ?: continue
+                val head = current.playbackHeadPosition.toLong() and 0xffffffffL
+                if (head < previousHead) headWrap += 1L shl 32
+                previousHead = head
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastReport >= 1000) {
+                    metrics = AudioMetrics((writtenFrames - headWrap - head).coerceAtLeast(0),
+                        current.bufferSizeInFrames, current.underrunCount, recovered, current.routedDevice?.type ?: 0)
+                    Log.d("SdrAudio", "queued_frames=${metrics.queuedFrames} buffer_frames=${metrics.bufferFrames} underruns=${metrics.underruns} recoveries=$recovered route=${metrics.route}")
+                    lastReport = now
+                }
+            }
+        } catch (_: InterruptedException) {
+            if (run.running) onFatal("Audio worker interrupted")
+            Thread.currentThread().interrupt()
+        } catch (error: Exception) {
+            if (run.running) onFatal(error.message ?: "Audio output failed")
+        } finally {
+            run.running = false
+            run.ready.countDown(); run.flush?.countDown(); run.flush = null
+            release()
+        }
+    }
+    @Synchronized fun flushForModeChange(): Boolean {
+        val run = active?.takeIf { it.running } ?: return false
         val request = CountDownLatch(1)
-        flushRequest = request
+        run.flush = request
         return request.await(300, TimeUnit.MILLISECONDS)
     }
-
-    fun setReceiving(enabled: Boolean) {
-        receiving = enabled
-        if (!enabled) flushForModeChange()
-        Log.d("SdrAudio", "receiving=$enabled; track_kept_open=$running")
+    @Synchronized fun setReceiving(enabled: Boolean) {
+        if (enabled) active?.receivingSince = SystemClock.elapsedRealtime()
+        active?.receiving = enabled
+        flushForModeChange()
     }
-
-    fun stop() {
-        receiving = false
-        running = false
-        worker?.join(1_000)
-        if (worker?.isAlive == true) {
-            worker?.interrupt()
-            worker?.join(1_000)
-        }
-        worker = null
-        track = null
+    @Synchronized fun stop() {
+        val run = active ?: return
+        run.receiving = false; run.running = false
+        run.thread.interrupt(); run.thread.join(1000)
+        check(!run.thread.isAlive) { "Audio worker did not stop" }
+        active = null
     }
 }

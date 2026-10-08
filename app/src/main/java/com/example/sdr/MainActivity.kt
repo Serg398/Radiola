@@ -1,6 +1,10 @@
 package com.example.sdr
 
 import android.app.PendingIntent
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -19,6 +23,7 @@ import android.view.Choreographer
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import androidx.lifecycle.ViewModelProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
@@ -58,39 +63,94 @@ private class FrameGate(private var framesPerSecond: Int) {
 }
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && runtime.session.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
+            startService(Intent(this, ReceiverService::class.java).setAction(ReceiverService.REFRESH))
+    }
+    private val model by lazy { ViewModelProvider(this)[ReceiverViewModel::class.java] }
+    private val runtime get() = (application as RadiolaApplication).receiver
+    private val receiverObserver: (ReceiverSnapshot) -> Unit = { acceptReceiverSnapshot(it) }
     private val usbManager by lazy { getSystemService(USB_SERVICE) as UsbManager }
-    private var device by mutableStateOf<UsbDevice?>(null)
-    private var hasUsbPermission by mutableStateOf(false)
-    private var usbCheckResult by mutableStateOf<String?>(null)
-    private var receiverSnapshot by mutableStateOf(ReceiverSnapshot())
+    private var device
+        get() = model.device
+        set(value) { model.device = value }
+    private var hasUsbPermission
+        get() = model.hasUsbPermission
+        set(value) { model.hasUsbPermission = value }
+    private var usbCheckResult
+        get() = model.usbCheckResult
+        set(value) { model.usbCheckResult = value }
+    private var receiverSnapshot
+        get() = model.receiverSnapshot
+        set(value) { model.receiverSnapshot = value }
     private val streaming get() = receiverSnapshot.state == ReceiverState.Running
     private val streamPending get() = receiverSnapshot.state == ReceiverState.Starting || receiverSnapshot.state == ReceiverState.Stopping
-    private var receiverMessage by mutableStateOf<String?>(null)
-    private var inputError by mutableStateOf<String?>(null)
+    private var receiverMessage
+        get() = model.receiverMessage
+        set(value) { model.receiverMessage = value }
+    private var inputError
+        get() = model.inputError
+        set(value) { model.inputError = value }
     private var destroyed = false
-    private var frequencyInput by mutableStateOf("100.000")
-    private var frequencyHz by mutableStateOf(100_000_000L)
-    private val spectrumState = mutableStateOf(FloatArray(0))
-    private var spectrumCenterFrequencyHz by mutableStateOf(0L)
-    private val waterfallState = mutableStateOf(FloatArray(0))
+    private var frequencyInput
+        get() = model.frequencyInput
+        set(value) { model.frequencyInput = value }
+    private var frequencyHz
+        get() = model.frequencyHz
+        set(value) { model.frequencyHz = value }
+    private val spectrumState get() = model.spectrumState
+    private var spectrumCenterFrequencyHz
+        get() = model.spectrumCenterFrequencyHz
+        set(value) { model.spectrumCenterFrequencyHz = value }
+    private val waterfallState get() = model.waterfallState
     private var lastSpectrumGeneration = 0L
     private var lastWaterfallGeneration = 0L
-    private var waterfallFrameRate by mutableStateOf(WaterfallFrameRate.FPS_30)
+    private var waterfallFrameRate
+        get() = model.waterfallFrameRate
+        set(value) { model.waterfallFrameRate = value }
     private val encoderHaptics by lazy { EncoderHaptics(this) }
-    private var encoderFeedback by mutableStateOf(EncoderFeedback.LIGHT)
-    private var tuningStep by mutableStateOf(TuningStep.KHZ_100)
-    private var demodulationMode by mutableStateOf(DemodulationMode.WFM)
-    private var receiverGain by mutableStateOf(ReceiverGain())
-    private var gainSteps by mutableStateOf(ReceiverGain.defaultSteps)
-    private var actualSpectrumFps by mutableStateOf(0)
-    private var actualWaterfallFps by mutableStateOf(0)
-    private var wfmStereoEnabled by mutableStateOf(false)
-    private var wfmStereoLocked by mutableStateOf(false)
-    private var receiverSquelch by mutableStateOf(ReceiverSquelch())
-    private var squelchOpen by mutableStateOf(true)
-    private var signalDbfs by mutableStateOf(-90f)
-    private var batteryPercent by mutableStateOf(-1)
-    private var batteryCharging by mutableStateOf(false)
+    private var encoderFeedback
+        get() = model.encoderFeedback
+        set(value) { model.encoderFeedback = value }
+    private var tuningStep
+        get() = model.tuningStep
+        set(value) { model.tuningStep = value }
+    private var demodulationMode
+        get() = model.demodulationMode
+        set(value) { model.demodulationMode = value }
+    private var receiverGain
+        get() = model.receiverGain
+        set(value) { model.receiverGain = value }
+    private var gainSteps
+        get() = model.gainSteps
+        set(value) { model.gainSteps = value }
+    private var actualSpectrumFps
+        get() = model.actualSpectrumFps
+        set(value) { model.actualSpectrumFps = value }
+    private var actualWaterfallFps
+        get() = model.actualWaterfallFps
+        set(value) { model.actualWaterfallFps = value }
+    private var wfmStereoEnabled
+        get() = model.wfmStereoEnabled
+        set(value) { model.wfmStereoEnabled = value }
+    private var wfmStereoLocked
+        get() = model.wfmStereoLocked
+        set(value) { model.wfmStereoLocked = value }
+    private var receiverSquelch
+        get() = model.receiverSquelch
+        set(value) { model.receiverSquelch = value }
+    private var squelchOpen
+        get() = model.squelchOpen
+        set(value) { model.squelchOpen = value }
+    private var signalDbfs
+        get() = model.signalDbfs
+        set(value) { model.signalDbfs = value }
+    private var batteryPercent
+        get() = model.batteryPercent
+        set(value) { model.batteryPercent = value }
+    private var batteryCharging
+        get() = model.batteryCharging
+        set(value) { model.batteryCharging = value }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
@@ -105,9 +165,7 @@ class MainActivity : ComponentActivity() {
     private var fpsWindowStartNanos = 0L
     private var spectrumFramesInWindow = 0
     private var waterfallFramesInWindow = 0
-    private val receiverSession by lazy {
-        ReceiverSession(usbManager) { value -> mainHandler.post { acceptReceiverSnapshot(value) } }
-    }
+    private val receiverSession get() = runtime.session
     private val receiverRates by lazy { NativeSdr.receiverRates() }
     private val displaySettings by lazy { DisplaySettings(this) }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -131,7 +189,7 @@ class MainActivity : ComponentActivity() {
                 "Поток остановился: код ${stats[3]}"
             }
             if (stats[2] == 1L) mainHandler.postDelayed(this, 500)
-            else receiverSession.stop("Stream stopped: ${stats[3]}")
+            else runtime.stop("Stream stopped: ${stats[3]}")
         }
     }
     private val spectrumFrameCallback = object : Choreographer.FrameCallback {
@@ -207,6 +265,7 @@ class MainActivity : ComponentActivity() {
         receiverGain = displaySettings.receiverGain()
         wfmStereoEnabled = displaySettings.wfmStereoEnabled()
         NativeSdr.setWfmStereo(wfmStereoEnabled)
+        runtime.stereo = wfmStereoEnabled
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
@@ -249,6 +308,7 @@ class MainActivity : ComponentActivity() {
                 onWfmStereoChange = {
                     wfmStereoEnabled = it
                     NativeSdr.setWfmStereo(it)
+                    runtime.stereo = it
                     displaySettings.saveWfmStereo(it)
                 },
                 receiverSquelch = receiverSquelch,
@@ -256,6 +316,7 @@ class MainActivity : ComponentActivity() {
                 onSquelchChange = {
                     receiverSquelch = it
                     NativeSdr.setSquelch(it.enabled, it.thresholdDbfs)
+                    runtime.squelch = it
                     displaySettings.saveReceiverSquelch(it)
                 },
                 batteryPercent = batteryPercent,
@@ -281,16 +342,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        receiverSession.prepareAudio()
-        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), RECEIVER_NOT_EXPORTED)
-        registerReceiver(
-            usbReceiver,
+        runtime.visible(true)
+        runtime.observe(receiverObserver)
+        ContextCompat.registerReceiver(this, batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(
+            this, usbReceiver,
             IntentFilter().apply {
                 addAction(USB_PERMISSION_ACTION)
                 addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             },
-            RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
         refreshDevice()
         if (streaming) {
@@ -328,7 +390,8 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         encoderHaptics.cancel()
         unregisterReceiver(batteryReceiver)
-        receiverSession.releaseIdleAudio()
+        runtime.removeObserver(receiverObserver)
+        runtime.visible(false)
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         unregisterReceiver(usbReceiver)
@@ -339,7 +402,7 @@ class MainActivity : ComponentActivity() {
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         destroyed = true
-        receiverSession.close()
+        runtime.removeObserver(receiverObserver)
         super.onDestroy()
     }
 
@@ -350,8 +413,8 @@ class MainActivity : ComponentActivity() {
         }
         hasUsbPermission = device?.let(usbManager::hasPermission) == true
         if (device?.deviceName != previousName) usbCheckResult = null
-        if ((device?.deviceName != previousName || !hasUsbPermission) &&
-            receiverSession.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
+        if (receiverSession.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running) &&
+            !receiverSession.deviceAvailable())
             receiverSession.stop("USB device disconnected")
     }
 
@@ -470,11 +533,15 @@ class MainActivity : ComponentActivity() {
         val requestedFrequency = parseFrequency() ?: return
         requestFrequency(requestedFrequency)
         usbCheckResult = null
-        receiverSession.start(currentDevice, requestedFrequency, demodulationMode, receiverGain)
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        runtime.mode = demodulationMode
+        runtime.gain = receiverGain
+        runtime.requestStart(currentDevice)
     }
 
     private fun stopStream() {
-        receiverSession.stop()
+        runtime.stop()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
     }
@@ -504,12 +571,14 @@ class MainActivity : ComponentActivity() {
     private fun changeDemodulationMode(mode: DemodulationMode) {
         if (mode == demodulationMode) return
         demodulationMode = mode
+        runtime.mode = mode
         receiverSession.setMode(mode)
     }
 
     private fun changeReceiverGain(value: ReceiverGain) {
         if (value == receiverGain) return
         receiverGain = value
+        runtime.gain = value
         displaySettings.saveReceiverGain(value)
         receiverSession.setGain(value)
     }
