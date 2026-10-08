@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,6 +70,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.viewinterop.AndroidView
 import java.util.Locale
 import kotlinx.coroutines.Job
@@ -899,16 +901,20 @@ private fun SignalMeter(
             drawContext.canvas.nativeCanvas.drawText("SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs), readoutX, size.height - 5.dp.toPx(), labelPaint)
         }
         Column(
-            Modifier.width(46.dp).fillMaxHeight()
+            Modifier.width(46.dp).fillMaxHeight().padding(2.dp)
+                .border(1.dp, if (squelch.enabled) Color(0xFF8A5A2D) else edge, RoundedCornerShape(4.dp))
                 .background(if (squelch.enabled) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
                 .clickable { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
                 .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
-            Text("SQL", color = if (squelch.enabled) warm else muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("SQL", color = if (squelch.enabled) warm else muted, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                style = TextStyle(lineHeight = 12.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
             Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
-                color = if (squelch.enabled && open) warm else muted, fontSize = 8.sp)
+                color = if (squelch.enabled && open) warm else muted, fontSize = 8.sp,
+                style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
         }
+        Spacer(Modifier.width(16.dp))
     }
 }
 @Composable
