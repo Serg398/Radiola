@@ -30,6 +30,9 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -234,11 +237,6 @@ fun ReceiverScreen(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
-                    StereoToggle(
-                        demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
-                        onWfmStereoChange
-                    )
                     Text("MODE", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
@@ -246,6 +244,11 @@ fun ReceiverScreen(
                     ModePill("USB", demodulationMode == DemodulationMode.USB) { onDemodulationModeChange(DemodulationMode.USB) }
                     ModePill("LSB", demodulationMode == DemodulationMode.LSB) { onDemodulationModeChange(DemodulationMode.LSB) }
                     ModePill("CW", demodulationMode == DemodulationMode.CW) { onDemodulationModeChange(DemodulationMode.CW) }
+                    StereoToggle(
+                        demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
+                        onWfmStereoChange
+                    )
+                    SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -802,6 +805,13 @@ private fun SignalMeter(
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier
 ) {
     val currentSquelch by rememberUpdatedState(squelch)
+    val displayedSignal = remember { Animatable(dbfs) }
+    LaunchedEffect(dbfs) {
+        displayedSignal.animateTo(dbfs, tween(
+            durationMillis = if (dbfs > displayedSignal.value) 80 else 180,
+            easing = LinearOutSlowInEasing
+        ))
+    }
     val changeSquelch by rememberUpdatedState(onSquelchChange)
     var meterWidth by remember { mutableStateOf(1) }
     val density = LocalDensity.current
@@ -812,7 +822,7 @@ private fun SignalMeter(
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
-    val level = (dbfs + 90f).coerceIn(0f, 84f)
+    val level = (displayedSignal.value + 90f).coerceIn(0f, 84f)
     val reading = if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
         else "≈S9 +${(level - 54f).roundToInt()}"
     val labelPaint = remember {
