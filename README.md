@@ -87,3 +87,12 @@ SDK берётся из `ANDROID_HOME` либо `%LOCALAPPDATA%\Android\Sdk`;
 Параметры полос и коэффициенты задаются в `app/src/main/dsp/profiles.json`.
 Сгенерированные Kotlin/C++ файлы в `app/build/generated/dsp` вручную не редактируются.
 Требования к фильтру и результаты сравнения записаны в [плане улучшений](docs/IMPROVEMENT_PLAN.md).
+
+Проверки управления приёмником и физики валкодера запускаются без телефона:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest
+```
+
+`ReceiverControllerTest` моделирует блокирующие аппаратные вызовы, отмену START,
+приоритет STOP, потерю USB, объединение настроек и устаревшие ответы.

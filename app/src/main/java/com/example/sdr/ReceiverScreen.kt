@@ -90,6 +90,8 @@ fun ReceiverScreen(
     usbCheckResult: String?,
     streaming: Boolean,
     streamPending: Boolean,
+    starting: Boolean = false,
+    receiverState: ReceiverState = if (streaming) ReceiverState.Running else ReceiverState.Idle,
     frequencyInput: String,
     currentFrequencyHz: Long,
     spectrumSpanHz: Int,
@@ -214,13 +216,13 @@ fun ReceiverScreen(
                     Box(Modifier.semantics { contentDescription = if (connected && permitted) "USB connected" else "USB disconnected" }.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
                     BatteryIndicator(batteryPercent, batteryCharging)
                     SmallAction(
-                        if (streaming) "STOP" else if (!permitted) "USB ACCESS" else "START",
-                        !streamPending && connected,
+                        if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "USB ACCESS" else "START",
+                        (!streamPending && connected) || starting,
                         Modifier.width(if (!permitted) 95.dp else 76.dp)
                     ) {
                         when {
+                            streaming || starting -> onStopStream()
                             !permitted -> onRequestPermission()
-                            streaming -> onStopStream()
                             else -> onStartStream()
                         }
                     }
@@ -362,7 +364,13 @@ fun ReceiverScreen(
                 ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
                     Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                     Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (streaming) "ON AIR" else "READY", color = if (streaming) warm else ivory, fontSize = 18.sp)
+                        Text(when (receiverState) {
+                            ReceiverState.Running -> "ON AIR"
+                            ReceiverState.Starting -> "STARTING"
+                            ReceiverState.Stopping -> "STOPPING"
+                            ReceiverState.Error -> "ERROR"
+                            ReceiverState.Idle -> "READY"
+                        }, color = if (streaming) warm else ivory, fontSize = 18.sp)
                         Box(Modifier.weight(1f))
                         Text("%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
                     }

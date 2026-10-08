@@ -62,11 +62,14 @@ class MainActivity : ComponentActivity() {
     private var device by mutableStateOf<UsbDevice?>(null)
     private var hasUsbPermission by mutableStateOf(false)
     private var usbCheckResult by mutableStateOf<String?>(null)
-    private var streaming by mutableStateOf(false)
-    private var streamPending by mutableStateOf(false)
+    private var receiverSnapshot by mutableStateOf(ReceiverSnapshot())
+    private val streaming get() = receiverSnapshot.state == ReceiverState.Running
+    private val streamPending get() = receiverSnapshot.state == ReceiverState.Starting || receiverSnapshot.state == ReceiverState.Stopping
+    private var receiverMessage by mutableStateOf<String?>(null)
+    private var inputError by mutableStateOf<String?>(null)
+    private var destroyed = false
     private var frequencyInput by mutableStateOf("100.000")
     private var frequencyHz by mutableStateOf(100_000_000L)
-    private var requestedFrequencyHz: Long? = null
     private val spectrumState = mutableStateOf(FloatArray(0))
     private var spectrumCenterFrequencyHz by mutableStateOf(0L)
     private val waterfallState = mutableStateOf(FloatArray(0))
@@ -102,7 +105,9 @@ class MainActivity : ComponentActivity() {
     private var fpsWindowStartNanos = 0L
     private var spectrumFramesInWindow = 0
     private var waterfallFramesInWindow = 0
-    private val receiverSession by lazy { ReceiverSession(usbManager) }
+    private val receiverSession by lazy {
+        ReceiverSession(usbManager) { value -> mainHandler.post { acceptReceiverSnapshot(value) } }
+    }
     private val receiverRates by lazy { NativeSdr.receiverRates() }
     private val displaySettings by lazy { DisplaySettings(this) }
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -118,7 +123,7 @@ class MainActivity : ComponentActivity() {
             val samplesPerSecond = (stats[0] - lastStreamBytes) * 500L / elapsed
             lastStreamBytes = stats[0]
             lastStreamTime = now
-            usbCheckResult = if (stats[2] == 1L) {
+            receiverMessage = if (stats[2] == 1L) {
                 "IQ: %.2f млн отсчётов/с · %s: %.1f тыс. аудиоотсчётов".format(
                     samplesPerSecond / 1_000_000.0, demodulationMode.label, stats[4] / 1_000.0
                 )
@@ -126,7 +131,7 @@ class MainActivity : ComponentActivity() {
                 "Поток остановился: код ${stats[3]}"
             }
             if (stats[2] == 1L) mainHandler.postDelayed(this, 500)
-            else stopStream()
+            else receiverSession.stop("Stream stopped: ${stats[3]}")
         }
     }
     private val spectrumFrameCallback = object : Choreographer.FrameCallback {
@@ -181,7 +186,15 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 USB_PERMISSION_ACTION,
                 UsbManager.ACTION_USB_DEVICE_ATTACHED,
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> refreshDevice()
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    @Suppress("DEPRECATION")
+                    val detached = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                    if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED &&
+                        detached?.deviceName == device?.deviceName &&
+                        receiverSession.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
+                        receiverSession.stop("USB device disconnected")
+                    refreshDevice()
+                }
             }
         }
     }
@@ -203,9 +216,11 @@ class MainActivity : ComponentActivity() {
                 deviceName = device?.productName ?: "RTL-SDR V4",
                 connected = device != null,
                 permitted = hasUsbPermission,
-                usbCheckResult = usbCheckResult,
+                usbCheckResult = inputError ?: receiverSnapshot.error ?: usbCheckResult ?: receiverMessage,
                 streaming = streaming,
                 streamPending = streamPending,
+                starting = receiverSnapshot.state == ReceiverState.Starting,
+                receiverState = receiverSnapshot.state,
                 frequencyInput = frequencyInput,
                 currentFrequencyHz = frequencyHz,
                 spectrumSpanHz = receiverRates[0],
@@ -323,6 +338,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
+        destroyed = true
         receiverSession.close()
         super.onDestroy()
     }
@@ -334,7 +350,9 @@ class MainActivity : ComponentActivity() {
         }
         hasUsbPermission = device?.let(usbManager::hasPermission) == true
         if (device?.deviceName != previousName) usbCheckResult = null
-        if (device == null && streaming) stopStream()
+        if ((device?.deviceName != previousName || !hasUsbPermission) &&
+            receiverSession.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
+            receiverSession.stop("USB device disconnected")
     }
 
     private fun requestUsbPermission() {
@@ -348,6 +366,8 @@ class MainActivity : ComponentActivity() {
 
     private fun checkUsbConnection() {
         val currentDevice = device ?: return
+        val session = receiverSession.snapshot()
+        if (session.state !in listOf(ReceiverState.Idle, ReceiverState.Error)) return
         if (!usbManager.hasPermission(currentDevice)) return
         usbCheckResult = "Проверка USB-связи…"
         Thread {
@@ -379,13 +399,16 @@ class MainActivity : ComponentActivity() {
                 "Ошибка USB-связи: ${error.message ?: error.javaClass.simpleName}"
             }
             runOnUiThread {
-                if (device?.deviceName == currentDevice.deviceName) usbCheckResult = result
+                if (!destroyed && device?.deviceName == currentDevice.deviceName &&
+                    receiverSession.snapshot().sessionId == session.sessionId) usbCheckResult = result
             }
         }.start()
     }
 
     private fun captureIq() {
         val currentDevice = device ?: return
+        val session = receiverSession.snapshot()
+        if (session.state !in listOf(ReceiverState.Idle, ReceiverState.Error)) return
         if (!usbManager.hasPermission(currentDevice)) return
         usbCheckResult = "Чтение IQ на 100 МГц…"
         Thread {
@@ -401,52 +424,59 @@ class MainActivity : ComponentActivity() {
                 "Ошибка приёма: ${error.message ?: error.javaClass.simpleName}"
             }
             runOnUiThread {
-                if (device?.deviceName == currentDevice.deviceName) usbCheckResult = result
+                if (!destroyed && device?.deviceName == currentDevice.deviceName &&
+                    receiverSession.snapshot().sessionId == session.sessionId) usbCheckResult = result
             }
         }.start()
     }
 
-    private fun startStream() {
-        val currentDevice = device ?: return
-        if (streaming || streamPending || !usbManager.hasPermission(currentDevice)) return
-        val requestedFrequency = parseFrequency() ?: return
-        streamPending = true
-        usbCheckResult = "Запуск непрерывного приёма…"
-        receiverSession.start(currentDevice, requestedFrequency, demodulationMode, receiverGain) { result ->
-            runOnUiThread {
-                streamPending = false
-                if (result == 0) {
-                    NativeSdr.tunerGains().takeIf { it.isNotEmpty() }?.let { gainSteps = it.sorted() }
-                    frequencyHz = requestedFrequency
-                    streaming = true
-                    lastSpectrumGeneration = 0
-                    lastWaterfallGeneration = 0
-                    resetFrameTiming()
-                    lastStreamBytes = 0
-                    lastStreamTime = SystemClock.elapsedRealtime()
-                    mainHandler.postDelayed(streamPoll, 500)
-                    choreographer.postFrameCallback(spectrumFrameCallback)
-                } else {
-                    usbCheckResult = "Ошибка запуска потока: $result"
-                }
+    private fun acceptReceiverSnapshot(value: ReceiverSnapshot) {
+        if (destroyed || value.version < receiverSession.snapshot().version || value.version <= receiverSnapshot.version) return
+        val wasRunning = streaming
+        if (value.state == ReceiverState.Running && !wasRunning && !receiverSession.deviceAvailable()) {
+            receiverSession.stop("USB device disconnected")
+            return
+        }
+        receiverSnapshot = value
+        if (streaming && !wasRunning) {
+            NativeSdr.tunerGains().takeIf { it.isNotEmpty() }?.let { gainSteps = it.sorted() }
+            lastSpectrumGeneration = 0
+            lastWaterfallGeneration = 0
+            resetFrameTiming()
+            lastStreamBytes = receiverSession.stats()[0]
+            lastStreamTime = SystemClock.elapsedRealtime()
+            mainHandler.removeCallbacks(streamPoll)
+            choreographer.removeFrameCallback(spectrumFrameCallback)
+            mainHandler.postDelayed(streamPoll, 500)
+            choreographer.postFrameCallback(spectrumFrameCallback)
+        } else if (!streaming) {
+            mainHandler.removeCallbacks(streamPoll)
+            choreographer.removeFrameCallback(spectrumFrameCallback)
+            actualSpectrumFps = 0
+            actualWaterfallFps = 0
+            receiverMessage = when (value.state) {
+                ReceiverState.Starting -> "Starting receiver..."
+                ReceiverState.Stopping -> "Stopping receiver..."
+                else -> null
             }
         }
     }
 
+    private fun startStream() {
+        val currentDevice = device ?: return
+        val state = receiverSession.snapshot().state
+        if (state in listOf(ReceiverState.Starting, ReceiverState.Running, ReceiverState.Stopping) ||
+            !usbManager.hasPermission(currentDevice)) return
+        val requestedFrequency = parseFrequency() ?: return
+        requestFrequency(requestedFrequency)
+        usbCheckResult = null
+        receiverSession.start(currentDevice, requestedFrequency, demodulationMode, receiverGain)
+    }
+
     private fun stopStream() {
-        if (!streaming || streamPending) return
-        streamPending = true
+        receiverSession.stop()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
-        receiverSession.stop {
-            runOnUiThread {
-                streaming = false
-                actualSpectrumFps = 0
-                actualWaterfallFps = 0
-                streamPending = false
-                usbCheckResult = "Приём остановлен"
-            }
-        }
     }
 
     private fun parseFrequency(): Long? {
@@ -459,18 +489,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyFrequency() {
-        val requestedFrequency = parseFrequency() ?: return
-        if (!streaming) {
-            frequencyHz = requestedFrequency
-            usbCheckResult = "Частота установлена: ${frequencyInput} МГц"
-            return
-        }
-        receiverSession.tune(requestedFrequency) { result ->
-            runOnUiThread {
-                if (result == 0) frequencyHz = requestedFrequency
-                else usbCheckResult = "Ошибка настройки частоты: $result"
-            }
-        }
+        parseFrequency()?.let(::requestFrequency)
+    }
+
+    private fun requestFrequency(hz: Long) {
+        inputError = null
+        usbCheckResult = null
+        // Display the request immediately; only the controller tracks hardware acknowledgements.
+        frequencyHz = hz
+        frequencyInput = "%.3f".format(java.util.Locale.US, hz / 1_000_000.0)
+        receiverSession.tune(hz)
     }
 
     private fun changeDemodulationMode(mode: DemodulationMode) {
@@ -483,28 +511,11 @@ class MainActivity : ComponentActivity() {
         if (value == receiverGain) return
         receiverGain = value
         displaySettings.saveReceiverGain(value)
-        receiverSession.setGain(value) { result ->
-            if (result != 0) runOnUiThread { usbCheckResult = "Ошибка настройки усиления: $result" }
-        }
+        receiverSession.setGain(value)
     }
 
     private fun stepFrequency(deltaHz: Long) {
-        val next = ((requestedFrequencyHz ?: frequencyHz) + deltaHz).coerceIn(500_000L, 1_766_000_000L)
-        requestedFrequencyHz = next
-        // Encoder feedback must not wait for USB/tuner I/O. Older acknowledgements
-        // only report status; they must never move the displayed frequency backwards.
-        frequencyHz = next
-        frequencyInput = "%.3f".format(java.util.Locale.US, next / 1_000_000.0)
-        if (!streaming) {
-            requestedFrequencyHz = null
-            return
-        }
-        receiverSession.tune(next) { result ->
-            runOnUiThread {
-                if (result != 0) usbCheckResult = "Ошибка настройки частоты: $result"
-                if (requestedFrequencyHz == next) requestedFrequencyHz = null
-            }
-        }
+        requestFrequency((frequencyHz + deltaHz).coerceIn(500_000L, 1_766_000_000L))
     }
 
     private fun resetFrameTiming() {
