@@ -984,6 +984,7 @@ private fun AmberSpectrum(
     visibleCenterHz: Double,
     modifier: Modifier = Modifier
 ) {
+    val traceSmoother = remember { SpectrumTraceSmoother() }
     val axisPaint = remember {
         android.graphics.Paint().apply {
             color = android.graphics.Color.rgb(143, 136, 127)
@@ -1013,7 +1014,7 @@ private fun AmberSpectrum(
             )
         }
         val frame = valuesState.value
-        val values = frame?.bins ?: emptySpectrum
+        val values = frame?.let { traceSmoother.update(it) } ?: emptySpectrum
         val captureSpan = frame?.spanHz ?: spectrumSpanHz
         val captureCenter = frame?.centerFrequencyHz?.toDouble() ?: visibleCenterHz
         val viewportStart = (0.5 + (visibleCenterHz - captureCenter - spectrumSpanHz * .5) / captureSpan).toFloat()
