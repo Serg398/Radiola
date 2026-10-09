@@ -4,6 +4,10 @@ import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -14,6 +18,66 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReceiverLifecycleTest {
+    @Test fun zoomRevealsOffCenterHistoryAfterViewRecreation() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val history = WaterfallHistory()
+            history.append(SpectrumFrame(FloatArray(8192) { if (it in 7166..7170) -25f else -94f }, 100000, 1, 1000, 1, 1600))
+            history.append(SpectrumFrame(FloatArray(8192) { if (it in 6142..6146) -25f else -94f }, 100200, 2, 2000, 1, 1600))
+            repeat(2) {
+                val view = WaterfallView(context, history)
+                view.layout(0, 0, 512, 160)
+                view.setTuning(100600, 400)
+                val image = Bitmap.createBitmap(512, 160, Bitmap.Config.ARGB_8888)
+                view.draw(Canvas(image))
+                for (y in 0..1) {
+                    val peak = image.getPixel(256, y)
+                    assertTrue("Historical off-center RF signal disappeared", Color.red(peak) > 200 && Color.green(peak) > 200)
+                }
+            }
+        }
+    }
+    private fun clickText(text: String) {
+        // Sidebar geometry is fixed in dp; OnePlus restricts accessibility roots for instrumentation.
+        val density = context.resources.displayMetrics.density
+        val x = (54 * density).toInt()
+        val y = ((if (text == "Settings") 100 else 64) * density).toInt()
+        val command = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input tap $x $y")
+        java.io.FileInputStream(command.fileDescriptor).use { it.readBytes() }
+        command.close()
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+    @Test fun settingsRetainsWaterfallAndFramesKeepTheirCaptureMetadata() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            try {
+                start(scenario)
+                Thread.sleep(1200)
+                lateinit var history: WaterfallHistory
+                var before = 0L
+                scenario.onActivity {
+                    val model = ViewModelProvider(it)[ReceiverViewModel::class.java]
+                    history = model.waterfallHistory; before = history.revision
+                    assertTrue(history.size > 10)
+                    val spectrum = model.spectrumState.value!!
+                    val waterfall = model.waterfallState.value!!
+                    assertSame(spectrum, waterfall)
+                    assertTrue(spectrum.timestampNanos > 0 && spectrum.sessionId > 0)
+                    assertEquals(2400000, spectrum.spanHz)
+                }
+                clickText("Settings")
+                Thread.sleep(1000)
+                scenario.onActivity {
+                    assertSame(history, ViewModelProvider(it)[ReceiverViewModel::class.java].waterfallHistory)
+                    assertTrue(history.revision > before)
+                }
+                clickText("Receiver")
+                scenario.onActivity { assertSame(history, ViewModelProvider(it)[ReceiverViewModel::class.java].waterfallHistory) }
+                val first = NativeSdr.visualStats()[4]
+                Thread.sleep(2000)
+                val frames = NativeSdr.visualStats()[4] - first
+                assertTrue("Unexpected FFT cadence: $frames per 2s", frames in 50..65)
+            } finally { scenario.onActivity { runtime.stop() } }
+        }
+    }
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val runtime get() = (context.applicationContext as RadiolaApplication).receiver
     private fun waitUntil(predicate: () -> Boolean) {

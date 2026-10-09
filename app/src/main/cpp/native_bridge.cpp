@@ -1,3 +1,6 @@
+#include "latest_frame_mailbox.h"
+#include <cstring>
+#include "visual_timings.h"
 #include "audio_queue_policy.h"
 #include <jni.h>
 #include <fcntl.h>
@@ -24,6 +27,11 @@
 namespace {
 constexpr int spectrumSize = 8192;
 constexpr int fftStages = 13;
+struct SpectrumJob {
+    std::array<unsigned char, spectrumSize * 2> samples{};
+    uint64_t tuning = 0, timestampNs = 0, session = 0;
+    int bandwidth = 0, passbandOffset = 0, mode = 0;
+};
 struct StreamState {
     rtlsdr_dev_t *device = nullptr;
     int fd = -1;
@@ -35,6 +43,12 @@ struct StreamState {
     std::array<float, spectrumSize> spectrum{};
     std::mutex spectrum_mutex;
     std::atomic<uint64_t> spectrum_generation{0};
+    std::thread spectrum_worker;
+    LatestFrameMailbox<SpectrumJob> spectrum_mailbox;
+    std::atomic<bool> spectrum_running{false};
+    std::atomic<uint64_t> spectrum_session{0}, spectrum_submitted{0};
+    uint64_t spectrum_timestamp_ns = 0, spectrum_frame_session = 0;
+    uint64_t next_spectrum_ns = 0; // IQ producer only; no IQ rate limit.
     int64_t spectrum_center_hz = 0; // Protected by spectrum_mutex.
     std::atomic<uint64_t> tuning{0}; // Upper 32 bits: RF center; lower 32: signed channel offset.
     std::atomic<uint64_t> hardware_tunes{0};
@@ -50,7 +64,7 @@ struct StreamState {
     // One atomic snapshot keeps enabled and threshold coherent during dragging.
     std::atomic<int> squelch_setting{65}; // Positive means disabled; negative is enabled threshold.
     std::atomic<bool> squelch_open{true};
-    float channel_signal = -180.f; // IQ producer only, previous FFT block.
+    std::atomic<float> channel_signal{-180.f}; // FFT worker writes; IQ producer reads.
 
     std::atomic<bool> audio_agc_enabled{true};
     bool rf_agc = true; // Protected by stream_mutex.
@@ -67,6 +81,7 @@ struct StreamState {
     std::atomic<uint64_t> audio_produced{0};
     std::atomic<uint64_t> audio_dropped{0};
     std::atomic<uint64_t> audio_trimmed{0};
+    VisualTiming demod_timing, fft_timing, jni_timing;
 };
 
 StreamState stream;
@@ -99,6 +114,7 @@ int apply_rf_gain() {
 }
 
 void on_iq(unsigned char *samples, uint32_t length, void *) {
+    const uint64_t demodStarted = visualNowNs();
     stream.bytes.fetch_add(length, std::memory_order_relaxed);
     stream.blocks.fetch_add(1, std::memory_order_relaxed);
     const int mode = stream.demodulation.load(std::memory_order_acquire);
@@ -147,7 +163,7 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     stream.audio_agc.process(pcm.data(), audio_count, stream.audio_agc_enabled.load(std::memory_order_relaxed), 2);
     const int sql = stream.squelch_setting.load(std::memory_order_relaxed);
     stream.squelch_open.store(stream.squelch.process(pcm.data(), audio_count,
-        sql < 0, -static_cast<float>(std::abs(sql)), stream.channel_signal, 2), std::memory_order_relaxed);
+        sql < 0, -static_cast<float>(std::abs(sql)), stream.channel_signal.load(std::memory_order_relaxed), 2), std::memory_order_relaxed);
     uint32_t head = stream.audio_head.load(std::memory_order_relaxed);
     const uint32_t tail = stream.audio_tail.load(std::memory_order_acquire);
     for (size_t sample = 0; sample < audio_count; ++sample) {
@@ -160,8 +176,29 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     }
     stream.audio_head.store(head, std::memory_order_release);
     stream.audio_produced.fetch_add(frames, std::memory_order_relaxed);
+    stream.demod_timing.record(visualNowNs() - demodStarted);
     if (length < spectrumSize * 2) return;
 
+    const uint64_t now = visualNowNs();
+    constexpr uint64_t interval = 1000000000ULL / 30;
+    if (now < stream.next_spectrum_ns) return;
+    stream.next_spectrum_ns = stream.next_spectrum_ns == 0 ? now + interval : stream.next_spectrum_ns + interval;
+    if (stream.next_spectrum_ns <= now) stream.next_spectrum_ns = now + interval;
+    stream.spectrum_mailbox.submit([&](SpectrumJob& job) {
+        std::memcpy(job.samples.data(), samples, job.samples.size());
+        job.tuning = tuning; job.timestampNs = demodStarted;
+        job.session = stream.spectrum_session.load(std::memory_order_relaxed);
+        job.bandwidth = bandwidth; job.passbandOffset = passband_offset; job.mode = mode;
+    });
+    stream.spectrum_submitted.fetch_add(1, std::memory_order_relaxed);
+}
+
+void calculate_spectrum(const SpectrumJob& job) {
+    const uint64_t fftStarted = visualNowNs();
+    const auto* samples = job.samples.data();
+    const auto tuning = job.tuning;
+    const int offsetHz = static_cast<int32_t>(tuning & 0xffffffffu);
+    const int bandwidth = job.bandwidth, passband_offset = job.passbandOffset;
     constexpr int n = spectrumSize;
     constexpr float pi = 3.14159265358979323846f;
     static const auto window = [] {
@@ -180,10 +217,20 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         return result;
     }();
     std::array<std::complex<float>, n> values;
+    // Remove receiver DC before windowing. A weighted mean also cancels the
+    // zero-frequency bin with this window, without touching the audio path.
+    double meanI = 0.0, meanQ = 0.0, weightSum = 0.0;
+    for (int i = 0; i < n; ++i) {
+        meanI += (static_cast<float>(samples[2 * i]) - 127.5f) * window[i];
+        meanQ += (static_cast<float>(samples[2 * i + 1]) - 127.5f) * window[i];
+        weightSum += window[i];
+    }
+    const float dcI = static_cast<float>(meanI / weightSum);
+    const float dcQ = static_cast<float>(meanQ / weightSum);
     for (int i = 0; i < n; ++i) {
         values[i] = std::complex<float>(
-            (static_cast<float>(samples[2 * i]) - 127.5f) / 128.0f,
-            (static_cast<float>(samples[2 * i + 1]) - 127.5f) / 128.0f
+            (static_cast<float>(samples[2 * i]) - 127.5f - dcI) / 128.0f,
+            (static_cast<float>(samples[2 * i + 1]) - 127.5f - dcQ) / 128.0f
         ) * window[i];
     }
     for (int i = 1, j = 0; i < n; ++i) {
@@ -212,12 +259,20 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     }
     const int center_bin = static_cast<int>(std::lround(n / 2.0 + (offsetHz + passband_offset) * static_cast<double>(n) / WfmDemodulator::inputSampleRate));
     const int half_bins = std::max(1, bandwidth * n / (2 * WfmDemodulator::inputSampleRate));
-    stream.channel_signal = -180.f;
+    float signal = -180.f;
     for (int i = std::max(0, center_bin - half_bins); i <= std::min(n - 1, center_bin + half_bins); ++i)
-        stream.channel_signal = std::max(stream.channel_signal, frame[i]);
+        signal = std::max(signal, frame[i]);
+    stream.fft_timing.record(visualNowNs() - fftStarted);
+    if (!stream.spectrum_running.load(std::memory_order_acquire)) return;
+    const int currentWidth = stream.bandwidths[job.mode].load();
+    const int effectiveWidth = currentWidth == 0 ? DspProfiles::modes[job.mode].bandwidthHz : currentWidth;
+    if (stream.tuning.load() == tuning && stream.demodulation.load() == job.mode && effectiveWidth == bandwidth)
+        stream.channel_signal.store(signal, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(stream.spectrum_mutex);
     stream.spectrum = frame;
     stream.spectrum_center_hz = static_cast<int64_t>(tuning >> 32);
+    stream.spectrum_timestamp_ns = job.timestampNs;
+    stream.spectrum_frame_session = job.session;
     stream.spectrum_generation.fetch_add(1, std::memory_order_relaxed);
 }
 }
@@ -247,7 +302,14 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.bytes = 0;
     stream.blocks = 0;
     stream.last_error = 0;
-    stream.spectrum_generation = 0;
+    {
+        std::lock_guard<std::mutex> spectrumLock(stream.spectrum_mutex);
+        stream.spectrum_generation = 0; stream.spectrum_timestamp_ns = 0; stream.spectrum_frame_session = 0;
+    }
+    stream.spectrum_session.fetch_add(1);
+    stream.spectrum_submitted = 0; stream.next_spectrum_ns = 0;
+    stream.spectrum_mailbox.reset();
+    stream.demod_timing.reset(); stream.fft_timing.reset(); stream.jni_timing.reset();
     stream.tuning.store(pack_tuning(plan), std::memory_order_release);
     stream.hardware_tunes = 1;
     stream.digital_tunes = 0;
@@ -267,10 +329,17 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.audio_dropped = 0;
     stream.audio_trimmed = 0;
     stream.running = 1;
+    stream.spectrum_running = true;
+    stream.spectrum_worker = std::thread([] {
+        SpectrumJob job;
+        while (stream.spectrum_mailbox.take(job)) calculate_spectrum(job);
+    });
     stream.worker = std::thread([] {
         int result = rtlsdr_read_async(stream.device, on_iq, nullptr, 8, 32768);
         stream.last_error = result;
         stream.running = 0;
+        stream.spectrum_running = false;
+        stream.spectrum_mailbox.stop();
     });
     return 0;
 }
@@ -366,23 +435,25 @@ Java_com_example_sdr_NativeSdr_discardAudio(JNIEnv *, jobject) {
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_example_sdr_NativeSdr_spectrum(JNIEnv *env, jobject) {
-    std::array<float, spectrumSize> copy;
+    const uint64_t started = visualNowNs();
     int64_t center;
-    uint64_t generation;
+    uint64_t generation, timestamp, session;
+    jfloatArray bins = env->NewFloatArray(spectrumSize);
+    if (!bins) return nullptr;
     {
         std::lock_guard<std::mutex> lock(stream.spectrum_mutex);
-        copy = stream.spectrum;
+        env->SetFloatArrayRegion(bins, 0, spectrumSize, stream.spectrum.data());
         center = stream.spectrum_center_hz;
         generation = stream.spectrum_generation.load(std::memory_order_relaxed);
+        timestamp = stream.spectrum_timestamp_ns; session = stream.spectrum_frame_session;
     }
-    jfloatArray bins = env->NewFloatArray(copy.size());
-    if (!bins) return nullptr;
-    env->SetFloatArrayRegion(bins, 0, copy.size(), copy.data());
     jclass frameClass = env->FindClass("com/example/sdr/SpectrumFrame");
     if (!frameClass) return nullptr;
-    jmethodID constructor = env->GetMethodID(frameClass, "<init>", "([FJJ)V");
+    jmethodID constructor = env->GetMethodID(frameClass, "<init>", "([FJJJJI)V");
     if (!constructor) return nullptr;
-    return env->NewObject(frameClass, constructor, bins, static_cast<jlong>(center), static_cast<jlong>(generation));
+    jobject result = env->NewObject(frameClass, constructor, bins, static_cast<jlong>(center), static_cast<jlong>(generation), static_cast<jlong>(timestamp), static_cast<jlong>(session), static_cast<jint>(WfmDemodulator::inputSampleRate));
+    stream.jni_timing.record(visualNowNs() - started);
+    return result;
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -399,6 +470,9 @@ Java_com_example_sdr_NativeSdr_stopStream(JNIEnv *, jobject) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     if (stream.worker.joinable()) stream.worker.join();
+    stream.spectrum_running = false;
+    stream.spectrum_mailbox.stop();
+    if (stream.spectrum_worker.joinable()) stream.spectrum_worker.join();
     rtlsdr_set_bias_tee(stream.device, 0);
     rtlsdr_close(stream.device);
     stream.device = nullptr;
@@ -426,6 +500,19 @@ Java_com_example_sdr_NativeSdr_streamStats(JNIEnv *env, jobject) {
     };
     jlongArray result = env->NewLongArray(12);
     if (result) env->SetLongArrayRegion(result, 0, 12, values);
+    return result;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_example_sdr_NativeSdr_visualStats(JNIEnv *env, jobject) {
+    jlong values[11]{};
+    VisualTiming* stages[] = {&stream.demod_timing, &stream.fft_timing, &stream.jni_timing};
+    for (int i = 0; i < 3; ++i) {
+        values[3*i] = stages[i]->total.load(); values[3*i+1] = stages[i]->count.load(); values[3*i+2] = stages[i]->maximum.load();
+    }
+    values[9] = stream.spectrum_submitted.load(); values[10] = stream.spectrum_mailbox.replaced();
+    jlongArray result = env->NewLongArray(11);
+    if (result) env->SetLongArrayRegion(result, 0, 11, values);
     return result;
 }
 

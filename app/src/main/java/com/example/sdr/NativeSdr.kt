@@ -10,6 +10,7 @@ object NativeSdr {
     external fun startStream(fd: Int, frequencyHz: Long): Int
     external fun stopStream()
     external fun streamStats(): LongArray
+    external fun visualStats(): LongArray
     external fun receiverRates(): IntArray
     external fun setFrequency(frequencyHz: Long): Int
     external fun setWfmStereo(enabled: Boolean)

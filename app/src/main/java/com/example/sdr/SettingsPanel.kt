@@ -122,10 +122,7 @@ internal fun SettingsPanel(
                         Text("Spread two fingers horizontally on the waterfall to zoom both displays.", color = settingsMuted, fontSize = 13.sp)
                     }
                     SettingsPage.WATERFALL -> {
-                        Text("Refresh rate", color = settingsIvory, fontSize = 16.sp)
-                        WaterfallFrameRate.entries.forEach { option ->
-                            SettingsChoice("${option.framesPerSecond} FPS", option == frameRate) { onFrameRateChange(option) }
-                        }
+                        SettingsInfo("Refresh rate", "30 FPS")
                     }
                     SettingsPage.ENCODER -> {
                         SettingsEntry("Tuning step", tuningStep.label) { open(SettingsPage.STEP) }

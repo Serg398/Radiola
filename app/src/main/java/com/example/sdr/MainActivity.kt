@@ -99,9 +99,6 @@ class MainActivity : ComponentActivity() {
         get() = model.frequencyHz
         set(value) { model.frequencyHz = value }
     private val spectrumState get() = model.spectrumState
-    private var spectrumCenterFrequencyHz
-        get() = model.spectrumCenterFrequencyHz
-        set(value) { model.spectrumCenterFrequencyHz = value }
     private val waterfallState get() = model.waterfallState
     private var lastSpectrumGeneration = 0L
     private var lastWaterfallGeneration = 0L
@@ -203,12 +200,12 @@ class MainActivity : ComponentActivity() {
                 val waterfallChanged = updateWaterfall && generation != lastWaterfallGeneration
                 if (spectrumChanged || waterfallChanged) {
                     val frame = receiverSession.spectrum()
-                    spectrumCenterFrequencyHz = frame.centerFrequencyHz
+                    if (frame.timestampNanos > 0) RenderTimings.frameAge.record((System.nanoTime() - frame.timestampNanos).coerceAtLeast(0))
                     if (spectrumChanged) {
                         val bins = frame.bins
                         var peak = -90f
-                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.offsetForBandwidth(runtime.bandwidth(demodulationMode)) - frame.centerFrequencyHz) * bins.size.toDouble() / receiverRates[0]).roundToInt()
-                        val halfBins = maxOf(1, runtime.bandwidth(demodulationMode) * bins.size / (2 * receiverRates[0]))
+                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.offsetForBandwidth(runtime.bandwidth(demodulationMode)) - frame.centerFrequencyHz) * bins.size.toDouble() / frame.spanHz).roundToInt()
+                        val halfBins = maxOf(1, runtime.bandwidth(demodulationMode) * bins.size / (2 * frame.spanHz))
                         for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
                             if (bins[index] > peak) peak = bins[index]
                         }
@@ -216,12 +213,13 @@ class MainActivity : ComponentActivity() {
                         squelchOpen = NativeSdr.squelchOpen()
                         wfmStereoLocked = NativeSdr.wfmStereoLocked()
                         lastSpectrumGeneration = frame.generation
-                        spectrumState.value = frame.bins
+                        spectrumState.value = frame
                         spectrumFramesInWindow++
                     }
                     if (waterfallChanged) {
                         lastWaterfallGeneration = frame.generation
-                        waterfallState.value = frame.bins
+                        model.waterfallHistory.append(frame)
+                        waterfallState.value = frame
                         waterfallFramesInWindow++
                     }
                 }
@@ -283,7 +281,6 @@ class MainActivity : ComponentActivity() {
                 frequencyInput = frequencyInput,
                 currentFrequencyHz = frequencyHz,
                 spectrumSpanHz = receiverRates[0],
-                spectrumCenterFrequencyHz = spectrumCenterFrequencyHz.takeIf { it > 0 } ?: frequencyHz,
                 receiveBandwidthHz = runtime.bandwidth(demodulationMode),
                 bandwidthDefault = runtime.bandwidths[demodulationMode] == null,
                 onBandwidthChange = { runtime.setBandwidth(demodulationMode, it) },
@@ -292,6 +289,7 @@ class MainActivity : ComponentActivity() {
                 gainSteps = gainSteps,
                 spectrumState = spectrumState,
                 waterfallState = waterfallState,
+                waterfallHistory = model.waterfallHistory,
                 waterfallFrameRate = waterfallFrameRate,
                 tuningStep = tuningStep,
                 encoderFeedback = encoderFeedback,

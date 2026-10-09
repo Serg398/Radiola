@@ -82,6 +82,9 @@ class ReceiverRuntime(private val context: Context) {
                 if (SystemClock.elapsedRealtime() - lastMetricsAt > 5000) {
                     val output = session.audioMetrics()
                     Log.d("ReceiverAudio", "ring_frames=${stats[11]} trimmed_samples=${stats[10]} overflow_samples=${stats[5]} track_frames=${output.queuedFrames} route=${output.route}")
+                    val visual = NativeSdr.visualStats()
+                    fun average(offset: Int) = if (visual[offset+1] == 0L) 0.0 else visual[offset] / visual[offset+1] / 1_000_000.0
+                    Log.d("ReceiverVisual", "demod_ms=${average(0)} fft_ms=${average(3)} fft_count=${visual[4]} submitted=${visual[9]} replaced=${visual[10]} jni_ms=${average(6)} spectrum_draw_ms=${RenderTimings.spectrum.meanMs()} waterfall_draw_ms=${RenderTimings.waterfall.meanMs()} history_ms=${RenderTimings.history.meanMs()} cache_ms=${RenderTimings.cache.meanMs()} cache_max_ms=${RenderTimings.cache.maximumNs / 1_000_000.0} frame_age_ms=${RenderTimings.frameAge.meanMs()}")
                     lastMetricsAt = SystemClock.elapsedRealtime()
                 }
                 if (stats[2] != 1L) stop("Stream stopped: ${stats[3]}")

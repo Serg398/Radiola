@@ -9,56 +9,17 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.view.View
 
-/** Stores full FFT rows in a circular bitmap; zoom crops history without losing bins. */
-class WaterfallView(context: Context) : View(context) {
-    private val plotWidth = 8192
-    private val renderWidth = 1024
-    private val plotHeight = 160
-    private val history = ByteArray(plotWidth * plotHeight)
-    private val pixels = IntArray(renderWidth)
-    private var firstBin = 0
-    private var endBin = plotWidth
-    private val bitmap = Bitmap.createBitmap(renderWidth, plotHeight, Bitmap.Config.ARGB_8888).apply {
-        eraseColor(Color.rgb(1, 10, 54))
-    }
+/** Full-band color cache: each historical row is positioned by its own RF coordinates. */
+class WaterfallView(context: Context, private val history: WaterfallHistory) : View(context) {
+    private var renderWidth = 1024
+    private var pixels = IntArray(renderWidth)
+    private var bitmap = Bitmap.createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
     private val paint = Paint().apply { isFilterBitmap = false }
-    private var newestRow = 0
-    private var lastSpectrum: FloatArray? = null
-    private val rowCentersHz = LongArray(plotHeight)
+    private var cachedRevision = -1L
     private var tuningFrequencyHz = 0L
     private var visibleSpanHz = 2_400_000
-
-    fun setTuning(frequencyHz: Long, spanHz: Int) {
-        if (tuningFrequencyHz == frequencyHz && visibleSpanHz == spanHz) return
-        tuningFrequencyHz = frequencyHz
-        visibleSpanHz = spanHz.coerceAtLeast(1)
-        invalidate()
-    }
-    private val sourceRect = Rect(0, 0, renderWidth, plotHeight)
+    private val sourceRect = Rect()
     private val destinationRect = RectF()
-
-    fun setViewport(start: Float, end: Float) {
-        val left = (start * plotWidth).toInt().coerceIn(0, plotWidth - 1)
-        val right = (end * plotWidth).toInt().coerceIn(left + 1, plotWidth)
-        if (firstBin == left && endBin == right) return
-        firstBin = left
-        endBin = right
-        for (row in 0 until plotHeight) renderRow(row)
-        invalidate()
-    }
-
-    private fun renderRow(row: Int) {
-        val offset = row * plotWidth
-        val count = endBin - firstBin
-        for (x in 0 until renderWidth) {
-            val first = firstBin + x * count / renderWidth
-            val last = maxOf(first + 1, firstBin + (x + 1) * count / renderWidth)
-            var level = 0
-            for (bin in first until last) level = maxOf(level, history[offset + bin].toInt() and 255)
-            pixels[x] = palette[level]
-        }
-        bitmap.setPixels(pixels, 0, renderWidth, 0, row, renderWidth, 1)
-    }
     private val palette = IntArray(256) { index ->
         val t = index / 255f
         when {
@@ -67,49 +28,69 @@ class WaterfallView(context: Context) : View(context) {
             else -> Color.rgb((67 + (t - 0.67f) * 570).toInt().coerceAtMost(255), 255, (255 - (t - 0.67f) * 730).toInt().coerceAtLeast(0))
         }
     }
-
-    fun updateSpectrum(spectrum: FloatArray, centerHz: Long) {
-        if (spectrum.isEmpty() || spectrum === lastSpectrum) return
-        lastSpectrum = spectrum
-        newestRow = (newestRow + plotHeight - 1) % plotHeight
-        rowCentersHz[newestRow] = centerHz
-        for (x in 0 until plotWidth) {
-            val first = x * spectrum.size / plotWidth
-            val last = (x + 1) * spectrum.size / plotWidth
-            var db = spectrum[first]
-            for (bin in first + 1 until last) db = maxOf(db, spectrum[bin])
-            // The 8x larger FFT lowers the noise in each bin by about 9 dB.
-            val level = (((db + 94f) / 69f) * 255f).toInt().coerceIn(0, 255)
-            history[newestRow * plotWidth + x] = level.toByte()
-        }
-        renderRow(newestRow)
+    init { bitmap.eraseColor(palette[0]) }
+    fun setTuning(frequencyHz: Long, spanHz: Int) {
+        if (tuningFrequencyHz == frequencyHz && visibleSpanHz == spanHz) return
+        tuningFrequencyHz = frequencyHz; visibleSpanHz = spanHz.coerceAtLeast(1)
+        refresh()
         invalidate()
     }
-
+    fun refresh() {
+        val started = System.nanoTime()
+        // Cache sufficient resolution for the zoom while retaining the complete captured band.
+        val wanted = (1024L * history.latestSpanHz / visibleSpanHz).coerceIn(1024, history.binCount.toLong()).toInt()
+        var width = 1024
+        while (width < wanted) width *= 2
+        width = minOf(width, history.binCount)
+        // Avoid bitmap allocation churn when a pinch oscillates around a resolution boundary.
+        if (width < renderWidth && visibleSpanHz < history.latestSpanHz && wanted > renderWidth * .48) width = renderWidth
+        if (width != renderWidth) {
+            renderWidth = width; pixels = IntArray(width)
+            bitmap = Bitmap.createBitmap(width, history.capacity, Bitmap.Config.ARGB_8888).apply { eraseColor(palette[0]) }
+            cachedRevision = -1
+        }
+        if (cachedRevision == history.revision) return
+        val rows = if (cachedRevision < 0) history.size else minOf(history.size.toLong(), history.revision - cachedRevision).toInt()
+        for (age in 0 until rows) renderRow(history.rowAtAge(age))
+        cachedRevision = history.revision
+        RenderTimings.cache.record(System.nanoTime() - started)
+        invalidate()
+    }
+    private fun renderRow(row: Int) {
+        for (x in 0 until renderWidth) {
+            val first = x * history.binCount / renderWidth
+            val end = maxOf(first + 1, (x + 1) * history.binCount / renderWidth)
+            var level = 0
+            for (bin in first until end) level = maxOf(level, history.levelAt(row, bin))
+            pixels[x] = palette[level]
+        }
+        bitmap.setPixels(pixels, 0, renderWidth, 0, row, renderWidth, 1)
+    }
     override fun onDraw(canvas: Canvas) {
+        val started = System.nanoTime()
         super.onDraw(canvas)
         val checkpoint = canvas.save()
         canvas.clipRect(0, 0, width, height)
         canvas.drawColor(palette[0])
-        // Store every row at its own RF center; move history by absolute frequency.
-        // Tuning only translates cached rows, without resampling all FFT history.
-        val rowHeight = maxOf(1, (height + plotHeight - 1) / plotHeight)
-        var screenRow = 0
-        while (screenRow < plotHeight && screenRow * rowHeight < height) {
-            val row = (newestRow + screenRow) % plotHeight
-            val center = rowCentersHz[row]
-            // At a fixed frequency this remains just two bitmap draws for the ring.
+        val rowHeight = maxOf(1, (height + history.capacity - 1) / history.capacity)
+        var age = 0
+        while (age < history.size && age * rowHeight < height) {
+            val row = history.rowAtAge(age)
+            val center = history.centerAt(row)
+            val span = history.spanAt(row)
             var rows = 1
-            while (screenRow + rows < plotHeight && row + rows < plotHeight
-                && rowCentersHz[row + rows] == center) rows++
-            val shift = ((center - tuningFrequencyHz).toDouble() * width / visibleSpanHz).toFloat()
-            if (center != 0L && shift > -width && shift < width) {
+            while (age + rows < history.size && row + rows < history.capacity &&
+                history.centerAt(row + rows) == center && history.spanAt(row + rows) == span) rows++
+            val left = (history.imageLeftFraction(row, tuningFrequencyHz.toDouble(), visibleSpanHz) * width).toFloat()
+            val imageWidth = span.toFloat() / visibleSpanHz * width
+            if (left < width && left + imageWidth > 0) {
                 sourceRect.set(0, row, renderWidth, row + rows)
-                destinationRect.set(shift, (screenRow * rowHeight).toFloat(), shift + width, ((screenRow + rows) * rowHeight).toFloat())
+                destinationRect.set(left, (age * rowHeight).toFloat(), left + imageWidth, ((age + rows) * rowHeight).toFloat())
                 canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
             }
-            screenRow += rows
+            age += rows
         }
         canvas.restoreToCount(checkpoint)
+        RenderTimings.waterfall.record(System.nanoTime() - started)
     }
 }

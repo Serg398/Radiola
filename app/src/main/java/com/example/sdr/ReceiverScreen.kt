@@ -80,6 +80,7 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
+private val emptySpectrum = FloatArray(0)
 private val backdrop = Color(0xFF0D0F11)
 private val surface = Color(0xFF151719)
 private val edge = Color(0xFF30302E)
@@ -100,15 +101,15 @@ fun ReceiverScreen(
     frequencyInput: String,
     currentFrequencyHz: Long,
     spectrumSpanHz: Int,
-    spectrumCenterFrequencyHz: Long,
     receiveBandwidthHz: Int,
     bandwidthDefault: Boolean = true,
     onBandwidthChange: (Int?) -> Unit = {},
     demodulationMode: DemodulationMode,
     receiverGain: ReceiverGain,
     gainSteps: List<Int>,
-    spectrumState: State<FloatArray>,
-    waterfallState: State<FloatArray>,
+    spectrumState: State<SpectrumFrame?>,
+    waterfallState: State<SpectrumFrame?>,
+    waterfallHistory: WaterfallHistory,
     waterfallFrameRate: WaterfallFrameRate,
     tuningStep: TuningStep,
     actualSpectrumFps: Int,
@@ -168,9 +169,6 @@ fun ReceiverScreen(
     val visibleCenterHz = if (encoderRotating) displayFrequencyHz else currentFrequencyHz.toDouble()
     val channelOffsetHz = 0L
     val passbandOffsetHz = demodulationMode.offsetForBandwidth(receiveBandwidthHz).toLong()
-    // Keep the viewport's actual width even while hardware catches up with tuning.
-    val viewportStart = (0.5 + (visibleCenterHz - spectrumCenterFrequencyHz - visibleSpanHz / 2.0) / spectrumSpanHz).toFloat()
-    val viewportEnd = viewportStart + visibleSpanHz.toFloat() / spectrumSpanHz
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = {
@@ -284,7 +282,7 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.offsetForBandwidth(receiveBandwidthHz), viewportStart, viewportEnd, Modifier.fillMaxSize())
+                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.offsetForBandwidth(receiveBandwidthHz), visibleCenterHz, Modifier.fillMaxSize())
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
@@ -328,12 +326,11 @@ fun ReceiverScreen(
                             }
                         }) {
                             AndroidView(
-                                factory = { WaterfallView(it) },
+                                factory = { WaterfallView(it, waterfallHistory) },
                                 update = { view ->
-                                    view.setViewport(0.5f - 0.5f / zoom, 0.5f + 0.5f / zoom)
                                     view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
-                                    val values = waterfallState.value
-                                    if (values.isNotEmpty()) view.updateSpectrum(values, spectrumCenterFrequencyHz)
+                                    waterfallState.value // Subscribe to the independent waterfall snapshot.
+                                    view.refresh()
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = 31.dp)
                             )
@@ -400,14 +397,12 @@ fun ReceiverScreen(
                         Text("30 FPS", color = warm, fontSize = 13.sp)
                     }
                     Row(
-                        Modifier.fillMaxWidth().height(24.dp).clickable {
-                            onWaterfallFrameRateChange(if (waterfallFrameRate == WaterfallFrameRate.FPS_30) WaterfallFrameRate.FPS_60 else WaterfallFrameRate.FPS_30)
-                        },
+                        Modifier.fillMaxWidth().height(24.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Waterfall", color = ivory, fontSize = 13.sp)
                         Box(Modifier.weight(1f))
-                        Text("${waterfallFrameRate.framesPerSecond} FPS  ⌄", color = warm, fontSize = 13.sp)
+                        Text("30 FPS", color = warm, fontSize = 13.sp)
                     }
                 }
                 ControlCard(Modifier.weight(0.95f).fillMaxHeight()) {
@@ -981,13 +976,12 @@ private fun TubeIcon(modifier: Modifier = Modifier) {
 
 @Composable
 private fun AmberSpectrum(
-    valuesState: State<FloatArray>,
+    valuesState: State<SpectrumFrame?>,
     spectrumSpanHz: Int,
     receiveBandwidthHz: Int,
     channelOffsetHz: Long,
     passbandOffsetHz: Int,
-    viewportStart: Float,
-    viewportEnd: Float,
+    visibleCenterHz: Double,
     modifier: Modifier = Modifier
 ) {
     val axisPaint = remember {
@@ -997,6 +991,7 @@ private fun AmberSpectrum(
         }
     }
     Canvas(modifier) {
+        val started = System.nanoTime()
         val left = 31.dp.toPx()
         val top = 20.dp.toPx()
         val bottom = size.height
@@ -1017,7 +1012,12 @@ private fun AmberSpectrum(
                 axisPaint
             )
         }
-        val values = valuesState.value
+        val frame = valuesState.value
+        val values = frame?.bins ?: emptySpectrum
+        val captureSpan = frame?.spanHz ?: spectrumSpanHz
+        val captureCenter = frame?.centerFrequencyHz?.toDouble() ?: visibleCenterHz
+        val viewportStart = (0.5 + (visibleCenterHz - captureCenter - spectrumSpanHz * .5) / captureSpan).toFloat()
+        val viewportEnd = viewportStart + spectrumSpanHz.toFloat() / captureSpan
         if (values.isNotEmpty()) {
             val trace = Path()
             val fill = Path()
@@ -1067,6 +1067,7 @@ private fun AmberSpectrum(
         drawLine(Color(0x80F7BA6D), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
         drawLine(Color(0xC9FFC073), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
         }
+        RenderTimings.spectrum.record(System.nanoTime() - started)
     }
 }
 
@@ -1080,9 +1081,11 @@ private fun ReceiverPreview() {
         usbCheckResult = "USB connected", streaming = true, streamPending = false,
         frequencyInput = "100.500", currentFrequencyHz = 100_500_000L,
         spectrumSpanHz = 2_400_000, receiveBandwidthHz = 240_000,
-        spectrumCenterFrequencyHz = 100_500_000L,
-        spectrumState = remember { mutableStateOf(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }) },
-        waterfallState = remember { mutableStateOf(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }) },
+        spectrumState = remember { mutableStateOf<SpectrumFrame?>(SpectrumFrame(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }, 100_500_000, 1)) },
+        waterfallState = remember { mutableStateOf<SpectrumFrame?>(SpectrumFrame(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }, 100_500_000, 1)) },
+        waterfallHistory = remember { WaterfallHistory().apply {
+            append(SpectrumFrame(FloatArray(1024) { -95f + if (it in 490..530) 50f else 0f }, 100_500_000, 1))
+        } },
         waterfallFrameRate = WaterfallFrameRate.FPS_30, actualSpectrumFps = 30, actualWaterfallFps = 30,
         signalDbfs = -45f,
         onRequestPermission = {}, onCheckConnection = {}, onCaptureIq = {}, onStartStream = {}, onStopStream = {},
