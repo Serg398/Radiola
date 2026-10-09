@@ -56,6 +56,10 @@ struct StreamState {
     std::atomic<bool> wfm_stereo_enabled{false};
     std::atomic<bool> wfm_stereo_locked{false};
     WfmDemodulator wfm;
+    std::mutex rds_mutex;
+    RdsSnapshot rds_snapshot;
+    int64_t rds_frequency_hz = 0;
+    uint64_t rds_tuning = 0; // IQ callback only.
     NfmDemodulator nfm;
     SsbDemodulator ssb;
     AmDemodulator am;
@@ -120,6 +124,10 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     const int mode = stream.demodulation.load(std::memory_order_acquire);
     const uint64_t tuning = stream.tuning.load(std::memory_order_acquire);
     const int offsetHz = static_cast<int32_t>(tuning & 0xffffffffu);
+    if (tuning != stream.rds_tuning || mode != stream.active_demodulation) {
+        stream.wfm.resetRds();
+        stream.rds_tuning = tuning;
+    }
     const bool retuned = stream.retune_audio.exchange(false);
     if (mode != stream.active_demodulation) {
         stream.wfm.reset();
@@ -154,6 +162,11 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
         : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size() / 2)
         : stream.wfm.process(samples, length, pcm.data(), pcm.size());
     stream.wfm_stereo_locked.store(mode == 0 && stream.wfm.stereoLocked(), std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(stream.rds_mutex);
+        stream.rds_snapshot = mode == 0 ? stream.wfm.rdsSnapshot() : RdsSnapshot{};
+        stream.rds_frequency_hz = static_cast<int64_t>(tuning >> 32) + offsetHz;
+    }
     const size_t frames = mode == 0 ? audio_count / 2 : audio_count;
     if (mode != 0) {
         // Expand backwards so every mode uses the same stereo AudioTrack and ring.
@@ -314,6 +327,12 @@ Java_com_example_sdr_NativeSdr_startStream(JNIEnv *, jobject, jint fd, jlong fre
     stream.hardware_tunes = 1;
     stream.digital_tunes = 0;
     stream.wfm.reset();
+    stream.rds_tuning = 0;
+    {
+        std::lock_guard<std::mutex> lock(stream.rds_mutex);
+        stream.rds_snapshot = {};
+        stream.rds_frequency_hz = 0;
+    }
     stream.am.reset();
     stream.nfm.reset();
     stream.ssb.reset();
@@ -459,6 +478,31 @@ Java_com_example_sdr_NativeSdr_spectrum(JNIEnv *env, jobject) {
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_example_sdr_NativeSdr_spectrumGeneration(JNIEnv *, jobject) {
     return static_cast<jlong>(stream.spectrum_generation.load(std::memory_order_relaxed));
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_sdr_NativeSdr_rds(JNIEnv* env, jobject) {
+    RdsSnapshot snapshot;
+    int64_t frequency;
+    {
+        std::lock_guard<std::mutex> lock(stream.rds_mutex);
+        snapshot = stream.rds_snapshot; frequency = stream.rds_frequency_hz;
+    }
+    std::array<jbyte, 76> bytes{};
+    bytes[0] = snapshot.pi >> 8; bytes[1] = snapshot.pi & 255;
+    bytes[2] = snapshot.pty;
+    bytes[3] = (snapshot.psReady ? 1 : 0) | (snapshot.textReady ? 2 : 0) |
+        (snapshot.tp ? 4 : 0) | (snapshot.ta ? 8 : 0);
+    std::memcpy(bytes.data() + 4, snapshot.ps.data(), 8);
+    std::memcpy(bytes.data() + 12, snapshot.text.data(), 64);
+    jbyteArray data = env->NewByteArray(bytes.size());
+    if (!data) return nullptr;
+    env->SetByteArrayRegion(data, 0, bytes.size(), bytes.data());
+    jclass cls = env->FindClass("com/example/sdr/RdsFrame");
+    if (!cls) return nullptr;
+    jmethodID constructor = env->GetMethodID(cls, "<init>", "([BJIJ)V");
+    if (!constructor) return nullptr;
+    return env->NewObject(cls, constructor, data, static_cast<jlong>(frequency), snapshot.ageMs, static_cast<jlong>(snapshot.groups));
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -32,6 +32,8 @@ class ReceiverRuntime(private val context: Context) {
     var snapshot by mutableStateOf(ReceiverSnapshot())
         private set
     var mode = DemodulationMode.WFM
+    var rds by mutableStateOf(RdsInformation())
+        private set
     var gain = DisplaySettings(context).receiverGain()
     var stereo = DisplaySettings(context).wfmStereoEnabled()
     var squelch = DisplaySettings(context).receiverSquelch()
@@ -79,6 +81,7 @@ class ReceiverRuntime(private val context: Context) {
         override fun run() {
             if (session.snapshot().state == ReceiverState.Running) {
                 val stats = session.stats()
+                rds = if (mode == DemodulationMode.WFM) NativeSdr.rds().information() else RdsInformation()
                 if (SystemClock.elapsedRealtime() - lastMetricsAt > 5000) {
                     val output = session.audioMetrics()
                     Log.d("ReceiverAudio", "ring_frames=${stats[11]} trimmed_samples=${stats[10]} overflow_samples=${stats[5]} track_frames=${output.queuedFrames} route=${output.route}")
@@ -137,6 +140,7 @@ class ReceiverRuntime(private val context: Context) {
             if (value.state == ReceiverState.Running) handler.postDelayed(monitor, 500)
         }
         if (value.state == ReceiverState.Idle || value.state == ReceiverState.Error) {
+            rds = RdsInformation()
             if (focusHeld) { audioManager.abandonAudioFocusRequest(focus); focusHeld = false }
             onIdle?.invoke()
         }

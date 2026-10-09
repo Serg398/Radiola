@@ -134,6 +134,7 @@ fun ReceiverScreen(
     onSquelchChange: (ReceiverSquelch) -> Unit = {},
     wfmStereoEnabled: Boolean = false,
     wfmStereoLocked: Boolean = false,
+    rdsInformation: RdsInformation = RdsInformation(),
     onWfmStereoChange: (Boolean) -> Unit = {},
     encoderFeedback: EncoderFeedback = EncoderFeedback.LIGHT,
     onEncoderFeedbackChange: (EncoderFeedback) -> Unit = {},
@@ -364,60 +365,65 @@ fun ReceiverScreen(
                 }
 
             }
-            Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
-                    Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(when (receiverState) {
-                            ReceiverState.Running -> "ON AIR"
-                            ReceiverState.Starting -> "STARTING"
-                            ReceiverState.Stopping -> "STOPPING"
-                            ReceiverState.Error -> "ERROR"
-                            ReceiverState.Idle -> "READY"
-                        }, color = if (streaming) warm else ivory, fontSize = 18.sp)
-                        Box(Modifier.weight(1f))
-                        Text("%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        if (permitted && !streaming) {
-                            SmallAction("USB TEST", !streamPending, Modifier.weight(1f)) { onCheckConnection() }
-                            SmallAction("IQ TEST", !streamPending, Modifier.weight(1f)) { onCaptureIq() }
-                        } else {
-                            Text(
-                                if (streaming) "${demodulationMode.label}  •  2.4 MSPS" else "RTL-SDR V4 waiting for USB",
-                                color = muted, fontSize = 12.sp
-                            )
+            ModulationInformationPanel(
+                demodulationMode, rdsInformation, currentFrequencyHz, streaming,
+                wfmStereoEnabled && wfmStereoLocked, signalDbfs,
+            ) {
+                Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
+                        Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
+                        Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(when (receiverState) {
+                                ReceiverState.Running -> "ON AIR"
+                                ReceiverState.Starting -> "STARTING"
+                                ReceiverState.Stopping -> "STOPPING"
+                                ReceiverState.Error -> "ERROR"
+                                ReceiverState.Idle -> "READY"
+                            }, color = if (streaming) warm else ivory, fontSize = 18.sp)
+                            Box(Modifier.weight(1f))
+                            Text("%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            if (permitted && !streaming) {
+                                SmallAction("USB TEST", !streamPending, Modifier.weight(1f)) { onCheckConnection() }
+                                SmallAction("IQ TEST", !streamPending, Modifier.weight(1f)) { onCaptureIq() }
+                            } else {
+                                Text(
+                                    if (streaming) "${demodulationMode.label}  •  2.4 MSPS" else "RTL-SDR V4 waiting for USB",
+                                    color = muted, fontSize = 12.sp
+                                )
+                            }
                         }
                     }
-                }
-                ControlCard(Modifier.weight(0.98f).fillMaxHeight()) {
-                    Text("DISPLAY", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
-                    Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Spectrum", color = ivory, fontSize = 13.sp)
-                        Text("30 FPS", color = warm, fontSize = 13.sp)
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().height(24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Waterfall", color = ivory, fontSize = 13.sp)
-                        Box(Modifier.weight(1f))
-                        Text("30 FPS", color = warm, fontSize = 13.sp)
-                    }
-                }
-                ControlCard(Modifier.weight(0.95f).fillMaxHeight()) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        TubeIcon(Modifier.width(30.dp).height(47.dp))
-                        Column(Modifier.padding(start = 8.dp)) {
-                            Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
-                            Text("${demodulationMode.label}  •  ${if (demodulationMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  48 kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
-                            Text("Volume: phone buttons", color = muted, fontSize = 11.sp, maxLines = 1)
+                    ControlCard(Modifier.weight(0.98f).fillMaxHeight()) {
+                        Text("DISPLAY", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
+                        Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Spectrum", color = ivory, fontSize = 13.sp)
+                            Text("30 FPS", color = warm, fontSize = 13.sp)
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().height(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Waterfall", color = ivory, fontSize = 13.sp)
+                            Box(Modifier.weight(1f))
+                            Text("30 FPS", color = warm, fontSize = 13.sp)
                         }
                     }
-                    Text(
-                        usbCheckResult ?: deviceName,
-                        color = muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
+                    ControlCard(Modifier.weight(0.95f).fillMaxHeight()) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            TubeIcon(Modifier.width(30.dp).height(47.dp))
+                            Column(Modifier.padding(start = 8.dp)) {
+                                Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
+                                Text("${demodulationMode.label}  •  ${if (demodulationMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  48 kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
+                                Text("Volume: phone buttons", color = muted, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                        Text(
+                            usbCheckResult ?: deviceName,
+                            color = muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
                 }

@@ -51,7 +51,7 @@ try {
     New-Item $output -ItemType Directory -Force -ErrorAction Stop | Out-Null
     $tests = if ($BaselineDirectory) { @('demod_interference_test', 'dsp_benchmark') } else {
         @('anti_alias_test', 'filter_bandwidth_test', 'channel_bandwidth_test', 'am_demodulator_test', 'nfm_demodulator_test', 'ssb_demodulator_test',
-          'wfm_stereo_test', 'tuning_continuity_test', 'audio_agc_test', 'squelch_test',
+          'wfm_stereo_test', 'rds_decoder_test', 'tuning_continuity_test', 'audio_agc_test', 'squelch_test',
           'rf_gain_controller_test', 'audio_queue_policy_test', 'latest_frame_mailbox_test', 'hf_tuning_test', 'demod_interference_test', 'dsp_benchmark')
     }
     if ($TestNames) {

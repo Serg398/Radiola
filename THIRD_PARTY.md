@@ -18,5 +18,11 @@
   Лицензия LGPL-2.1-or-later; текст лицензии:
   `app/src/main/cpp/third_party/libusb/COPYING`.
 
+- **RDS basic alphabet table** — таблица G0 из `src/text/rdsstring.cc`
+  проекта [windytan/redsea](https://github.com/windytan/redsea).
+  Copyright (c) Oona Räisänen; разрешение на использование и полный текст
+  уведомления сохранены в `app/src/main/java/com/example/sdr/RdsCharset.kt`.
+  Таблица преобразована в Kotlin `CharArray`; остальной код redsea не встроен.
+
 Драйвер RTL-SDR Blog V4 и libusb собираются из исходников вместе с приложением.
 При распространении приложения необходимо соблюдать условия лицензий этих библиотек.

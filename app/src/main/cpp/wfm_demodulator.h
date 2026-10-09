@@ -7,6 +7,7 @@
 #include "iq_decimator.h"
 #include "channel_filter.h"
 #include "fm_stereo_decoder.h"
+#include "rds_decoder.h"
 
 class WfmDemodulator {
 public:
@@ -19,6 +20,8 @@ public:
     void retune() { discardPhaseOnce_ = true; }
     void setStereo(bool enabled) { stereoEnabled_ = enabled; }
     bool stereoLocked() const { return decoder_.locked(); }
+    void resetRds() { rds_.reset(); }
+    RdsSnapshot rdsSnapshot() const { return rds_.snapshot(); }
     // Input: interleaved unsigned 8-bit IQ at 2.4 Msps. Output: interleaved L/R at 48 kHz.
     // Capacity and return value are int16 sample counts (two per audio frame).
     size_t process(const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity);
@@ -34,5 +37,6 @@ private:
     bool discardPhaseOnce_ = false;
     float lastPhase_ = 0.0f;
     FmStereoDecoder decoder_;
+    RdsDecoder rds_;
     bool stereoEnabled_ = false;
 };

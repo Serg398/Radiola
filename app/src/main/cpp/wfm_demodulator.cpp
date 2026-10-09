@@ -13,6 +13,7 @@ void WfmDemodulator::reset() {
     discardPhaseOnce_ = false;
     lastPhase_ = 0.0f;
     decoder_.reset();
+    rds_.reset();
 }
 
 size_t WfmDemodulator::process(
@@ -35,6 +36,7 @@ size_t WfmDemodulator::process(
             const float phase = discardPhaseOnce_ ? lastPhase_ : std::atan2(cross, dot);
             discardPhaseOnce_ = false;
             lastPhase_ = phase;
+            rds_.process(phase);
             int16_t left, right;
             if (decoder_.process(phase, stereoEnabled_, left, right) && produced + 2 <= capacity) {
                 output[produced++] = left;
