@@ -119,7 +119,7 @@ internal fun SettingsPanel(
                         SettingsInfo("Capture span", "2.4 MHz")
                         SettingsInfo("Zoom", "%.1f\u00d7".format(Locale.US, zoom))
                         SettingsButton("Reset zoom", onClick = onResetZoom)
-                        Text("Spread two fingers horizontally on the waterfall to zoom both displays.", color = settingsMuted, fontSize = 13.sp)
+                        Text("Drag the waterfall left or right to tune. Spread two fingers horizontally to zoom both displays.", color = settingsMuted, fontSize = 13.sp)
                     }
                     SettingsPage.WATERFALL -> {
                         SettingsInfo("Refresh rate", "30 FPS")

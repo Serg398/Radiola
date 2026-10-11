@@ -146,6 +146,7 @@ fun ReceiverScreen(
     val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
     var displayFrequencyHz by remember { mutableStateOf(currentFrequencyHz.toDouble()) }
     var encoderRotating by remember { mutableStateOf(false) }
+    var encoderBrakeRequest by remember { mutableStateOf(0) }
     val frequencyMotion = remember { FrequencyMotion(currentFrequencyHz.toDouble()) }
     val latestFrequencyHz by rememberUpdatedState(currentFrequencyHz)
     val latestSpanHz by rememberUpdatedState(spectrumSpanHz)
@@ -301,31 +302,18 @@ fun ReceiverScreen(
                         }
                     }
                     if (selected != "Spectrum") {
-                        Box(Modifier.fillMaxWidth().weight(1f).pointerInput(Unit) {
-                            val minimumDistance = 24.dp.toPx()
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                var previousDistance = 0f
-                                var previousIds: List<androidx.compose.ui.input.pointer.PointerId> = emptyList()
-                                do {
-                                    val event = awaitPointerEvent()
-                                    val fingers = event.changes.filter { it.pressed }
-                                    if (fingers.size == 2) {
-                                        val ids = fingers.map { it.id }
-                                        val distance = abs(fingers[0].position.x - fingers[1].position.x)
-                                        if (ids == previousIds && distance >= minimumDistance && previousDistance >= minimumDistance) {
-                                            zoom = (zoom * distance / previousDistance).coerceIn(1f, 16f)
-                                            fingers.forEach { it.consume() }
-                                        }
-                                        previousDistance = distance
-                                        previousIds = ids
-                                    } else {
-                                        previousDistance = 0f
-                                        previousIds = emptyList()
-                                    }
-                                } while (event.changes.any { it.pressed })
-                            }
-                        }) {
+                        Box(Modifier.fillMaxWidth().weight(1f).then(waterfallNavigation(
+                            visibleSpanHz = visibleSpanHz,
+                            zoom = zoom,
+                            onStep = onStep,
+                            onZoom = { zoom = it },
+                            onContact = {
+                                encoderBrakeRequest++
+                                encoderRotating = false
+                                frequencyMotion.snapTo(latestFrequencyHz.toDouble())
+                                displayFrequencyHz = latestFrequencyHz.toDouble()
+                            },
+                        ))) {
                             AndroidView(
                                 factory = { WaterfallView(it, waterfallHistory) },
                                 update = { view ->
@@ -428,6 +416,7 @@ fun ReceiverScreen(
             }
                 }
                 VerticalEncoder(
+                    brakeRequest = encoderBrakeRequest,
                     onStep = onStep,
                     tuningStep = tuningStep,
                     onTuningStepChange = onTuningStepChange,
@@ -556,7 +545,8 @@ private fun VerticalEncoder(
     modifier: Modifier = Modifier,
     onTick: () -> Unit = {},
     onBrake: () -> Unit = {},
-    onRotate: () -> Unit = {}
+    onRotate: () -> Unit = {},
+    brakeRequest: Int = 0,
 ) {
     val currentRotate by rememberUpdatedState(onRotate)
     val currentBrake by rememberUpdatedState(onBrake)
@@ -578,6 +568,18 @@ private fun VerticalEncoder(
     var lastRotationTime by remember { mutableStateOf(0L) }
     var carrySpeed by remember { mutableStateOf(0f) }
     var lastRotationDirection by remember { mutableStateOf(0f) }
+    LaunchedEffect(brakeRequest) {
+        if (brakeRequest != 0) {
+            flingJob?.cancel()
+            flingJob = null
+            idleJob?.cancel()
+            motionIdleJob?.cancel()
+            carrySpeed = 0f
+            travel = 0f
+            activeStepHz = currentMode.fixedHz ?: 1_000L
+            currentBrake()
+        }
+    }
     fun rotate(amount: Float, speed: Float) {
         if (amount != 0f) {
             currentRotate()
