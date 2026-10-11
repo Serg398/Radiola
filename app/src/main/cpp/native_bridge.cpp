@@ -230,20 +230,10 @@ void calculate_spectrum(const SpectrumJob& job) {
         return result;
     }();
     std::array<std::complex<float>, n> values;
-    // Remove receiver DC before windowing. A weighted mean also cancels the
-    // zero-frequency bin with this window, without touching the audio path.
-    double meanI = 0.0, meanQ = 0.0, weightSum = 0.0;
-    for (int i = 0; i < n; ++i) {
-        meanI += (static_cast<float>(samples[2 * i]) - 127.5f) * window[i];
-        meanQ += (static_cast<float>(samples[2 * i + 1]) - 127.5f) * window[i];
-        weightSum += window[i];
-    }
-    const float dcI = static_cast<float>(meanI / weightSum);
-    const float dcQ = static_cast<float>(meanQ / weightSum);
     for (int i = 0; i < n; ++i) {
         values[i] = std::complex<float>(
-            (static_cast<float>(samples[2 * i]) - 127.5f - dcI) / 128.0f,
-            (static_cast<float>(samples[2 * i + 1]) - 127.5f - dcQ) / 128.0f
+            (static_cast<float>(samples[2 * i]) - 127.5f) / 128.0f,
+            (static_cast<float>(samples[2 * i + 1]) - 127.5f) / 128.0f
         ) * window[i];
     }
     for (int i = 1, j = 0; i < n; ++i) {
