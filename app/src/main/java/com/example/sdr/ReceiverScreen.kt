@@ -66,6 +66,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,7 +191,9 @@ fun ReceiverScreen(
                 val frequencyStyle = TextStyle(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp)
                 val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
                 val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 17.sp)).size.width
-                val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - 6.dp.toPx() } - unitsWidth
+                val snapWidth = if (editingFrequency) 0.dp else 42.dp
+                val gaps = if (editingFrequency) 6.dp else 12.dp
+                val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
                 val frequencyFontSize = (44f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
                 Row(
                     Modifier.align(Alignment.Center),
@@ -217,6 +220,28 @@ fun ReceiverScreen(
                         )
                     }
                     Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp, maxLines = 1, softWrap = false)
+                    if (!editingFrequency) {
+                        val snapDeltaHz = ((currentFrequencyHz + 500L) / 1_000L) * 1_000L - currentFrequencyHz
+                        val canSnap = snapDeltaHz != 0L
+                        val shape = RoundedCornerShape(4.dp)
+                        Text(
+                            "≈1k",
+                            Modifier.alignByBaseline().width(snapWidth)
+                                .semantics { contentDescription = "Round frequency to nearest kilohertz" }
+                                .border(1.dp, if (canSnap) Color(0xFF765333) else edge, shape)
+                                .background(if (canSnap) Color(0xFF241E17) else surface, shape)
+                                .clickable(enabled = canSnap) {
+                                    encoderBrakeRequest++
+                                    encoderRotating = false
+                                    onStep(snapDeltaHz)
+                                }
+                                .padding(vertical = 6.dp),
+                            color = if (canSnap) warm else Color(0xFF665F58),
+                            fontSize = 12.sp, lineHeight = 14.sp,
+                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
+                        )
+                    }
                 }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
