@@ -1,6 +1,7 @@
 package com.example.sdr
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,15 +21,15 @@ internal fun WebSdrBandControl(
     bands: List<WebSdrTunerBand>, selected: Int, active: Boolean, onSelect: (Int) -> Unit,
 ) {
     var expanded by remember(bands, active) { mutableStateOf(false) }
-    val surface = Color(0xFF191714)
+    val surface = Color(0xFF151719)
     val warm = Color(0xFFEFB66B)
     val ivory = Color(0xFFE8DFD0)
     Box {
         Row(
-            Modifier.height(26.dp).widthIn(max = 130.dp)
+            Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
                 .background(surface, RoundedCornerShape(5.dp))
                 .clickable(enabled = active && bands.isNotEmpty()) { expanded = true }
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {

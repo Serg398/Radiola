@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun SourcePlaybackControl(
     source: String,
-    subtitle: String,
     onSourceChange: (String) -> Unit,
     connected: Boolean,
     action: String,
@@ -33,10 +32,8 @@ internal fun SourcePlaybackControl(
     val warm = Color(0xFFF7BA6D)
     val muted = Color(0xFF968E84)
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.width(148.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
     Row(
-        Modifier.height(28.dp).border(1.dp, Color(0xFF30302E), shape).clip(shape),
+        Modifier.width(168.dp).height(28.dp).border(1.dp, Color(0xFF30302E), shape).clip(shape),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
@@ -74,7 +71,7 @@ internal fun SourcePlaybackControl(
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFF30302E)))
         Box(
-            Modifier.width(68.dp).fillMaxHeight()
+            Modifier.width(88.dp).fillMaxHeight()
                 .background(if (enabled) warm else Color(0xFF151719))
                 .semantics { contentDescription = if (action == "ACCESS") "Grant USB access" else action }
                 .clickable(enabled = enabled, onClick = onAction),
@@ -83,9 +80,5 @@ internal fun SourcePlaybackControl(
             Text(action, color = if (enabled) Color(0xFF151719) else muted, fontSize = 10.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1)
         }
-    }
-    Text(subtitle, color = muted, fontSize = 9.sp, lineHeight = 11.sp,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = subtitle })
     }
 }

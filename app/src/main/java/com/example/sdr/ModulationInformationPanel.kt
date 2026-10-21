@@ -27,9 +27,11 @@ internal fun ModulationInformationPanel(
     signalDbfs: Float,
     otherModes: @Composable () -> Unit,
 ) {
+    Box(Modifier.fillMaxWidth().height(106.dp)) {
     when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)
         else -> otherModes()
+    }
     }
 }
 
@@ -54,7 +56,7 @@ private fun WfmInformationPanel(
         else if (rds.trafficProgramme) add("TP")
     }.joinToString("  /  ")
     Box(
-        Modifier.fillMaxWidth().height(106.dp)
+        Modifier.fillMaxSize()
             .border(1.dp, Color(0xFF30302E), shape).background(Color(0xFF151719), shape)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {

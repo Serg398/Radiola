@@ -40,7 +40,7 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     Box {
-        Column(Modifier.width(68.dp).height(28.dp).border(1.dp, Color(0xFF59432D), RoundedCornerShape(5.dp))
+        Column(Modifier.width(68.dp).height(28.dp)
             .background(surface, RoundedCornerShape(5.dp)).clickable { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("BW", color = muted, fontSize = 8.sp)

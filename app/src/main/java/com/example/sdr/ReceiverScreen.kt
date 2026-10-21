@@ -225,39 +225,31 @@ fun ReceiverScreen(
     val passbandOffsetHz = activeMode.offsetForBandwidth(activeBandwidth).toLong()
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
-        Sidebar(selected, onSelect = {
-            encoderRotating = false
-            frequencyMotion.snapTo(tunedHz.toDouble())
-            selected = it
-        })
-        if (source == "WebSDR") {
-            Column(
-                Modifier.width(62.dp).fillMaxHeight().background(surface).padding(horizontal = 5.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-            ) {
-                listOf("MAP", "Radio").forEach { page ->
-                    val active = webSdrPage == page
-                    Box(
-                        Modifier.fillMaxWidth().height(44.dp)
-                            .border(1.dp, if (active) Color(0xFF9E6D3B) else edge, RoundedCornerShape(5.dp))
-                            .background(if (active) Color(0xFF35291D) else backdrop, RoundedCornerShape(5.dp))
-                            .clickable { webSdrPage = page; selected = "Receiver" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(page, color = if (active) warm else muted, fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-        }
+        Sidebar(selected, remote, webSdrPage,
+            onPage = { webSdrPage = it; selected = "Receiver" }, onSelect = {
+                encoderRotating = false
+                frequencyMotion.snapTo(tunedHz.toDouble())
+                selected = it
+            })
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(Modifier.fillMaxWidth().height(88.dp)) {
+            Box(Modifier.fillMaxWidth().height(84.dp)) {
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GainPanel(receiverGain, gainSteps, if (remote) ({}) else onReceiverGainChange,
-                    Modifier.width(200.dp).alpha(if (remote) 0.35f else 1f))
+                if (remote) {
+                    Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(when (webSession.state) {
+                            WebSdrConnectionState.Connected -> "WEBSDR  /  LIVE"
+                            WebSdrConnectionState.Connecting -> "WEBSDR  /  CONNECTING"
+                            WebSdrConnectionState.Error -> "WEBSDR  /  CONNECTION ERROR"
+                            else -> "WEBSDR  /  OFFLINE"
+                        }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
+                            fontSize = 9.sp, letterSpacing = 0.7.sp, maxLines = 1)
+                        Text(webSdrReceiverName.ifBlank { "Select a server on MAP" }, color = ivory,
+                            fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
                 BoxWithConstraints(Modifier.weight(1f)) {
                 val frequencyText = formatFrequency(tunedHz)
                 val frequencyStyle = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
@@ -315,11 +307,9 @@ fun ReceiverScreen(
                     }
                 }
                 }
-                Row(Modifier.height(48.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SourcePlaybackControl(
                         source = source,
-                        subtitle = if (source == "WebSDR") webSdrReceiverName.ifBlank { "Select a server on MAP" }
-                            else if (connected) deviceName else "RTL-SDR · not connected",
                         onSourceChange = {
                             if (it != source) {
                                 webSession.disconnect()
@@ -357,15 +347,16 @@ fun ReceiverScreen(
                         }
                         },
                     )
-                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.padding(top = 9.dp))
+                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.height(28.dp))
                 }
                 }
                 Row(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
+                        .background(surface, RoundedCornerShape(5.dp)),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(Modifier.background(surface, RoundedCornerShape(5.dp)).padding(2.dp),
+                    Row(Modifier.padding(2.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     ModePill("AM", activeMode == DemodulationMode.AM) { changeMode(DemodulationMode.AM) }
                     if (!remote) ModePill("WFM", activeMode == DemodulationMode.WFM) { changeMode(DemodulationMode.WFM) }
@@ -374,6 +365,7 @@ fun ReceiverScreen(
                     ModePill("LSB", activeMode == DemodulationMode.LSB) { changeMode(DemodulationMode.LSB) }
                     ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
                     }
+                    ToolbarDivider()
                     BandwidthControl(activeMode, activeBandwidth, bandwidthDefault, changeBandwidth)
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
                         webSession.active, webSession::selectBand)
@@ -381,20 +373,13 @@ fun ReceiverScreen(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
+                    else if (!remote) Spacer(Modifier.width(60.dp))
+                    ToolbarDivider()
                     if (remote) {
                         SignalMeter((webSession.signalDbm ?: -127f) + 37f,
                             receiverSquelch, squelchOpen, onSquelchChange,
                             Modifier.weight(1f).fillMaxHeight(), remote = true,
                             signalAvailable = webSession.signalDbm != null)
-                        Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
-                            Text(when (webSession.state) {
-                                WebSdrConnectionState.Connected -> "LIVE"
-                                WebSdrConnectionState.Connecting -> "CONNECTING"
-                                WebSdrConnectionState.Error -> "CONNECTION ERROR"
-                                else -> "OFFLINE"
-                            }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
-                                fontSize = 10.sp, letterSpacing = 1.sp)
-                        }
                     } else {
                         SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
                     }
@@ -515,8 +500,8 @@ fun ReceiverScreen(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
             ) {
-                Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ControlCard(Modifier.weight(1f).fillMaxHeight()) {
                         Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                         Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(when (activeReceiverState) {
@@ -529,7 +514,8 @@ fun ReceiverScreen(
                             Box(Modifier.weight(1f))
                             Text(if (remote) "WebSDR" else "%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
                         }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             if (!remote && permitted && !streaming) {
                                 SmallAction("USB TEST", !streamPending, Modifier.weight(1f)) { onCheckConnection() }
                                 SmallAction("IQ TEST", !streamPending, Modifier.weight(1f)) { onCaptureIq() }
@@ -541,7 +527,7 @@ fun ReceiverScreen(
                             }
                         }
                     }
-                    ControlCard(Modifier.weight(0.98f).fillMaxHeight()) {
+                    ControlCard(Modifier.weight(1f).fillMaxHeight()) {
                         Text("DISPLAY", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                         Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Spectrum", color = ivory, fontSize = 13.sp)
@@ -556,19 +542,21 @@ fun ReceiverScreen(
                             Text("30 FPS", color = warm, fontSize = 13.sp)
                         }
                     }
-                    ControlCard(Modifier.weight(0.95f).fillMaxHeight()) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                            TubeIcon(Modifier.width(30.dp).height(47.dp))
-                            Column(Modifier.padding(start = 8.dp)) {
-                                Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
-                                Text("${activeMode.label}  •  ${if (activeMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  ${if (remote) "%.1f".format(Locale.US, webSession.audioSampleRate / 1000.0) else "48"} kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
-                                Text("Volume: phone buttons", color = muted, fontSize = 11.sp, maxLines = 1)
-                            }
+                    ControlCard(Modifier.weight(1f).fillMaxHeight()) {
+                        Text("AUDIO", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
+                        Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${activeMode.label}  /  ${if (activeMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}",
+                                color = ivory, fontSize = 13.sp, maxLines = 1)
+                            Text("${if (remote) "%.1f".format(Locale.US, webSession.audioSampleRate / 1000.0) else "48"} kHz",
+                                color = warm, fontSize = 13.sp, maxLines = 1)
                         }
+                        Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.CenterStart) {
                         Text(
                             if (remote) webSession.error ?: webSdrReceiverName.ifBlank { "Select a server on MAP" } else usbCheckResult ?: deviceName,
                             color = muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
+                        }
                     }
                 }
             }
@@ -600,22 +588,36 @@ fun ReceiverScreen(
 }
 
 @Composable
-private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
+private fun Sidebar(selected: String, remote: Boolean, page: String, onPage: (String) -> Unit, onSelect: (String) -> Unit) {
     Column(Modifier.width(108.dp).fillMaxHeight().background(Color(0xFF171819))) {
         Box(Modifier.fillMaxWidth().height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
-            Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = warm, fontSize = 20.sp,
+            Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = warm, fontSize = 18.sp,
                 fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
         }
         listOf("Receiver" to "◉", "Settings" to "⚙").forEach { (name, icon) ->
             Row(
                 Modifier.fillMaxWidth().height(36.dp)
-                    .background(if (selected == name) Color(0xFF35291D) else Color.Transparent)
+                    .background(if (selected == name) Color(0xFF24211D) else Color.Transparent)
                     .clickable { onSelect(name) }
                     .padding(start = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(icon, Modifier.width(22.dp), color = if (selected == name) warm else muted, fontSize = 19.sp)
                 Text(name, Modifier.padding(start = 8.dp), color = ivory, fontSize = 12.sp, maxLines = 1)
+            }
+            if (remote && name == "Receiver") {
+                listOf("MAP", "Radio").forEach { item ->
+                    val active = selected == "Receiver" && page == item
+                    Row(Modifier.fillMaxWidth().height(30.dp).clickable { onPage(item) }
+                        .padding(start = 22.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.width(2.dp).height(12.dp)
+                            .background(if (active) warm else edge, RoundedCornerShape(1.dp)))
+                        Text(if (item == "MAP") "Map" else item, color = if (active) warm else muted,
+                            fontSize = 11.sp)
+                    }
+                }
             }
         }
         Box(Modifier.weight(1f))
@@ -1000,8 +1002,7 @@ private fun SignalMeter(
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
-    Row(modifier.border(1.dp, edge, RoundedCornerShape(5.dp))
-        .background(surface, RoundedCornerShape(5.dp)), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.background(surface, RoundedCornerShape(5.dp)), verticalAlignment = Alignment.CenterVertically) {
         Canvas(
             Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
                 .pointerInput(remote) { if (!remote) detectTapGestures(onTap = { setThreshold(it.x) }) }
@@ -1090,7 +1091,7 @@ private fun SignalMeter(
                 color = if (squelch.enabled && open) warm else muted, fontSize = 8.sp,
                 style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
         }
-        Spacer(Modifier.width(16.dp))
+        if (!remote) Spacer(Modifier.width(8.dp))
     }
 }
 @Composable
@@ -1098,8 +1099,7 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
     val active = available && enabled
     Column(
         Modifier.width(60.dp).height(28.dp)
-            .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
-            .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
+            .background(if (active) Color(0xFF241E17) else surface, RoundedCornerShape(5.dp))
             .clickable(enabled = available) { onChange(!enabled) }
             .semantics { contentDescription = "WFM stereo ${if (active) "enabled" else "disabled"}, pilot ${if (locked) "locked" else "absent"}" },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
@@ -1108,6 +1108,11 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
         Text(if (!available) "WFM" else if (!enabled) "FORCED" else if (locked) "LOCK" else "AUTO",
             color = if (active && locked) warm else muted, fontSize = 8.sp)
     }
+}
+
+@Composable
+private fun ToolbarDivider() {
+    Box(Modifier.width(1.dp).height(16.dp).background(edge))
 }
 
 @Composable
@@ -1125,8 +1130,8 @@ private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = nu
 @Composable
 private fun ControlCard(modifier: Modifier, content: @Composable () -> Unit) {
     Column(
-        modifier.border(1.dp, edge, RoundedCornerShape(6.dp))
-            .background(surface, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        modifier.border(1.dp, edge.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
+            .background(surface, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.SpaceBetween,
         content = { content() }
     )
