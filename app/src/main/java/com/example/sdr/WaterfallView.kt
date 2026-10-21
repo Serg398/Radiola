@@ -10,8 +10,12 @@ import android.graphics.RectF
 import android.view.View
 
 /** Full-band color cache: each historical row is positioned by its own RF coordinates. */
-class WaterfallView(context: Context, private val history: WaterfallHistory) : View(context) {
-    private var renderWidth = 1024
+class WaterfallView(
+    context: Context,
+    private val history: WaterfallHistory,
+    private val minimumRenderWidth: Int = 1024,
+) : View(context) {
+    private var renderWidth = minOf(minimumRenderWidth, history.binCount)
     private var pixels = IntArray(renderWidth)
     private var bitmap = Bitmap.createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
     private val paint = Paint().apply { isFilterBitmap = false }
@@ -38,8 +42,9 @@ class WaterfallView(context: Context, private val history: WaterfallHistory) : V
     fun refresh() {
         val started = System.nanoTime()
         // Cache sufficient resolution for the zoom while retaining the complete captured band.
-        val wanted = (1024L * history.latestSpanHz / visibleSpanHz).coerceIn(1024, history.binCount.toLong()).toInt()
-        var width = 1024
+        val minimum = minOf(minimumRenderWidth, history.binCount)
+        val wanted = (minimum.toLong() * history.latestSpanHz / visibleSpanHz).coerceIn(minimum.toLong(), history.binCount.toLong()).toInt()
+        var width = minimum
         while (width < wanted) width *= 2
         width = minOf(width, history.binCount)
         // Avoid bitmap allocation churn when a pinch oscillates around a resolution boundary.

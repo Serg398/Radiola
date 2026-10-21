@@ -25,6 +25,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -41,6 +43,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -147,15 +150,49 @@ fun ReceiverScreen(
     var webSdrPage by rememberSaveable { mutableStateOf("MAP") }
     var webSdrReceiverUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var webSdrReceiverName by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    val webSession = remember(context) { WebSdrSession(context) }
+    DisposableEffect(webSession) { onDispose { webSession.disconnect() } }
+    val remote = source == "WebSDR"
+    val tunedHz = if (remote) webSession.frequencyHz else currentFrequencyHz
+    val activeMode = if (remote) webSession.mode else demodulationMode
+    val activeBandwidth = if (remote) webSession.bandwidthHz else receiveBandwidthHz
+    var remoteInput by remember { mutableStateOf("") }
+    val activeInput = if (remote) remoteInput else frequencyInput
+    val changeInput: (String) -> Unit = { if (remote) remoteInput = it else onFrequencyInput(it) }
+    val applyInput: () -> Unit = {
+        if (remote) remoteInput.replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 }
+            ?.let { webSession.tune((it * 1_000_000).toLong()) }
+        else onTune()
+    }
+    val step: (Long) -> Unit = { if (remote) webSession.tune(webSession.frequencyHz + it) else onStep(it) }
+    val changeMode: (DemodulationMode) -> Unit = { if (remote) webSession.requestMode(it) else onDemodulationModeChange(it) }
+    val changeBandwidth: (Int?) -> Unit = { if (remote) webSession.setBandwidth(it) else onBandwidthChange(it) }
     var editingFrequency by remember { mutableStateOf(false) }
+    LaunchedEffect(tunedHz, editingFrequency) {
+        if (!editingFrequency) remoteInput = "%.6f".format(Locale.US, tunedHz / 1_000_000.0)
+    }
     var zoom by remember { mutableStateOf(1f) }
-    val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
-    var displayFrequencyHz by remember { mutableStateOf(currentFrequencyHz.toDouble()) }
+    val onlineFrame = rememberUpdatedState(webSession.frame)
+    val activeSpectrum = if (remote) onlineFrame else spectrumState
+    val activeWaterfall = if (remote) onlineFrame else waterfallState
+    val activeHistory = if (remote) webSession.waterfallHistory else waterfallHistory
+    val captureSpanHz = if (remote) webSession.bands.getOrNull(webSession.currentBand)?.spanHz
+        ?: spectrumSpanHz else spectrumSpanHz
+    val visibleSpanHz = (captureSpanHz / zoom).roundToInt().coerceAtLeast(1)
+    val receiving = if (remote) webSession.state == WebSdrConnectionState.Connected else streaming
+    val activeReceiverState = if (remote) when (webSession.state) {
+        WebSdrConnectionState.Connected -> ReceiverState.Running
+        WebSdrConnectionState.Connecting -> ReceiverState.Starting
+        WebSdrConnectionState.Error -> ReceiverState.Error
+        WebSdrConnectionState.Idle -> ReceiverState.Idle
+    } else receiverState
+    var displayFrequencyHz by remember { mutableStateOf(tunedHz.toDouble()) }
     var encoderRotating by remember { mutableStateOf(false) }
     var encoderBrakeRequest by remember { mutableStateOf(0) }
-    val frequencyMotion = remember { FrequencyMotion(currentFrequencyHz.toDouble()) }
-    val latestFrequencyHz by rememberUpdatedState(currentFrequencyHz)
-    val latestSpanHz by rememberUpdatedState(spectrumSpanHz)
+    val frequencyMotion = remember { FrequencyMotion(tunedHz.toDouble()) }
+    val latestFrequencyHz by rememberUpdatedState(tunedHz)
+    val latestSpanHz by rememberUpdatedState(captureSpanHz)
     // One frame loop per rotation: individual tuning steps never restart it.
     LaunchedEffect(encoderRotating) {
         if (!encoderRotating) {
@@ -174,14 +211,23 @@ fun ReceiverScreen(
             }
         }
     }
-    val visibleCenterHz = if (encoderRotating) displayFrequencyHz else currentFrequencyHz.toDouble()
+    // Both sources move the RF image under the same fixed tuning cursor.
+    val visibleCenterHz = if (encoderRotating) displayFrequencyHz else tunedHz.toDouble()
+    val remoteBand = webSession.bands.getOrNull(webSession.currentBand)
+    LaunchedEffect(remote, webSession.active, remoteBand, visibleSpanHz, visibleCenterHz) {
+        if (remote && webSession.active && remoteBand != null) {
+            // Coalesce pinch/drag events rather than restarting the stream for every pixel.
+            delay(180)
+            webSession.setWaterfallViewport(visibleCenterHz.toLong(), visibleSpanHz)
+        }
+    }
     val channelOffsetHz = 0L
-    val passbandOffsetHz = demodulationMode.offsetForBandwidth(receiveBandwidthHz).toLong()
+    val passbandOffsetHz = activeMode.offsetForBandwidth(activeBandwidth).toLong()
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = {
             encoderRotating = false
-            frequencyMotion.snapTo(currentFrequencyHz.toDouble())
+            frequencyMotion.snapTo(tunedHz.toDouble())
             selected = it
         })
         if (source == "WebSDR") {
@@ -210,9 +256,10 @@ fun ReceiverScreen(
         ) {
             Box(Modifier.fillMaxWidth().height(88.dp)) {
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
+                GainPanel(receiverGain, gainSteps, if (remote) ({}) else onReceiverGainChange,
+                    Modifier.width(200.dp).alpha(if (remote) 0.35f else 1f))
                 BoxWithConstraints(Modifier.weight(1f)) {
-                val frequencyText = formatFrequency(currentFrequencyHz)
+                val frequencyText = formatFrequency(tunedHz)
                 val frequencyStyle = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
                 val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
                 val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 12.sp)).size.width
@@ -227,15 +274,15 @@ fun ReceiverScreen(
                 ) {
                     if (editingFrequency) {
                         BasicTextField(
-                            value = frequencyInput,
-                            onValueChange = onFrequencyInput,
+                            value = activeInput,
+                            onValueChange = changeInput,
                             modifier = Modifier.weight(1f).alignByBaseline(),
                             singleLine = true,
                             textStyle = TextStyle(color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             cursorBrush = SolidColor(warm)
                         )
-                        Text("✓", Modifier.clickable { onTune(); editingFrequency = false }, color = warm, fontSize = 36.sp)
+                        Text("✓", Modifier.clickable { applyInput(); editingFrequency = false }, color = warm, fontSize = 36.sp)
                     } else {
                         Text(
                             frequencyText,
@@ -246,7 +293,7 @@ fun ReceiverScreen(
                     }
                     Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
                     if (!editingFrequency) {
-                        val snapDeltaHz = ((currentFrequencyHz + 500L) / 1_000L) * 1_000L - currentFrequencyHz
+                        val snapDeltaHz = ((tunedHz + 500L) / 1_000L) * 1_000L - tunedHz
                         val canSnap = snapDeltaHz != 0L
                         val shape = RoundedCornerShape(4.dp)
                         Text(
@@ -257,7 +304,7 @@ fun ReceiverScreen(
                                 .clickable(enabled = canSnap) {
                                     encoderBrakeRequest++
                                     encoderRotating = false
-                                    onStep(snapDeltaHz)
+                                    step(snapDeltaHz)
                                 }
                                 .padding(vertical = 6.dp),
                             color = if (canSnap) warm else Color(0xFF665F58),
@@ -275,6 +322,7 @@ fun ReceiverScreen(
                             else if (connected) deviceName else "RTL-SDR · not connected",
                         onSourceChange = {
                             if (it != source) {
+                                webSession.disconnect()
                                 if (streaming || starting) onStopStream()
                                 encoderBrakeRequest++
                                 encoderRotating = false
@@ -282,14 +330,30 @@ fun ReceiverScreen(
                                 selected = "Receiver"
                             }
                         },
-                        connected = source == "USB" && connected && permitted,
-                        action = if (source == "WebSDR") "CONNECT" else if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "ACCESS" else "START",
-                        enabled = source == "USB" && ((!streamPending && connected) || starting),
+                        connected = if (remote) webSession.state == WebSdrConnectionState.Connected else connected && permitted,
+                        action = if (remote) {
+                            when (webSession.state) {
+                                WebSdrConnectionState.Connecting -> "CANCEL"
+                                WebSdrConnectionState.Connected -> "DISCONNECT"
+                                else -> "CONNECT"
+                            }
+                        } else if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "ACCESS" else "START",
+                        enabled = if (remote) webSdrReceiverUrl != null || webSession.active
+                            else ((!streamPending && connected) || starting),
                         onAction = {
+                        if (remote) {
+                            if (webSession.active) webSession.disconnect()
+                            else webSdrReceiverUrl?.let {
+                                onStopStream()
+                                webSession.connect(it)
+                                webSdrPage = "Radio"
+                            }
+                        } else {
                         when {
                             streaming || starting -> onStopStream()
                             !permitted -> onRequestPermission()
                             else -> onStartStream()
+                        }
                         }
                         },
                     )
@@ -303,19 +367,31 @@ fun ReceiverScreen(
                 ) {
                     Row(Modifier.background(surface, RoundedCornerShape(5.dp)).padding(2.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
-                    ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
-                    ModePill("FM", demodulationMode == DemodulationMode.NFM) { onDemodulationModeChange(DemodulationMode.NFM) }
-                    ModePill("USB", demodulationMode == DemodulationMode.USB) { onDemodulationModeChange(DemodulationMode.USB) }
-                    ModePill("LSB", demodulationMode == DemodulationMode.LSB) { onDemodulationModeChange(DemodulationMode.LSB) }
-                    ModePill("CW", demodulationMode == DemodulationMode.CW) { onDemodulationModeChange(DemodulationMode.CW) }
+                    ModePill("AM", activeMode == DemodulationMode.AM) { changeMode(DemodulationMode.AM) }
+                    if (!remote) ModePill("WFM", activeMode == DemodulationMode.WFM) { changeMode(DemodulationMode.WFM) }
+                    ModePill("FM", activeMode == DemodulationMode.NFM) { changeMode(DemodulationMode.NFM) }
+                    ModePill("USB", activeMode == DemodulationMode.USB) { changeMode(DemodulationMode.USB) }
+                    ModePill("LSB", activeMode == DemodulationMode.LSB) { changeMode(DemodulationMode.LSB) }
+                    ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
                     }
-                    BandwidthControl(demodulationMode, receiveBandwidthHz, bandwidthDefault, onBandwidthChange)
+                    BandwidthControl(activeMode, activeBandwidth, bandwidthDefault, changeBandwidth)
                     StereoToggle(
-                        demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
+                        activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
-                    SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
+                    if (remote) {
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                            Text(when (webSession.state) {
+                                WebSdrConnectionState.Connected -> "LIVE"
+                                WebSdrConnectionState.Connecting -> "CONNECTING"
+                                WebSdrConnectionState.Error -> "CONNECTION ERROR"
+                                else -> "OFFLINE"
+                            }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
+                                fontSize = 10.sp, letterSpacing = 1.sp)
+                        }
+                    } else {
+                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
+                    }
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -323,7 +399,7 @@ fun ReceiverScreen(
                     SettingsPanel(
                         gain = receiverGain, gainSteps = gainSteps, onGainChange = onReceiverGainChange,
                         squelch = receiverSquelch, onSquelchChange = onSquelchChange,
-                        mode = demodulationMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
+                        mode = activeMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
                         frameRate = waterfallFrameRate, onFrameRateChange = onWaterfallFrameRateChange,
                         tuningStep = tuningStep, onStepChange = onTuningStepChange,
                         feedback = encoderFeedback, onFeedbackChange = onEncoderFeedbackChange,
@@ -333,11 +409,12 @@ fun ReceiverScreen(
                         onPermission = onRequestPermission, onUsbTest = onCheckConnection, onIqTest = onCaptureIq,
                         onClose = { selected = "Receiver" }
                     )
-                } else if (source == "WebSDR" && webSdrPage == "MAP") {
+                } else if (remote && webSdrPage == "MAP") {
                     WebSdrMap(
                         modifier = Modifier.fillMaxSize(),
                         selectedReceiverUrl = webSdrReceiverUrl,
                         onReceiverSelected = {
+                            if (webSdrReceiverUrl != it.url) webSession.disconnect()
                             webSdrReceiverUrl = it.url
                             webSdrReceiverName = android.text.Html.fromHtml(it.name,
                                 android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
@@ -357,18 +434,18 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(spectrumState, visibleSpanHz, receiveBandwidthHz, channelOffsetHz, demodulationMode.offsetForBandwidth(receiveBandwidthHz), visibleCenterHz, Modifier.fillMaxSize())
+                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, activeMode.offsetForBandwidth(activeBandwidth), visibleCenterHz, Modifier.fillMaxSize())
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                             val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
                             Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
-                                Text(formatFrequency(currentFrequencyHz), color = ivory, fontSize = 11.sp)
+                                Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
                             }
                             Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
                             Text(
-                                "SPAN %d kHz  •  %s %s".format(Locale.US, visibleSpanHz / 1_000, demodulationMode.label,
-                                    if (receiveBandwidthHz < 1000) "$receiveBandwidthHz Hz" else "%.1f kHz".format(Locale.US, receiveBandwidthHz / 1000.0)),
+                                "SPAN %d kHz  •  %s %s".format(Locale.US, visibleSpanHz / 1_000, activeMode.label,
+                                    if (activeBandwidth < 1000) "$activeBandwidth Hz" else "%.1f kHz".format(Locale.US, activeBandwidth / 1000.0)),
                                 Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 4.dp),
                                 color = muted, fontSize = 11.sp
                             )
@@ -378,7 +455,7 @@ fun ReceiverScreen(
                         Box(Modifier.fillMaxWidth().weight(1f).then(waterfallNavigation(
                             visibleSpanHz = visibleSpanHz,
                             zoom = zoom,
-                            onStep = onStep,
+                            onStep = step,
                             onZoom = { zoom = it },
                             onContact = {
                                 encoderBrakeRequest++
@@ -387,19 +464,21 @@ fun ReceiverScreen(
                                 displayFrequencyHz = latestFrequencyHz.toDouble()
                             },
                         ))) {
+                            androidx.compose.runtime.key(activeHistory) {
                             AndroidView(
-                                factory = { WaterfallView(it, waterfallHistory) },
+                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024) },
                                 update = { view ->
                                     view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
-                                    waterfallState.value // Subscribe to the independent waterfall snapshot.
+                                    activeWaterfall.value // Subscribe to the independent waterfall snapshot.
                                     view.refresh()
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = 31.dp)
                             )
+                            }
                             Canvas(Modifier.fillMaxSize().padding(start = 31.dp).clipToBounds()) {
                                 val center = size.width * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
-                                val channelWidth = size.width * (receiveBandwidthHz.toFloat() / visibleSpanHz)
-                                val passbandCenter = size.width * (0.5f + passbandOffsetHz.toFloat() / visibleSpanHz)
+                                val channelWidth = size.width * (activeBandwidth.toFloat() / visibleSpanHz)
+                                val passbandCenter = size.width * (0.5f + (channelOffsetHz + passbandOffsetHz).toFloat() / visibleSpanHz)
                                 val channelLeft = passbandCenter - channelWidth / 2f
                                 val channelRight = passbandCenter + channelWidth / 2f
                                 drawRect(
@@ -427,30 +506,30 @@ fun ReceiverScreen(
 
             }
             ModulationInformationPanel(
-                demodulationMode, rdsInformation, currentFrequencyHz, streaming,
+                activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
             ) {
                 Row(Modifier.fillMaxWidth().height(106.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ControlCard(Modifier.weight(1.13f).fillMaxHeight()) {
                         Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                         Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(when (receiverState) {
+                            Text(when (activeReceiverState) {
                                 ReceiverState.Running -> "ON AIR"
                                 ReceiverState.Starting -> "STARTING"
                                 ReceiverState.Stopping -> "STOPPING"
                                 ReceiverState.Error -> "ERROR"
                                 ReceiverState.Idle -> "READY"
-                            }, color = if (streaming) warm else ivory, fontSize = 18.sp)
+                            }, color = if (receiving) warm else ivory, fontSize = 18.sp)
                             Box(Modifier.weight(1f))
-                            Text("%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
+                            Text(if (remote) "WebSDR" else "%.0f dBFS".format(Locale.US, signalDbfs), color = muted, fontSize = 13.sp)
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            if (permitted && !streaming) {
+                            if (!remote && permitted && !streaming) {
                                 SmallAction("USB TEST", !streamPending, Modifier.weight(1f)) { onCheckConnection() }
                                 SmallAction("IQ TEST", !streamPending, Modifier.weight(1f)) { onCaptureIq() }
                             } else {
                                 Text(
-                                    if (streaming) "${demodulationMode.label}  •  2.4 MSPS" else "RTL-SDR V4 waiting for USB",
+                                    if (remote) "${activeMode.label}  •  ${captureSpanHz / 1000} kHz" else if (streaming) "${activeMode.label}  •  2.4 MSPS" else "RTL-SDR V4 waiting for USB",
                                     color = muted, fontSize = 12.sp
                                 )
                             }
@@ -476,12 +555,12 @@ fun ReceiverScreen(
                             TubeIcon(Modifier.width(30.dp).height(47.dp))
                             Column(Modifier.padding(start = 8.dp)) {
                                 Text("RADIO CONNECTS PEOPLE", color = warm, fontSize = 11.sp, letterSpacing = 0.3.sp, maxLines = 1)
-                                Text("${demodulationMode.label}  •  ${if (demodulationMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  48 kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
+                                Text("${activeMode.label}  •  ${if (activeMode == DemodulationMode.WFM && wfmStereoEnabled && wfmStereoLocked) "STEREO" else "MONO"}  •  ${if (remote) "%.1f".format(Locale.US, webSession.audioSampleRate / 1000.0) else "48"} kHz", color = ivory, fontSize = 12.sp, maxLines = 1)
                                 Text("Volume: phone buttons", color = muted, fontSize = 11.sp, maxLines = 1)
                             }
                         }
                         Text(
-                            usbCheckResult ?: deviceName,
+                            if (remote) webSession.error ?: webSdrReceiverName.ifBlank { "Select a server on MAP" } else usbCheckResult ?: deviceName,
                             color = muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -490,21 +569,21 @@ fun ReceiverScreen(
                 }
                 VerticalEncoder(
                     brakeRequest = encoderBrakeRequest,
-                    onStep = onStep,
+                    onStep = step,
                     tuningStep = tuningStep,
                     onTuningStepChange = onTuningStepChange,
                     onTick = onEncoderTick,
                     onRotate = {
                         if (!encoderRotating) {
-                            frequencyMotion.snapTo(currentFrequencyHz.toDouble())
-                            displayFrequencyHz = currentFrequencyHz.toDouble()
+                            frequencyMotion.snapTo(tunedHz.toDouble())
+                            displayFrequencyHz = tunedHz.toDouble()
                         }
                         encoderRotating = true
                     },
                     onBrake = {
                         encoderRotating = false
-                        frequencyMotion.snapTo(currentFrequencyHz.toDouble())
-                        displayFrequencyHz = currentFrequencyHz.toDouble()
+                        frequencyMotion.snapTo(tunedHz.toDouble())
+                        displayFrequencyHz = tunedHz.toDouble()
                     },
                     modifier = Modifier.align(Alignment.CenterEnd).width(74.dp).fillMaxHeight()
                 )
