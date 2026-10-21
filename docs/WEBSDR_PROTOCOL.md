@@ -107,6 +107,13 @@ AudioTrack ограничены тайм-аутом и восстанавлив�
 сервер, частота, модуляция и полоса; после уничтожения процесса подключение
 запускается пользователем. В онлайне не прогревается неиспользуемый USB AudioTrack.
 Карта кеширует геометрию и каталог между посещениями, поддерживает список серверов.
+Подписи городов используют 7 342 населённых пункта из Natural Earth Populated Places
+масштаба 1:10m (v5.1.2, public domain):
+https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/.
+Данные встроены в приложение; подписи появляются постепенно при приближении.
+Границы стран: Natural Earth Admin 0 — Boundary Lines, 1:50m (v5.1.0, public domain),
+https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-boundary-lines-2/.
+Геометрия встроена в приложение и кешируется после загрузки в фоновом потоке.
 
 Лог `WebSdrMetrics` содержит измеренный FPS, накопленный PCM в миллисекундах,
 удалённый PCM, underrun, восстановления AudioTrack и аудиомаршрут. Это локальные

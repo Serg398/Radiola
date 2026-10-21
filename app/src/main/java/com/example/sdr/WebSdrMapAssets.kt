@@ -13,6 +13,25 @@ internal data class MapCity(val name: String, val lon: Float, val lat: Float, va
 internal object WebSdrMapAssets {
     @Volatile private var savedCities: List<MapCity>? = null
     @Volatile private var savedLand: List<Path>? = null
+    @Volatile private var savedBorders: List<Path>? = null
+    suspend fun borders(context: Context): List<Path> = withContext(Dispatchers.IO) {
+        savedBorders ?: synchronized(this@WebSdrMapAssets) {
+            savedBorders ?: run {
+                val lines = context.assets.open("map/borders.json").bufferedReader().use { JSONArray(it.readText()) }
+                (0 until lines.length()).map { index ->
+                    val line = lines.getJSONArray(index)
+                    Path().apply {
+                        for (i in 0 until line.length()) {
+                            val point = line.getJSONArray(i)
+                            val x = point.getDouble(0).toFloat()
+                            val y = -point.getDouble(1).toFloat()
+                            if (i == 0) moveTo(x, y) else lineTo(x, y)
+                        }
+                    }
+                }
+            }.also { savedBorders = it }
+        }
+    }
     suspend fun cities(context: Context): List<MapCity> = withContext(Dispatchers.IO) {
         savedCities ?: synchronized(this@WebSdrMapAssets) {
             savedCities ?: run {

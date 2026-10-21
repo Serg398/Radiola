@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -34,8 +36,8 @@ import android.text.Html
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Paint
 import kotlin.math.min
 import kotlin.math.log2
 import java.text.SimpleDateFormat
@@ -90,10 +92,12 @@ internal fun WebSdrMap(
         finally { loading = false }
     }
     var land by remember { mutableStateOf<List<Path>>(emptyList()) }
+    var borders by remember { mutableStateOf<List<Path>>(emptyList()) }
     var loadFailed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         try {
             land = WebSdrMapAssets.land(context)
+            borders = WebSdrMapAssets.borders(context)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { loadFailed = true }
     }
@@ -101,25 +105,38 @@ internal fun WebSdrMap(
     var panX by rememberSaveable { mutableFloatStateOf(0f) }
     var panY by rememberSaveable { mutableFloatStateOf(0f) }
     var selectedUrl by rememberSaveable { mutableStateOf(selectedReceiverUrl) }
+    val selectedReceiver = mapReceivers.firstOrNull { it.url == selectedUrl }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val warm = Color(0xFFF7BA6D)
     val muted = Color(0xFF968E84)
+    val density = LocalDensity.current
+    val labelSize = with(density) { 10.sp.toPx() }
+    val labelGap = with(density) { 13.dp.toPx() }
+    val labelSpacing = with(density) { 11.dp.toPx() }
+    val labels = remember(cities, viewport, zoom, labelSize, labelGap, labelSpacing) {
+        cityPaint.textSize = labelSize
+        val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
+        layoutCityLabels(cities, unit, 2f + 1.3f * log2(zoom), cityPaint, labelGap, labelSpacing)
+    }
     fun point(receiver: WebSdrReceiver): Offset {
         val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
         return Offset(viewport.width / 2f + panX + receiver.lon * unit,
             viewport.height / 2f + panY - receiver.lat * unit)
     }
     fun transform(factor: Float, delta: Offset = Offset.Zero, anchor: Offset = Offset(viewport.width / 2f, viewport.height / 2f)) {
-        val next = (zoom * factor).coerceIn(1f, 12f)
+        val next = (zoom * factor).coerceIn(1f, 64f)
         val ratio = next / zoom
         val offset = anchor - Offset(viewport.width / 2f, viewport.height / 2f)
+        val unit = min(viewport.width / 360f, viewport.height / 180f) * next
+        val limitX = (unit * 180f - viewport.width / 2f).coerceAtLeast(0f)
+        val limitY = (unit * 90f - viewport.height / 2f).coerceAtLeast(0f)
         panX = ((panX - offset.x) * ratio + offset.x + delta.x)
-            .coerceIn(-viewport.width * (next - 1) / 2, viewport.width * (next - 1) / 2)
+            .coerceIn(-limitX, limitX)
         panY = ((panY - offset.y) * ratio + offset.y + delta.y)
-            .coerceIn(-viewport.height * (next - 1) / 2, viewport.height * (next - 1) / 2)
+            .coerceIn(-limitY, limitY)
         zoom = next
     }
-    Box(modifier.clipToBounds().background(Color(0xFF0C1013))
+    Box(modifier.clipToBounds().background(Brush.verticalGradient(listOf(Color(0xFF111D24), Color(0xFF080F15))))
         .border(1.dp, Color(0xFF30302E), RoundedCornerShape(6.dp))) {
         if (!listMode) Canvas(Modifier.fillMaxSize().onSizeChanged { viewport = it }
             .pointerInput(Unit) { detectTransformGestures { centroid, pan, scale, _ -> transform(scale, pan, centroid) } }
@@ -134,75 +151,70 @@ internal fun WebSdrMap(
             ) }) {
             val unit = min(size.width / 360f, size.height / 180f) * zoom
             val center = Offset(size.width / 2f + panX, size.height / 2f + panY)
-            for (lon in -180..180 step 30) {
-                val x = center.x + lon * unit
-                drawLine(Color(0xFF1B252B), Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+            val gridStep = when {
+                zoom >= 32f -> 1
+                zoom >= 12f -> 2
+                zoom >= 5f -> 5
+                zoom >= 2f -> 15
+                else -> 30
             }
-            for (lat in -90..90 step 30) {
+            for (lon in -180..180 step gridStep) {
+                val x = center.x + lon * unit
+                if (x in 0f..size.width) drawLine(Color(0xFF223039).copy(alpha = .55f),
+                    Offset(x, 0f), Offset(x, size.height), 0.5.dp.toPx())
+            }
+            for (lat in -90..90 step gridStep) {
                 val y = center.y - lat * unit
-                drawLine(Color(0xFF1B252B), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                if (y in 0f..size.height) drawLine(Color(0xFF223039).copy(alpha = .55f),
+                    Offset(0f, y), Offset(size.width, y), 0.5.dp.toPx())
             }
             withTransform({ translate(center.x, center.y); scale(unit, unit, pivot = Offset.Zero) }) {
                 land.forEach { path ->
-                    drawPath(path, Color(0xFF232C30))
-                    drawPath(path, Color(0xFF4B5350), style = Stroke(0.7.dp.toPx() / unit))
+                    drawPath(path, Color(0xFF16232A), style = Stroke(4.dp.toPx() / unit))
+                    drawPath(path, Color(0xFF26353A))
+                    drawPath(path, Color(0xFF61706D).copy(alpha = .65f), style = Stroke(0.6.dp.toPx() / unit))
+                }
+                borders.forEach { path ->
+                    drawPath(path, Color(0xFFAB9C80).copy(alpha = .55f),
+                        style = Stroke(0.65.dp.toPx() / unit))
                 }
             }
-            val labelSize = 10.sp.toPx()
             cityPaint.textSize = labelSize
             cityPaint.color = android.graphics.Color.rgb(185, 192, 188)
             cityOutline.textSize = labelSize
             cityOutline.strokeWidth = 3.dp.toPx()
-            val occupied = mutableListOf(
-                RectF(0f, 0f, 200.dp.toPx(), 88.dp.toPx()),
-                RectF(size.width - 50.dp.toPx(), 0f, size.width, 130.dp.toPx()),
-            )
-            occupied += RectF(200.dp.toPx(), 0f, size.width - 50.dp.toPx(), 52.dp.toPx())
-            if (selectedUrl != null) occupied += RectF(0f, size.height - 200.dp.toPx(),
-                min(size.width, 464.dp.toPx()), size.height)
-            // Keep receiver hit targets and city labels distinct at every zoom level.
-            mapReceivers.forEach { receiver ->
-                val p = point(receiver)
-                if (p.x < -30.dp.toPx() || p.y < -30.dp.toPx() || p.x > size.width + 30.dp.toPx() || p.y > size.height + 30.dp.toPx()) return@forEach
-                val radius = 9.dp.toPx()
-                occupied += RectF(p.x - radius, p.y - radius, p.x + radius, p.y + radius)
-            }
-            cities.filter { it.minZoom <= 2f + log2(zoom) }.forEach { city ->
+            labels.forEach { label ->
+                val city = label.city
                 val x = center.x + city.lon * unit
                 val y = center.y - city.lat * unit
-                val textWidth = cityPaint.measureText(city.name)
-                val gap = 13.dp.toPx()
-                val placement = listOf(
-                    Offset(x + gap, y - labelSize / 2),
-                    Offset(x - gap - textWidth, y - labelSize / 2),
-                    Offset(x - textWidth / 2, y - gap - labelSize),
-                    Offset(x - textWidth / 2, y + gap),
-                ).firstOrNull { candidate ->
-                    val bounds = RectF(candidate.x - 2.dp.toPx(), candidate.y - 2.dp.toPx(),
-                        candidate.x + textWidth + 3.dp.toPx(), candidate.y + labelSize + 4.dp.toPx())
-                    bounds.left >= 0 && bounds.top >= 0 && bounds.right < size.width && bounds.bottom < size.height &&
-                        occupied.none { RectF.intersects(it, bounds) }
-                }
-                if (placement != null) {
-                    val left = placement.x
-                    val top = placement.y
-                    val bounds = RectF(left - 2.dp.toPx(), top - 2.dp.toPx(),
-                        left + textWidth + 3.dp.toPx(), top + labelSize + 4.dp.toPx())
-                    occupied += bounds
-                    drawCircle(Color(0xFFADB5B1), 1.5.dp.toPx(), Offset(x, y))
-                    val baseline = top - cityPaint.fontMetrics.ascent
-                    drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityOutline)
-                    drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityPaint)
-                }
+                val left = x + labelGap
+                val top = y - labelSize / 2
+                val textWidth = label.width
+                // Cull only when both the point and its entire label are offscreen.
+                // Visibility never depends on other labels, markers or map panels.
+                val radius = 1.5.dp.toPx()
+                if (maxOf(x + radius, left + textWidth + cityOutline.strokeWidth) < 0f ||
+                    minOf(x - radius, left - cityOutline.strokeWidth) > size.width ||
+                    maxOf(y + radius, top + labelSize + cityOutline.strokeWidth) < 0f ||
+                    minOf(y - radius, top - cityOutline.strokeWidth) > size.height) return@forEach
+                drawCircle(Color(0xFFADB5B1), radius, Offset(x, y))
+                val baseline = top - cityPaint.fontMetrics.ascent
+                drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityOutline)
+                drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityPaint)
             }
             mapReceivers.forEach { receiver ->
                 val position = point(receiver)
                 if (position.x < -30.dp.toPx() || position.y < -30.dp.toPx() || position.x > size.width + 30.dp.toPx() || position.y > size.height + 30.dp.toPx()) return@forEach
                 val active = selectedUrl == receiver.url
-                drawCircle(warm.copy(alpha = if (active) .22f else .10f), if (active) 15.dp.toPx() else 11.dp.toPx(), position)
-                drawCircle(warm, 5.dp.toPx(), position)
-                drawCircle(Color(0xFF0C1013), 2.dp.toPx(), position)
-                if (active) drawCircle(warm, 11.dp.toPx(), position, style = Stroke(1.dp.toPx()))
+                if (active) {
+                    drawCircle(Brush.radialGradient(listOf(warm.copy(alpha = .24f), Color.Transparent),
+                        center = position, radius = 23.dp.toPx()), 23.dp.toPx(), position)
+                    drawCircle(warm.copy(alpha = .7f), 10.dp.toPx(), position, style = Stroke(1.dp.toPx()))
+                }
+                drawCircle(Color(0xFF0C151B), 6.dp.toPx(), position)
+                drawCircle(if (active) Color(0xFFFFD59A) else warm.copy(alpha = .9f), 4.dp.toPx(), position)
+                drawCircle(Color(0xFF152129), 1.5.dp.toPx(), position)
+
             }
         }
         if (listMode) WebSdrServerList(mapReceivers, selectedUrl,
@@ -240,7 +252,18 @@ internal fun WebSdrMap(
                 Text("↺", color = warm, fontSize = 20.sp)
             }
         }
-        if (!listMode) mapReceivers.firstOrNull { it.url == selectedUrl }?.let { receiver ->
+        if (!listMode) Row(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 30.dp)
+            .background(Color(0xDD0C151B), RoundedCornerShape(5.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("N ↑", color = muted, fontSize = 10.sp)
+            val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
+            if (unit > 0f) Text(String.format(Locale.US, "%.2f°%s  %.2f°%s",
+                kotlin.math.abs(panY / unit), if (panY >= 0f) "N" else "S",
+                kotlin.math.abs(panX / unit), if (panX <= 0f) "E" else "W"),
+                color = muted, fontSize = 10.sp)
+            Text(String.format(Locale.US, "%.1f×", zoom), color = warm, fontSize = 11.sp)
+        }
+        if (!listMode) selectedReceiver?.let { receiver ->
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)
                 .widthIn(max = 440.dp).heightIn(max = 180.dp)
                 .background(Color(0xF5151719), RoundedCornerShape(6.dp))
@@ -263,5 +286,30 @@ internal fun WebSdrMap(
         }
         Text("Natural Earth", color = muted, fontSize = 9.sp,
             modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp))
+    }
+}
+
+private data class CityLabel(val city: MapCity, val width: Float)
+
+/** Resolve density in world coordinates; panning and viewport clipping never change this selection. */
+private fun layoutCityLabels(cities: List<MapCity>, unit: Float, level: Float,
+    paint: Paint, gap: Float, spacing: Float): List<CityLabel> {
+    if (unit <= 0f) return emptyList()
+    val cellSize = paint.textSize * 6f
+    val cells = HashMap<Pair<Int, Int>, MutableList<RectF>>()
+    return buildList {
+        for (city in cities) {
+            if (city.minZoom > level) continue
+            val width = paint.measureText(city.name)
+            val left = city.lon * unit + gap
+            val top = -city.lat * unit - paint.textSize / 2
+            val bounds = RectF(left - spacing, top - spacing / 2,
+                left + width + spacing, top + paint.textSize + spacing / 2)
+            val xs = kotlin.math.floor(bounds.left / cellSize).toInt()..kotlin.math.floor(bounds.right / cellSize).toInt()
+            val ys = kotlin.math.floor(bounds.top / cellSize).toInt()..kotlin.math.floor(bounds.bottom / cellSize).toInt()
+            if (xs.any { x -> ys.any { y -> cells[x to y]?.any { RectF.intersects(it, bounds) } == true } }) continue
+            for (x in xs) for (y in ys) cells.getOrPut(x to y) { mutableListOf() }.add(bounds)
+            add(CityLabel(city, width))
+        }
     }
 }
