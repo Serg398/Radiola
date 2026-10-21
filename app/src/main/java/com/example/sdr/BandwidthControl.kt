@@ -30,7 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChange: (Int?) -> Unit) {
+fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChange: (Int?) -> Unit,
+    options: BandwidthOptions = BandwidthOptions.forMode(mode)) {
     val warm = Color(0xFFF7BA6D)
     val muted = Color(0xFF968E84)
     val surface = Color(0xFF151719)
@@ -47,9 +48,9 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
             Text(bandwidthLabel(hz), color = warm, fontSize = 11.sp, maxLines = 1)
         }
         DropdownMenu(expanded, { expanded = false }, containerColor = surface) {
-            DropdownMenuItem(text = { Text("Default (${bandwidthLabel(mode.bandwidthHz)})", color = if (isDefault) warm else muted) },
+            DropdownMenuItem(text = { Text("Default (${bandwidthLabel(options.defaultHz)})", color = if (isDefault) warm else muted) },
                 onClick = { onChange(null); expanded = false })
-            mode.bandwidthPresetsHz.forEach { value ->
+            options.presets.forEach { value ->
                 DropdownMenuItem(text = { Text(bandwidthLabel(value), color = if (!isDefault && hz == value) warm else muted) },
                     onClick = { onChange(value); expanded = false })
             }
@@ -63,12 +64,12 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
     if (custom) {
         LaunchedEffect(Unit) { focus.requestFocus() }
         val value = input.text.replace(',', '.').toDoubleOrNull()?.times(1000)
-            ?.takeIf { it.isFinite() && it >= mode.minBandwidthHz && it <= mode.maxBandwidthHz }?.toInt()
+            ?.takeIf { it.isFinite() && it >= options.minimumHz && it <= options.maximumHz }?.toInt()
         AlertDialog(onDismissRequest = { custom = false }, containerColor = surface,
             title = { Text("${mode.label} bandwidth", color = warm) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${bandwidthLabel(mode.minBandwidthHz)} — ${bandwidthLabel(mode.maxBandwidthHz)}", color = muted)
+                    Text("${bandwidthLabel(options.minimumHz)} — ${bandwidthLabel(options.maximumHz)}", color = muted)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicTextField(input, { next ->
                             if (next.text.all { it.isDigit() || it == '.' || it == ',' } &&

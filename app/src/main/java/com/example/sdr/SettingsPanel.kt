@@ -27,7 +27,6 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val settingsSurface = Color(0xFF151719)
 private val settingsEdge = Color(0xFF30302E)
 private val settingsWarm = Color(0xFFF7BA6D)
 private val settingsIvory = Color(0xFFF4E8D7)

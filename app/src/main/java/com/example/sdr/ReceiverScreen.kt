@@ -25,14 +25,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -82,7 +80,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.exp
 import kotlin.math.roundToInt
 
 private val emptySpectrum = FloatArray(0)
@@ -148,13 +145,16 @@ fun ReceiverScreen(
     onEncoderTick: () -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
-    var source by rememberSaveable { mutableStateOf("USB") }
-    var webSdrPage by rememberSaveable { mutableStateOf("MAP") }
-    var webSdrReceiverUrl by rememberSaveable { mutableStateOf<String?>(null) }
-    var webSdrReceiverName by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
-    val webSession = remember(context) { WebSdrSession(context) }
-    DisposableEffect(webSession) { onDispose { webSession.disconnect(); webSession.cwDecoder.close() } }
+    val online = remember(context.applicationContext) {
+        (context.applicationContext as? RadiolaApplication)?.webSdr ?: WebSdrRuntime(context.applicationContext)
+    }
+    val source = online.source
+    val webSdrPage = online.page
+    val webSdrReceiverUrl = online.receiverUrl
+    val webSdrReceiverName = online.receiverName
+    val webSession = online.session
+    val mapState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val remote = source == "WebSDR"
     val tunedHz = if (remote) webSession.frequencyHz else currentFrequencyHz
     val activeMode = if (remote) webSession.mode else demodulationMode
@@ -175,7 +175,7 @@ fun ReceiverScreen(
         if (!editingFrequency) remoteInput = "%.6f".format(Locale.US, tunedHz / 1_000_000.0)
     }
     var zoom by remember { mutableStateOf(1f) }
-    val onlineFrame = rememberUpdatedState(webSession.frame)
+    val onlineFrame = remember(webSession) { androidx.compose.runtime.derivedStateOf { webSession.frame } }
     val activeSpectrum = if (remote) onlineFrame else spectrumState
     val activeWaterfall = if (remote) onlineFrame else waterfallState
     val activeHistory = if (remote) webSession.waterfallHistory else waterfallHistory
@@ -227,11 +227,12 @@ fun ReceiverScreen(
     // Both sources move the RF image under the same fixed tuning cursor.
     val visibleCenterHz = if (encoderRotating) displayFrequencyHz else tunedHz.toDouble()
     val remoteBand = webSession.bands.getOrNull(webSession.currentBand)
-    LaunchedEffect(remote, webSession.active, remoteBand, visibleSpanHz, visibleCenterHz) {
+    val latestViewport by rememberUpdatedState(visibleCenterHz.toLong() to visibleSpanHz)
+    LaunchedEffect(remote, webSession.active, remoteBand) {
         if (remote && webSession.active && remoteBand != null) {
-            // Coalesce pinch/drag events rather than restarting the stream for every pixel.
-            delay(180)
-            webSession.setWaterfallViewport(visibleCenterHz.toLong(), visibleSpanHz)
+            androidx.compose.runtime.snapshotFlow { latestViewport }.collect { (center, span) ->
+                webSession.setWaterfallViewport(center, span)
+            }
         }
     }
     val channelOffsetHz = 0L
@@ -239,7 +240,7 @@ fun ReceiverScreen(
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, remote, webSdrPage,
-            onPage = { webSdrPage = it; selected = "Receiver" }, onSelect = {
+            onPage = { online.selectPage(it); selected = "Receiver" }, onSelect = {
                 encoderRotating = false
                 frequencyMotion.snapTo(tunedHz.toDouble())
                 selected = it
@@ -252,6 +253,7 @@ fun ReceiverScreen(
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (remote) {
                     Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
                         Text(when (webSession.state) {
                             WebSdrConnectionState.Connected -> "WEBSDR  /  LIVE"
                             WebSdrConnectionState.Connecting -> "WEBSDR  /  CONNECTING"
@@ -260,7 +262,9 @@ fun ReceiverScreen(
                         }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
                             fontSize = 9.sp, letterSpacing = 0.7.sp, maxLines = 1)
                         Text(webSdrReceiverName.ifBlank { "Select a server on MAP" }, color = ivory,
-                            fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            fontSize = 12.sp, maxLines = if (warning == null) 2 else 1, overflow = TextOverflow.Ellipsis)
+                        if (warning != null) Text(warning, color = muted, fontSize = 9.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
                 BoxWithConstraints(Modifier.weight(1f)) {
@@ -329,28 +333,24 @@ fun ReceiverScreen(
                                 if (streaming || starting) onStopStream()
                                 encoderBrakeRequest++
                                 encoderRotating = false
-                                source = it
+                                online.selectSource(it)
                                 selected = "Receiver"
                             }
                         },
                         connected = if (remote) webSession.state == WebSdrConnectionState.Connected else connected && permitted,
                         action = if (remote) {
-                            when (webSession.state) {
+                            if (online.pending) "CANCEL" else when (webSession.state) {
                                 WebSdrConnectionState.Connecting -> "CANCEL"
                                 WebSdrConnectionState.Connected -> "DISCONNECT"
                                 else -> "CONNECT"
                             }
                         } else if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "ACCESS" else "START",
-                        enabled = if (remote) webSdrReceiverUrl != null || webSession.active
+                        enabled = if (remote) webSdrReceiverUrl != null || webSession.active || online.pending
                             else ((!streamPending && connected) || starting),
                         onAction = {
                         if (remote) {
-                            if (webSession.active) webSession.disconnect()
-                            else webSdrReceiverUrl?.let {
-                                onStopStream()
-                                webSession.connect(it)
-                                webSdrPage = "Radio"
-                            }
+                            if (webSession.active || online.pending) online.disconnect()
+                            else { onStopStream(); online.connect() }
                         } else {
                         when {
                             streaming || starting -> onStopStream()
@@ -379,7 +379,9 @@ fun ReceiverScreen(
                     ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
                     }
                     ToolbarDivider()
-                    BandwidthControl(activeMode, activeBandwidth, bandwidthDefault, changeBandwidth)
+                    BandwidthControl(activeMode, activeBandwidth,
+                        if (remote) webSession.bandwidthDefault else bandwidthDefault, changeBandwidth,
+                        if (remote) WebSdrBandwidth.options(activeMode, webSession.bandwidthLimit) else BandwidthOptions.forMode(activeMode))
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
                         webSession.active, webSession::selectBand)
                     if (activeMode == DemodulationMode.WFM) StereoToggle(
@@ -389,10 +391,8 @@ fun ReceiverScreen(
                     else if (!remote) Spacer(Modifier.width(60.dp))
                     ToolbarDivider()
                     if (remote) {
-                        SignalMeter((webSession.signalDbm ?: -127f) + 37f,
-                            receiverSquelch, squelchOpen, onSquelchChange,
-                            Modifier.weight(1f).fillMaxHeight(), remote = true,
-                            signalAvailable = webSession.signalDbm != null)
+                        WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,
+                            Modifier.weight(1f).fillMaxHeight())
                     } else {
                         SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
                     }
@@ -414,16 +414,15 @@ fun ReceiverScreen(
                         onClose = { selected = "Receiver" }
                     )
                 } else if (remote && webSdrPage == "MAP") {
+                    mapState.SaveableStateProvider("websdr-map") {
                     WebSdrMap(
                         modifier = Modifier.fillMaxSize(),
                         selectedReceiverUrl = webSdrReceiverUrl,
                         onReceiverSelected = {
-                            if (webSdrReceiverUrl != it.url) webSession.disconnect()
-                            webSdrReceiverUrl = it.url
-                            webSdrReceiverName = android.text.Html.fromHtml(it.name,
-                                android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                            online.select(it)
                         },
                     )
+                    }
                 } else {
                 Column(
                     Modifier.fillMaxSize().padding(end = 82.dp),
@@ -438,7 +437,7 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(3.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, activeMode.offsetForBandwidth(activeBandwidth), visibleCenterHz, Modifier.fillMaxSize())
+                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, activeMode.offsetForBandwidth(activeBandwidth), visibleCenterHz, Modifier.fillMaxSize(), relative = remote)
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
@@ -446,7 +445,7 @@ fun ReceiverScreen(
                             Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
                             }
-                            Text("dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
+                            Text(if (remote) "REL" else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
                             Text(
                                 "SPAN %d kHz  •  %s %s".format(Locale.US, visibleSpanHz / 1_000, activeMode.label,
                                     if (activeBandwidth < 1000) "$activeBandwidth Hz" else "%.1f kHz".format(Locale.US, activeBandwidth / 1000.0)),
@@ -545,7 +544,7 @@ fun ReceiverScreen(
                         Text("DISPLAY", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                         Row(Modifier.fillMaxWidth().height(24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Spectrum", color = ivory, fontSize = 13.sp)
-                            Text("30 FPS", color = warm, fontSize = 13.sp)
+                            Text(if (remote) "${webSession.visualFps} FPS" else "30 FPS", color = warm, fontSize = 13.sp)
                         }
                         Row(
                             Modifier.fillMaxWidth().height(24.dp),
@@ -553,7 +552,7 @@ fun ReceiverScreen(
                         ) {
                             Text("Waterfall", color = ivory, fontSize = 13.sp)
                             Box(Modifier.weight(1f))
-                            Text("30 FPS", color = warm, fontSize = 13.sp)
+                            Text(if (remote) "${webSession.visualFps} FPS" else "30 FPS", color = warm, fontSize = 13.sp)
                         }
                     }
                     ControlCard(Modifier.weight(1f).fillMaxHeight()) {
@@ -567,7 +566,7 @@ fun ReceiverScreen(
                         }
                         Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.CenterStart) {
                         Text(
-                            if (remote) webSession.error ?: webSdrReceiverName.ifBlank { "Select a server on MAP" } else usbCheckResult ?: deviceName,
+                            if (remote) online.startError ?: webSession.error ?: webSession.waterfallWarning ?: webSdrReceiverName.ifBlank { "Select a server on MAP" } else usbCheckResult ?: deviceName,
                             color = muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                         }
@@ -985,6 +984,14 @@ private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier
 }
 
 @Composable
+private fun WebSdrSignalMeter(session: WebSdrSession, squelch: ReceiverSquelch, open: Boolean,
+    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier) {
+    val signal = session.signalDbm
+    SignalMeter((signal ?: -127f) + 37f, squelch, open, onSquelchChange, modifier,
+        remote = true, signalAvailable = signal != null)
+}
+
+@Composable
 private fun SignalMeter(
     dbfs: Float, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier,
@@ -1164,16 +1171,6 @@ private fun SmallAction(label: String, enabled: Boolean, modifier: Modifier = Mo
 }
 
 @Composable
-private fun TubeIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        drawCircle(brush = Brush.radialGradient(listOf(Color(0x88FF9D32), Color.Transparent)), radius = size.width * 0.75f)
-        drawRoundRect(Color(0xFF674526), Offset(size.width * 0.25f, size.height * 0.1f), Size(size.width * 0.5f, size.height * 0.76f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f), style = Stroke(1.dp.toPx()))
-        drawLine(warm, Offset(size.width * 0.5f, size.height * 0.28f), Offset(size.width * 0.5f, size.height * 0.69f), 2.dp.toPx())
-        drawCircle(warm, radius = 3.dp.toPx(), center = Offset(size.width * 0.5f, size.height * 0.47f))
-    }
-}
-
-@Composable
 private fun AmberSpectrum(
     valuesState: State<SpectrumFrame?>,
     spectrumSpanHz: Int,
@@ -1181,7 +1178,8 @@ private fun AmberSpectrum(
     channelOffsetHz: Long,
     passbandOffsetHz: Int,
     visibleCenterHz: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    relative: Boolean = false,
 ) {
     val traceSmoother = remember { SpectrumTraceSmoother() }
     val axisPaint = remember {
@@ -1208,7 +1206,7 @@ private fun AmberSpectrum(
         axisPaint.textSize = 11.sp.toPx()
         for (step in 0..3) {
             drawContext.canvas.nativeCanvas.drawText(
-                "${-40 * step}", 2.dp.toPx(), top + height * step / 3f + 3.dp.toPx(),
+                if (relative) "${100 - (100f * step / 3).roundToInt()}" else "${-40 * step}", 2.dp.toPx(), top + height * step / 3f + 3.dp.toPx(),
                 axisPaint
             )
         }
@@ -1232,7 +1230,7 @@ private fun AmberSpectrum(
                 for (bin in first + 1 until last) db = maxOf(db, values[bin])
                 val fraction = (first.toFloat() / values.size - viewportStart) / (viewportEnd - viewportStart)
                 val x = left + width * fraction
-                val y = bottom - ((db + 120f) / 120f).coerceIn(0f, 1f) * height
+                val y = bottom - (if (relative) (db + 94f) / 69f else (db + 120f) / 120f).coerceIn(0f, 1f) * height
                 if (index == 0) {
                     trace.moveTo(x, y)
                     fill.moveTo(x, bottom)

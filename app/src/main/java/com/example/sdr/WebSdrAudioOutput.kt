@@ -4,20 +4,26 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
-import java.util.concurrent.LinkedBlockingDeque
+import android.os.SystemClock
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
-/** One audio worker owns AudioTrack. Queue is bounded to about 200 ms of 128-sample blocks. */
+internal data class WebSdrAudioMetrics(val queuedMs: Int = 0, val droppedMs: Long = 0,
+    val underruns: Int = 0, val recoveries: Int = 0, val targetMs: Int = 40, val route: Int = 0)
+
+/** One worker owns the track. Network jitter buffering is measured in milliseconds, not blocks. */
 internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val onError: (String) -> Unit) {
-    private data class Block(val rate: Int, val samples: ShortArray)
-    private val queue = LinkedBlockingDeque<Block>(12)
+    private val queue = WebSdrPcmQueue()
+    private val signal = Semaphore(0)
     @Volatile private var running = true
+    @Volatile var metrics = WebSdrAudioMetrics()
+        private set
     private val worker = Thread({ playback() }, "WebSdrAudio").apply { start() }
 
     fun offer(rate: Int, samples: ShortArray) {
         if (!running) return
-        val block = Block(rate, samples)
-        while (!queue.offerLast(block)) queue.pollFirst()
+        queue.offer(WebSdrPcmQueue.Block(rate, samples))
+        if (signal.availablePermits() == 0) signal.release()
     }
     fun close() { running = false; queue.clear(); worker.interrupt() }
 
@@ -26,39 +32,91 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         var track: AudioTrack? = null
         var rate = 0
         var announced = false
+        var playing = false
+        var buffering = true
+        var scratch = ShortArray(128)
+        var written = 0L
+        val targetMs = 40
+        var prebufferAt = SystemClock.elapsedRealtime()
+        var lastUnderruns = 0
+        var underruns = 0
+        var recoveries = 0
+        var previousHead = 0L
+        var headWrap = 0L
+        val recovery = AudioRecovery()
+        fun release() {
+            runCatching { track?.pause() }; runCatching { track?.flush() }; runCatching { track?.release() }
+            track = null; playing = false; written = 0; previousHead = 0; headWrap = 0
+        }
+        fun create(sampleRate: Int) {
+            release(); rate = sampleRate
+            val minimum = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            check(minimum > 0) { "Unsupported server audio rate: $rate" }
+            track = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(maxOf(minimum, rate / 10 * 2))
+                .setTransferMode(AudioTrack.MODE_STREAM).build()
+            check(track!!.state == AudioTrack.STATE_INITIALIZED)
+            lastUnderruns = 0
+        }
+        fun reopen(reason: String) {
+            while (running) {
+                check(recovery.recreate(SystemClock.elapsedRealtime())) { "Audio recovery exhausted: $reason" }
+                release(); queue.clear(); recoveries++
+                try { create(rate); buffering = true; prebufferAt = SystemClock.elapsedRealtime(); return }
+                catch (_: IllegalStateException) { Thread.sleep(100) }
+            }
+        }
         try {
             while (running) {
-                val block = queue.pollFirst(250, TimeUnit.MILLISECONDS) ?: continue
-                if (block.rate != rate) {
-                    track?.release()
-                    rate = block.rate
-                    val minimum = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                    check(minimum > 0) { "Unsupported WebSDR audio rate: $rate" }
-                    track = AudioTrack.Builder()
-                        .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                        .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                        .setBufferSizeInBytes(maxOf(minimum, rate / 10 * 2))
-                        .setTransferMode(AudioTrack.MODE_STREAM).build()
-                    check(track.state == AudioTrack.STATE_INITIALIZED)
-                    track.play()
+                if (buffering && queue.milliseconds() < targetMs && SystemClock.elapsedRealtime() - prebufferAt < 250) {
+                    signal.tryAcquire(20, TimeUnit.MILLISECONDS); continue
                 }
-                val samples = ShortArray(block.samples.size) { (block.samples[it] * 0.65536f).toInt().toShort() }
+                buffering = false
+                val block = queue.poll()
+                if (block == null) { signal.tryAcquire(50, TimeUnit.MILLISECONDS); continue }
+                if (block.rate != rate || track == null) create(block.rate)
+                if (scratch.size < block.samples.size) scratch = ShortArray(block.samples.size)
+                for (i in block.samples.indices) scratch[i] = (block.samples[i] * .65536f).toInt().toShort()
                 var offset = 0
-                while (running && offset < samples.size) {
-                    val written = track!!.write(samples, offset, samples.size - offset, AudioTrack.WRITE_NON_BLOCKING)
-                    check(written >= 0) { "WebSDR audio write failed: $written" }
-                    if (written == 0) Thread.sleep(2) else offset += written
+                while (running && offset < block.samples.size) {
+                    val count = try { track!!.write(scratch, offset, block.samples.size - offset, AudioTrack.WRITE_NON_BLOCKING) }
+                        catch (_: IllegalStateException) { AudioTrack.ERROR_DEAD_OBJECT }
+                    if (count < 0) {
+                        check(count != AudioTrack.ERROR_BAD_VALUE) { "Invalid audio write: $count" }
+                        reopen("write=$count"); break
+                    }
+                    if (!recovery.wrote(count, SystemClock.elapsedRealtime())) { reopen("write stalled"); break }
+                    if (count == 0) {
+                        // Some routes need play before their complete requested prefill fits.
+                        if (!playing && written > 0) { track!!.play(); playing = true }
+                        Thread.sleep(2); continue
+                    }
+                    offset += count; written += count
+                    if (!playing && written >= rate * targetMs / 1000) { track!!.play(); playing = true }
                 }
-                if (!announced && offset > 0 && running) { announced = true; onPlaying() }
+                if (!announced && playing && running) { announced = true; onPlaying() }
+                val current = track ?: continue
+                val count = current.underrunCount
+                if (count > lastUnderruns) {
+                    // Do not withhold the next available PCM to refill a jitter
+                    // target while the track is already playing: that prolongs a gap.
+                    underruns += count - lastUnderruns
+                }
+                lastUnderruns = count
+                val head = current.playbackHeadPosition.toLong() and 0xffffffffL
+                if (head < previousHead) headWrap += 1L shl 32
+                previousHead = head
+                val queued = ((written - headWrap - head).coerceAtLeast(0) * 1000 / rate).toInt() + queue.milliseconds()
+                metrics = WebSdrAudioMetrics(queued, queue.droppedUs / 1000, underruns, recoveries, targetMs, current.routedDevice?.type ?: 0)
             }
         } catch (_: InterruptedException) {
-            // close() wakes both queue waits and a nonblocking write retry.
+            // close() interrupts waits and write recovery.
         } catch (error: Exception) {
-            if (running) onError(error.message ?: "WebSDR audio output failed")
-        } finally {
-            runCatching { track?.pause() }; runCatching { track?.flush() }; runCatching { track?.release() }
-        }
+            if (running) onError(error.message ?: "Audio output failed")
+        } finally { release() }
     }
 }

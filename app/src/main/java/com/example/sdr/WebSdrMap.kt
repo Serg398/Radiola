@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -33,8 +34,6 @@ import android.text.Html
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import org.json.JSONArray
 import android.graphics.Paint
 import android.graphics.RectF
 import kotlin.math.min
@@ -43,7 +42,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private data class MapCity(val name: String, val lon: Float, val lat: Float, val minZoom: Float, val population: Long)
 
 /** Offline map rendered by the app from public-domain Natural Earth geometry. */
 @Composable
@@ -54,6 +52,8 @@ internal fun WebSdrMap(
 ) {
     val currentSelectionCallback by rememberUpdatedState(onReceiverSelected)
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    var listMode by rememberSaveable { mutableStateOf(false) }
     var cities by remember { mutableStateOf<List<MapCity>>(emptyList()) }
     val cityPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = android.graphics.Typeface.DEFAULT } }
     val cityOutline = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -63,15 +63,9 @@ internal fun WebSdrMap(
         strokeJoin = Paint.Join.ROUND
     } }
     LaunchedEffect(Unit) {
-        cities = withContext(Dispatchers.IO) {
-            val data = context.assets.open("map/cities.json").bufferedReader().use { JSONArray(it.readText()) }
-            (0 until data.length()).map { i ->
-                val city = data.getJSONObject(i)
-                MapCity(city.getString("name"), city.getDouble("lon").toFloat(), city.getDouble("lat").toFloat(),
-                    city.getDouble("zoom").toFloat(), city.getLong("population"))
-            }.sortedByDescending { it.population }
-        }
+        cities = WebSdrMapAssets.cities(context)
     }
+
     val directory = remember { WebSdrDirectory(context.applicationContext) }
     var mapReceivers by remember { mutableStateOf<List<WebSdrReceiver>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -99,30 +93,7 @@ internal fun WebSdrMap(
     var loadFailed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         try {
-            land = withContext(Dispatchers.IO) {
-                val json = context.assets.open("map/land.geojson").bufferedReader().use { JSONObject(it.readText()) }
-                buildList {
-                    val features = json.getJSONArray("features")
-                    for (i in 0 until features.length()) {
-                        val geometry = features.getJSONObject(i).getJSONObject("geometry")
-                        val coordinates = geometry.getJSONArray("coordinates")
-                        val polygons = if (geometry.getString("type") == "Polygon") listOf(coordinates)
-                            else (0 until coordinates.length()).map { coordinates.getJSONArray(it) }
-                        for (polygon in polygons) add(Path().apply {
-                            for (r in 0 until polygon.length()) {
-                                val ring = polygon.getJSONArray(r)
-                                for (p in 0 until ring.length()) {
-                                    val point = ring.getJSONArray(p)
-                                    val x = point.getDouble(0).toFloat()
-                                    val y = -point.getDouble(1).toFloat()
-                                    if (p == 0) moveTo(x, y) else lineTo(x, y)
-                                }
-                                close()
-                            }
-                        })
-                    }
-                }
-            }
+            land = WebSdrMapAssets.land(context)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { loadFailed = true }
     }
@@ -150,7 +121,7 @@ internal fun WebSdrMap(
     }
     Box(modifier.clipToBounds().background(Color(0xFF0C1013))
         .border(1.dp, Color(0xFF30302E), RoundedCornerShape(6.dp))) {
-        Canvas(Modifier.fillMaxSize().onSizeChanged { viewport = it }
+        if (!listMode) Canvas(Modifier.fillMaxSize().onSizeChanged { viewport = it }
             .pointerInput(Unit) { detectTransformGestures { centroid, pan, scale, _ -> transform(scale, pan, centroid) } }
             .pointerInput(Unit) { detectTapGestures(
                 onDoubleTap = { transform(1.8f, anchor = it) },
@@ -186,11 +157,13 @@ internal fun WebSdrMap(
                 RectF(0f, 0f, 200.dp.toPx(), 88.dp.toPx()),
                 RectF(size.width - 50.dp.toPx(), 0f, size.width, 130.dp.toPx()),
             )
+            occupied += RectF(200.dp.toPx(), 0f, size.width - 50.dp.toPx(), 52.dp.toPx())
             if (selectedUrl != null) occupied += RectF(0f, size.height - 200.dp.toPx(),
                 min(size.width, 464.dp.toPx()), size.height)
             // Keep receiver hit targets and city labels distinct at every zoom level.
             mapReceivers.forEach { receiver ->
                 val p = point(receiver)
+                if (p.x < -30.dp.toPx() || p.y < -30.dp.toPx() || p.x > size.width + 30.dp.toPx() || p.y > size.height + 30.dp.toPx()) return@forEach
                 val radius = 9.dp.toPx()
                 occupied += RectF(p.x - radius, p.y - radius, p.x + radius, p.y + radius)
             }
@@ -224,6 +197,7 @@ internal fun WebSdrMap(
             }
             mapReceivers.forEach { receiver ->
                 val position = point(receiver)
+                if (position.x < -30.dp.toPx() || position.y < -30.dp.toPx() || position.x > size.width + 30.dp.toPx() || position.y > size.height + 30.dp.toPx()) return@forEach
                 val active = selectedUrl == receiver.url
                 drawCircle(warm.copy(alpha = if (active) .22f else .10f), if (active) 15.dp.toPx() else 11.dp.toPx(), position)
                 drawCircle(warm, 5.dp.toPx(), position)
@@ -231,10 +205,17 @@ internal fun WebSdrMap(
                 if (active) drawCircle(warm, 11.dp.toPx(), position, style = Stroke(1.dp.toPx()))
             }
         }
+        if (listMode) WebSdrServerList(mapReceivers, selectedUrl,
+            onSelect = { selectedUrl = it.url; currentSelectionCallback(it) },
+            modifier = Modifier.fillMaxSize().padding(top = 100.dp, start = 12.dp, end = 12.dp, bottom = 12.dp))
+        TextButton(onClick = { listMode = !listMode },
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 56.dp)) {
+            Text(if (listMode) "MAP" else "LIST", color = warm, fontSize = 10.sp)
+        }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp)
             .background(Color(0xE60C1013), RoundedCornerShape(4.dp)).padding(6.dp)) {
             Text("WEBSDR", color = warm, fontSize = 12.sp, letterSpacing = 2.sp)
-            val time = if (updatedAt > 0) SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(updatedAt)) else ""
+            val time = if (updatedAt > 0) SimpleDateFormat("dd MMM HH:mm", locale).format(Date(updatedAt)) else ""
             Text(when {
                 loadFailed -> "Map unavailable"
                 loading -> "Loading receivers…"
@@ -247,7 +228,7 @@ internal fun WebSdrMap(
                 Text("Refresh", color = if (loading) muted else warm, fontSize = 11.sp)
             }
         }
-        Column(Modifier.align(Alignment.TopEnd).padding(8.dp)
+        if (!listMode) Column(Modifier.align(Alignment.TopEnd).padding(8.dp)
             .background(Color(0xEE151719), RoundedCornerShape(5.dp))) {
             TextButton(onClick = { transform(1.5f) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(36.dp)) {
                 Text("+", color = warm, fontSize = 22.sp)
@@ -259,14 +240,17 @@ internal fun WebSdrMap(
                 Text("↺", color = warm, fontSize = 20.sp)
             }
         }
-        mapReceivers.firstOrNull { it.url == selectedUrl }?.let { receiver ->
+        if (!listMode) mapReceivers.firstOrNull { it.url == selectedUrl }?.let { receiver ->
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)
                 .widthIn(max = 440.dp).heightIn(max = 180.dp)
                 .background(Color(0xF5151719), RoundedCornerShape(6.dp))
                 .border(1.dp, Color(0xFF765333), RoundedCornerShape(6.dp)).padding(12.dp)
                 .verticalScroll(rememberScrollState())) {
-                Text(Html.fromHtml(receiver.name, Html.FROM_HTML_MODE_LEGACY).toString().trim(),
-                    color = warm, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(Html.fromHtml(receiver.name, Html.FROM_HTML_MODE_LEGACY).toString().trim(),
+                        modifier = Modifier.weight(1f), color = warm, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+
+                }
                 Text(listOfNotNull(receiver.location.takeIf { it.isNotBlank() }, receiver.users?.let { "$it listeners" })
                     .joinToString(" · "), color = Color(0xFFF4E8D7), fontSize = 12.sp)
                 Text(receiver.url, color = muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

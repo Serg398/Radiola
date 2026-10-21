@@ -19,10 +19,13 @@ internal data class WebSdrDirectorySnapshot(val receivers: List<WebSdrReceiver>,
 internal class WebSdrDirectory(context: Context) {
     private val cache = AtomicFile(File(context.filesDir, "websdr-directory.json"))
 
-    fun cached(): WebSdrDirectorySnapshot? = runCatching {
+    fun cached(): WebSdrDirectorySnapshot? {
+        memory?.takeIf { it.first == cache.baseFile.absolutePath }?.let { return it.second }
+        return runCatching {
         WebSdrDirectorySnapshot(parse(cache.openRead().bufferedReader().use { it.readText() }),
             cache.baseFile.lastModified())
-    }.getOrNull()
+        }.getOrNull()?.also { memory = cache.baseFile.absolutePath to it }
+    }
 
     fun fetch(): WebSdrDirectorySnapshot {
         val connection = URL("http://websdr.ewi.utwente.nl/~~websdrlistk?v=1&fmt=2&chseq=0")
@@ -56,10 +59,13 @@ internal class WebSdrDirectory(context: Context) {
                 throw error
             }
         }
-        return WebSdrDirectorySnapshot(receivers, System.currentTimeMillis())
+        return WebSdrDirectorySnapshot(receivers, System.currentTimeMillis()).also {
+            memory = cache.baseFile.absolutePath to it
+        }
     }
 
     companion object {
+        @Volatile private var memory: Pair<String, WebSdrDirectorySnapshot>? = null
         fun parse(text: String): List<WebSdrReceiver> {
             // The endpoint prefixes its JSON array with a // comment.
             val start = text.indexOf('[')

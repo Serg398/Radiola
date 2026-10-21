@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 
 class RadiolaApplication : Application() {
     val receiver by lazy { ReceiverRuntime(this) }
+    internal val webSdr by lazy { WebSdrRuntime(this) }
 }
 
 /** One process-wide hardware owner, independent of Activity and ViewModel recreation. */
@@ -108,7 +109,11 @@ class ReceiverRuntime(private val context: Context) {
     fun removeObserver(observer: (ReceiverSnapshot) -> Unit) { observers -= observer }
     fun visible(enabled: Boolean) {
         visible = (visible + if (enabled) 1 else -1).coerceAtLeast(0)
-        if (visible > 0) session.prepareAudio() else session.releaseIdleAudio()
+        updateAudioWarmup()
+    }
+    internal fun updateAudioWarmup() {
+        val online = (context.applicationContext as? RadiolaApplication)?.webSdr?.source == "WebSDR"
+        if (visible > 0 && !online) session.prepareAudio() else session.releaseIdleAudio()
     }
     fun requestStart(device: UsbDevice) {
         if (session.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running, ReceiverState.Stopping) || pendingStart != null) return
