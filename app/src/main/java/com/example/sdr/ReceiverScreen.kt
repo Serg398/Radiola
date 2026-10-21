@@ -139,6 +139,8 @@ fun ReceiverScreen(
     rdsInformation: RdsInformation = RdsInformation(),
     cwSnapshot: () -> CwInformation = { CwInformation() },
     onCwClear: () -> Unit = {},
+    cwDecodeEnabled: Boolean = false,
+    onCwDecodeChange: (Boolean) -> Unit = {},
     onWfmStereoChange: (Boolean) -> Unit = {},
     encoderFeedback: EncoderFeedback = EncoderFeedback.LIGHT,
     onEncoderFeedbackChange: (EncoderFeedback) -> Unit = {},
@@ -512,6 +514,8 @@ fun ReceiverScreen(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
                 cwInformation, { if (remote) webSession.cwDecoder.clear() else onCwClear() },
+                if (remote) webSession.cwDecoder.decodingEnabled else cwDecodeEnabled,
+                { if (remote) webSession.cwDecoder.requestDecoding(it) else onCwDecodeChange(it) },
             ) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ControlCard(Modifier.weight(1f).fillMaxHeight()) {

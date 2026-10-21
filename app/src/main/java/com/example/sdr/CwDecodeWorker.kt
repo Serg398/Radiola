@@ -1,6 +1,9 @@
 package com.example.sdr
 
 import java.util.concurrent.ArrayBlockingQueue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /** Audio producers only copy into a bounded queue; all analysis runs on its own thread. */
 internal class CwDecodeWorker {
@@ -8,12 +11,23 @@ internal class CwDecodeWorker {
     private val queue = ArrayBlockingQueue<Block>(16)
     @Volatile private var generation = 0L
     @Volatile private var enabled = false
+    var decodingEnabled by mutableStateOf(false)
+        private set
+    private var sourceActive = false
     @Volatile private var information = CwInformation()
     private var frequency = 0L
     private var thread: Thread? = null
     @Volatile private var closed = false
 
-    @Synchronized fun configure(active: Boolean, hz: Long) {
+    @Synchronized fun requestDecoding(value: Boolean) {
+        if (closed || decodingEnabled == value) return
+        decodingEnabled = value
+        configure(sourceActive, frequency)
+    }
+
+    @Synchronized fun configure(sourceAvailable: Boolean, hz: Long) {
+        sourceActive = sourceAvailable
+        val active = sourceAvailable && decodingEnabled
         if (closed || enabled == active && frequency == hz) return
         enabled = active; frequency = hz; clear()
         if (active && thread == null) {

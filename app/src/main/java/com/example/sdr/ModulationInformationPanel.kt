@@ -27,12 +27,14 @@ internal fun ModulationInformationPanel(
     signalDbfs: Float,
     cw: CwInformation = CwInformation(),
     onCwClear: () -> Unit = {},
+    cwDecodeEnabled: Boolean = false,
+    onCwDecodeChange: (Boolean) -> Unit = {},
     otherModes: @Composable () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().height(106.dp)) {
     when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)
-        DemodulationMode.CW -> CwInformationPanel(cw, onCwClear)
+        DemodulationMode.CW -> CwInformationPanel(cw, onCwClear, cwDecodeEnabled, onCwDecodeChange)
         else -> otherModes()
     }
     }

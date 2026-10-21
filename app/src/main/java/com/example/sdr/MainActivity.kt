@@ -287,6 +287,8 @@ class MainActivity : ComponentActivity() {
                 rdsInformation = runtime.rds,
                 cwSnapshot = runtime.session.cwDecoder::snapshot,
                 onCwClear = runtime.session.cwDecoder::clear,
+                cwDecodeEnabled = runtime.session.cwDecoder.decodingEnabled,
+                onCwDecodeChange = runtime.session.cwDecoder::requestDecoding,
                 receiverGain = receiverGain,
                 gainSteps = gainSteps,
                 spectrumState = spectrumState,
