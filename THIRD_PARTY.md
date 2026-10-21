@@ -24,5 +24,21 @@
   уведомления сохранены в `app/src/main/java/com/example/sdr/RdsCharset.kt`.
   Таблица преобразована в Kotlin `CharArray`; остальной код redsea не встроен.
 
+## Карта WebSDR
+
+- Контуры суши: Natural Earth, `ne_110m_land.geojson` из
+  <https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson>.
+  Public domain: <https://www.naturalearthdata.com/about/terms-of-use/>.
+  Файл хранится в `app/src/main/assets/map/land.geojson`; карта рисуется собственным Canvas.
+- Названия и координаты городов: Natural Earth `ne_110m_populated_places_simple.geojson`
+  из того же репозитория, public domain. В `app/src/main/assets/map/cities.json`
+  сохранены названия, координаты, население и уровень появления подписей.
+- Список серверов загружается из каталога WebSDR:
+  <http://websdr.ewi.utwente.nl/~~websdrlistk?v=1&fmt=2&chseq=0>.
+  Сохраняется последний корректный ответ. Число слушателей относится ко времени
+  обновления каталога и не является проверкой доступности приёмника.
+  Ответ источника содержит уведомление автора PA3FWM о предварительном разрешении
+  на повторное использование данных; оно сохраняется вместе с ответом в кэше.
+
 Драйвер RTL-SDR Blog V4 и libusb собираются из исходников вместе с приложением.
 При распространении приложения необходимо соблюдать условия лицензий этих библиотек.

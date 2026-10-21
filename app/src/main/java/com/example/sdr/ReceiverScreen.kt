@@ -30,6 +30,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -142,6 +143,10 @@ fun ReceiverScreen(
     onEncoderTick: () -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
+    var source by rememberSaveable { mutableStateOf("USB") }
+    var webSdrPage by rememberSaveable { mutableStateOf("MAP") }
+    var webSdrReceiverUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var webSdrReceiverName by rememberSaveable { mutableStateOf("") }
     var editingFrequency by remember { mutableStateOf(false) }
     var zoom by remember { mutableStateOf(1f) }
     val visibleSpanHz = (spectrumSpanHz / zoom).roundToInt()
@@ -179,22 +184,42 @@ fun ReceiverScreen(
             frequencyMotion.snapTo(currentFrequencyHz.toDouble())
             selected = it
         })
+        if (source == "WebSDR") {
+            Column(
+                Modifier.width(62.dp).fillMaxHeight().background(surface).padding(horizontal = 5.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+            ) {
+                listOf("MAP", "Radio").forEach { page ->
+                    val active = webSdrPage == page
+                    Box(
+                        Modifier.fillMaxWidth().height(44.dp)
+                            .border(1.dp, if (active) Color(0xFF9E6D3B) else edge, RoundedCornerShape(5.dp))
+                            .background(if (active) Color(0xFF35291D) else backdrop, RoundedCornerShape(5.dp))
+                            .clickable { webSdrPage = page; selected = "Receiver" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(page, color = if (active) warm else muted, fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            Modifier.weight(1f).fillMaxHeight().padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(Modifier.fillMaxWidth().height(80.dp)) {
-                Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(210.dp))
+            Box(Modifier.fillMaxWidth().height(88.dp)) {
+                Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
                 BoxWithConstraints(Modifier.weight(1f)) {
                 val frequencyText = formatFrequency(currentFrequencyHz)
-                val frequencyStyle = TextStyle(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp)
+                val frequencyStyle = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
                 val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
-                val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 17.sp)).size.width
-                val snapWidth = if (editingFrequency) 0.dp else 42.dp
+                val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 12.sp)).size.width
+                val snapWidth = if (editingFrequency) 0.dp else 32.dp
                 val gaps = if (editingFrequency) 6.dp else 12.dp
                 val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
-                val frequencyFontSize = (44f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
+                val frequencyFontSize = (40f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
                 Row(
                     Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
@@ -216,10 +241,10 @@ fun ReceiverScreen(
                             frequencyText,
                             Modifier.alignByBaseline().clickable { editingFrequency = true },
                             color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light,
-                            letterSpacing = (frequencyFontSize.value / 44f).sp, maxLines = 1
+                            letterSpacing = (frequencyFontSize.value / 80f).sp, maxLines = 1
                         )
                     }
-                    Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 17.sp, maxLines = 1, softWrap = false)
+                    Text("MHz", Modifier.alignByBaseline(), color = muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
                     if (!editingFrequency) {
                         val snapDeltaHz = ((currentFrequencyHz + 500L) / 1_000L) * 1_000L - currentFrequencyHz
                         val canSnap = snapDeltaHz != 0L
@@ -228,8 +253,7 @@ fun ReceiverScreen(
                             "≈1k",
                             Modifier.alignByBaseline().width(snapWidth)
                                 .semantics { contentDescription = "Round frequency to nearest kilohertz" }
-                                .border(1.dp, if (canSnap) Color(0xFF765333) else edge, shape)
-                                .background(if (canSnap) Color(0xFF241E17) else surface, shape)
+                                .background(if (canSnap) Color(0xFF241E17) else Color.Transparent, shape)
                                 .clickable(enabled = canSnap) {
                                     encoderBrakeRequest++
                                     encoderRotating = false
@@ -237,41 +261,55 @@ fun ReceiverScreen(
                                 }
                                 .padding(vertical = 6.dp),
                             color = if (canSnap) warm else Color(0xFF665F58),
-                            fontSize = 12.sp, lineHeight = 14.sp,
+                            fontSize = 10.sp, lineHeight = 12.sp,
                             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                             textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
                         )
                     }
                 }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.semantics { contentDescription = if (connected && permitted) "USB connected" else "USB disconnected" }.width(7.dp).height(7.dp).background(if (connected && permitted) Color(0xFF49BC74) else muted, RoundedCornerShape(7.dp)))
-                    BatteryIndicator(batteryPercent, batteryCharging)
-                    SmallAction(
-                        if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "USB ACCESS" else "START",
-                        (!streamPending && connected) || starting,
-                        Modifier.width(if (!permitted) 95.dp else 76.dp)
-                    ) {
+                Row(Modifier.height(48.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SourcePlaybackControl(
+                        source = source,
+                        subtitle = if (source == "WebSDR") webSdrReceiverName.ifBlank { "Select a server on MAP" }
+                            else if (connected) deviceName else "RTL-SDR · not connected",
+                        onSourceChange = {
+                            if (it != source) {
+                                if (streaming || starting) onStopStream()
+                                encoderBrakeRequest++
+                                encoderRotating = false
+                                source = it
+                                selected = "Receiver"
+                            }
+                        },
+                        connected = source == "USB" && connected && permitted,
+                        action = if (source == "WebSDR") "CONNECT" else if (streaming || starting) "STOP" else if (streamPending) "STOPPING" else if (!permitted) "ACCESS" else "START",
+                        enabled = source == "USB" && ((!streamPending && connected) || starting),
+                        onAction = {
                         when {
                             streaming || starting -> onStopStream()
                             !permitted -> onRequestPermission()
                             else -> onStartStream()
                         }
-                    }
-
+                        },
+                    )
+                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.padding(top = 9.dp))
                 }
                 }
                 Row(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(Modifier.background(surface, RoundedCornerShape(5.dp)).padding(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     ModePill("AM", demodulationMode == DemodulationMode.AM) { onDemodulationModeChange(DemodulationMode.AM) }
                     ModePill("WFM", demodulationMode == DemodulationMode.WFM) { onDemodulationModeChange(DemodulationMode.WFM) }
                     ModePill("FM", demodulationMode == DemodulationMode.NFM) { onDemodulationModeChange(DemodulationMode.NFM) }
                     ModePill("USB", demodulationMode == DemodulationMode.USB) { onDemodulationModeChange(DemodulationMode.USB) }
                     ModePill("LSB", demodulationMode == DemodulationMode.LSB) { onDemodulationModeChange(DemodulationMode.LSB) }
                     ModePill("CW", demodulationMode == DemodulationMode.CW) { onDemodulationModeChange(DemodulationMode.CW) }
+                    }
                     BandwidthControl(demodulationMode, receiveBandwidthHz, bandwidthDefault, onBandwidthChange)
                     StereoToggle(
                         demodulationMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
@@ -294,6 +332,16 @@ fun ReceiverScreen(
                         streaming = streaming, pending = streamPending,
                         onPermission = onRequestPermission, onUsbTest = onCheckConnection, onIqTest = onCaptureIq,
                         onClose = { selected = "Receiver" }
+                    )
+                } else if (source == "WebSDR" && webSdrPage == "MAP") {
+                    WebSdrMap(
+                        modifier = Modifier.fillMaxSize(),
+                        selectedReceiverUrl = webSdrReceiverUrl,
+                        onReceiverSelected = {
+                            webSdrReceiverUrl = it.url
+                            webSdrReceiverName = android.text.Html.fromHtml(it.name,
+                                android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                        },
                     )
                 } else {
                 Column(
@@ -553,12 +601,16 @@ private fun GainPanel(gain: ReceiverGain, gainSteps: List<Int>, onChange: (Recei
 @Composable
 private fun AgcToggle(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
-        modifier.fillMaxHeight().border(1.dp, if (enabled) Color(0xFF8A5A2D) else edge, RoundedCornerShape(4.dp))
-            .background(if (enabled) Color(0xFF3C2A1D) else surface, RoundedCornerShape(4.dp))
+        modifier.fillMaxHeight()
+            .background(if (enabled) Color(0xFF241E17) else Color.Transparent, RoundedCornerShape(4.dp))
+            .semantics { contentDescription = "$label ${if (enabled) "on" else "off"}" }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text("$label ${if (enabled) "ON" else "OFF"}", color = if (enabled) warm else muted, fontSize = 9.sp, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.width(3.dp).height(3.dp).background(if (enabled) warm else edge, RoundedCornerShape(2.dp)))
+            Text(label, color = if (enabled) warm else muted, fontSize = 9.sp, maxLines = 1)
+        }
     }
 }
 
@@ -827,7 +879,7 @@ private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier
                 drawPath(bolt, warm)
             }
         }
-        Text(if (percent < 0) "—%" else "$percent%", color = tint, fontSize = 11.sp, maxLines = 1)
+        Text(if (percent < 0) "—%" else "$percent%", color = tint, fontSize = 10.sp, maxLines = 1)
     }
 }
 
@@ -965,13 +1017,12 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
 @Composable
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(
-        Modifier.width(41.dp).height(28.dp)
-            .border(1.dp, if (active) Color(0xFF8A5A2D) else edge, RoundedCornerShape(5.dp))
-            .background(if (active) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
+        Modifier.width(36.dp).height(24.dp)
+            .background(if (active) Color(0xFF3C2A1D) else Color.Transparent, RoundedCornerShape(4.dp))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (active) warm else if (onClick != null) ivory else Color(0xFF665F58), fontSize = 12.sp)
+        Text(label, color = if (active) warm else if (onClick != null) muted else Color(0xFF665F58), fontSize = 11.sp)
     }
 }
 
