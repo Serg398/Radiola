@@ -12,7 +12,6 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
     private data class Block(val rate: Int, val samples: ShortArray)
     private val queue = LinkedBlockingDeque<Block>(12)
     @Volatile private var running = true
-    @Volatile private var flushRequested = false
     private val worker = Thread({ playback() }, "WebSdrAudio").apply { start() }
 
     fun offer(rate: Int, samples: ShortArray) {
@@ -20,7 +19,6 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         val block = Block(rate, samples)
         while (!queue.offerLast(block)) queue.pollFirst()
     }
-    fun flush() { queue.clear(); flushRequested = true }
     fun close() { running = false; queue.clear(); worker.interrupt() }
 
     private fun playback() {
@@ -46,10 +44,9 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                     check(track.state == AudioTrack.STATE_INITIALIZED)
                     track.play()
                 }
-                if (flushRequested) { flushRequested = false; track!!.pause(); track.flush(); track.play() }
                 val samples = ShortArray(block.samples.size) { (block.samples[it] * 0.65536f).toInt().toShort() }
                 var offset = 0
-                while (running && !flushRequested && offset < samples.size) {
+                while (running && offset < samples.size) {
                     val written = track!!.write(samples, offset, samples.size - offset, AudioTrack.WRITE_NON_BLOCKING)
                     check(written >= 0) { "WebSDR audio write failed: $written" }
                     if (written == 0) Thread.sleep(2) else offset += written

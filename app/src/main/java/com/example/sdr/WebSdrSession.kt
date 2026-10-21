@@ -245,7 +245,7 @@ internal class WebSdrSession(context: Context) {
         frequencyHz = hz
         val bandChanged = currentBand != index
         currentBand = index
-        output?.flush()
+        // Retuning updates the existing stream; keep queued PCM playing continuously.
         sendTuning()
         if (bandChanged) { zoom = 0; viewportCenterHz = null; viewportSpanHz = null }
         if (bandChanged) { frame = null; waterfallHistory = WaterfallHistory(1024) }
@@ -259,7 +259,7 @@ internal class WebSdrSession(context: Context) {
         if (!active || value == DemodulationMode.WFM) return
         mode = value
         bandwidthHz = when (value) { DemodulationMode.AM -> 9000; DemodulationMode.NFM -> 10000; DemodulationMode.CW -> 500; else -> 2400 }
-        output?.flush(); sendTuning()
+        sendTuning()
     }
     fun setBandwidth(hz: Int?) {
         if (!active) return
