@@ -140,6 +140,8 @@ fun ReceiverScreen(
     wfmStereoEnabled: Boolean = false,
     wfmStereoLocked: Boolean = false,
     rdsInformation: RdsInformation = RdsInformation(),
+    cwSnapshot: () -> CwInformation = { CwInformation() },
+    onCwClear: () -> Unit = {},
     onWfmStereoChange: (Boolean) -> Unit = {},
     encoderFeedback: EncoderFeedback = EncoderFeedback.LIGHT,
     onEncoderFeedbackChange: (EncoderFeedback) -> Unit = {},
@@ -152,7 +154,7 @@ fun ReceiverScreen(
     var webSdrReceiverName by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val webSession = remember(context) { WebSdrSession(context) }
-    DisposableEffect(webSession) { onDispose { webSession.disconnect() } }
+    DisposableEffect(webSession) { onDispose { webSession.disconnect(); webSession.cwDecoder.close() } }
     val remote = source == "WebSDR"
     val tunedHz = if (remote) webSession.frequencyHz else currentFrequencyHz
     val activeMode = if (remote) webSession.mode else demodulationMode
@@ -181,6 +183,17 @@ fun ReceiverScreen(
         ?: spectrumSpanHz else spectrumSpanHz
     val visibleSpanHz = (captureSpanHz / zoom).roundToInt().coerceAtLeast(1)
     val receiving = if (remote) webSession.state == WebSdrConnectionState.Connected else streaming
+    var cwInformation by remember { mutableStateOf(CwInformation()) }
+    val latestCwSnapshot by rememberUpdatedState(cwSnapshot)
+    LaunchedEffect(remote, activeMode, tunedHz, receiving) {
+        cwInformation = CwInformation()
+        if (activeMode == DemodulationMode.CW && receiving) {
+            while (true) {
+                cwInformation = if (remote) webSession.cwDecoder.snapshot() else latestCwSnapshot()
+                kotlinx.coroutines.delay(100)
+            }
+        }
+    }
     val activeReceiverState = if (remote) when (webSession.state) {
         WebSdrConnectionState.Connected -> ReceiverState.Running
         WebSdrConnectionState.Connecting -> ReceiverState.Starting
@@ -499,6 +512,7 @@ fun ReceiverScreen(
             ModulationInformationPanel(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
+                cwInformation, { if (remote) webSession.cwDecoder.clear() else onCwClear() },
             ) {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ControlCard(Modifier.weight(1f).fillMaxHeight()) {

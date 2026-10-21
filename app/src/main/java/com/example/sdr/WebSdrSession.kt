@@ -20,6 +20,7 @@ internal enum class WebSdrConnectionState { Idle, Connecting, Connected, Error }
 
 /** Direct WebSocket client. Socket callbacks decode on OkHttp workers; snapshots publish on main. */
 internal class WebSdrSession(context: Context) {
+    val cwDecoder = CwDecodeWorker()
     var state by mutableStateOf(WebSdrConnectionState.Idle)
         private set
     var error by mutableStateOf<String?>(null)
@@ -143,6 +144,7 @@ internal class WebSdrSession(context: Context) {
                     decoder.decode(bytes.toByteArray()) { rate, samples ->
                         lastAudioAt = SystemClock.elapsedRealtime()
                         ownedOutput.offer(rate, samples)
+                        cwDecoder.offer(samples, samples.size, rate, 1)
                     }
                     val rate = decoder.sampleRate
                     val signal = decoder.signalDbm
@@ -229,6 +231,7 @@ internal class WebSdrSession(context: Context) {
     }
 
     private fun sendTuning() {
+        cwDecoder.configure(active && mode == DemodulationMode.CW, frequencyHz)
         val width = bandwidthHz / 1000.0
         val low = when (mode) {
             DemodulationMode.USB -> .15
@@ -300,6 +303,7 @@ internal class WebSdrSession(context: Context) {
         }
     }
     fun disconnect() {
+        cwDecoder.configure(false, frequencyHz)
         generation++; waterGeneration++
         handler.removeCallbacks(health)
         metadata?.cancel(); metadata = null

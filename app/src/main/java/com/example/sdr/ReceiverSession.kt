@@ -12,7 +12,12 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     private val executor = Executors.newSingleThreadExecutor()
     private var connection: UsbDeviceConnection? = null
     @Volatile private var requestedDevice: UsbDevice? = null
-    private val audio = AudioOutput { message -> onAudioError(message, controller.snapshot().sessionId) }
+    internal val cwDecoder = CwDecodeWorker()
+    private var cwMode = DemodulationMode.WFM
+    private var cwFrequency = 0L
+    private val audio = AudioOutput(onSamples = { samples, count -> cwDecoder.offer(samples, count, 48000, 2) }) {
+        message -> onAudioError(message, controller.snapshot().sessionId)
+    }
     private var audioWarmupEnabled = false
     private var lastLoggedState = ReceiverState.Idle
     private val controller: ReceiverController = ReceiverController(executor, object : ReceiverController.Backend {
@@ -32,12 +37,15 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
             if (controls != 0) return controls
             val result = NativeSdr.startStream(opened.fileDescriptor, hz)
             if (result != 0) return result
+            cwMode = mode; cwFrequency = hz
+            cwDecoder.configure(mode == DemodulationMode.CW, hz)
             if (!available(device)) return -101
             if (!audio.start()) return -102
             audio.setReceiving(true)
             return 0
         }
         override fun stop() {
+            cwDecoder.configure(false, cwFrequency)
             audio.setReceiving(false)
             try { NativeSdr.stopStream() } finally {
                 val owned = connection
@@ -45,17 +53,23 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
                 try { owned?.close() } finally { if (!audioWarmupEnabled) audio.stop() }
             }
         }
-        override fun tune(hz: Long) = NativeSdr.setFrequency(hz)
+        override fun tune(hz: Long): Int {
+            val result = NativeSdr.setFrequency(hz)
+            if (result == 0) { cwFrequency = hz; cwDecoder.configure(cwMode == DemodulationMode.CW, hz) }
+            return result
+        }
         override fun mode(mode: DemodulationMode) {
             NativeSdr.setDemodulation(mode.nativeId)
             audio.flushForModeChange()
+            cwMode = mode
+            cwDecoder.configure(mode == DemodulationMode.CW, cwFrequency)
         }
         override fun gain(gain: ReceiverGain) = NativeSdr.setGainControls(gain.rfAgc, gain.gainTenthsDb, gain.audioAgc, gain.biasT)
         override fun warmAudio(enabled: Boolean) {
             audioWarmupEnabled = enabled
             if (enabled) audio.start() else if (connection == null) audio.stop()
         }
-        override fun close() { try { audio.stop() } finally { executor.shutdown() } }
+        override fun close() { try { audio.stop() } finally { cwDecoder.close(); executor.shutdown() } }
     }) { value ->
         if (value.state != lastLoggedState) {
             Log.d("ReceiverControl", "state=${value.state} session=${value.sessionId} version=${value.version}")

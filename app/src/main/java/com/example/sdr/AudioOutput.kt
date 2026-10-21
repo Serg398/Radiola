@@ -10,7 +10,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** The worker alone owns AudioTrack, including recreation and release. */
-class AudioOutput(private val onFatal: (String) -> Unit = {}) {
+class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> },
+    private val onFatal: (String) -> Unit = {}) {
     private class Run {
         @Volatile var running = true
         @Volatile var receiving = false
@@ -102,6 +103,7 @@ class AudioOutput(private val onFatal: (String) -> Unit = {}) {
                     samples.fill(0); samples.size
                 }
                 if (count == 0) { Thread.sleep(4); continue }
+                if (run.receiving) onSamples(samples, count)
                 if (run.receiving && run.receivingSince != lastReceivingSince) {
                     lastReceivingSince = run.receivingSince
                     Log.d("SdrAudio", "first_received_pcm_ms=${SystemClock.elapsedRealtime()-lastReceivingSince} route=${track.routedDevice?.type}")

@@ -286,6 +286,8 @@ class MainActivity : ComponentActivity() {
                 onBandwidthChange = { runtime.setBandwidth(demodulationMode, it) },
                 demodulationMode = demodulationMode,
                 rdsInformation = runtime.rds,
+                cwSnapshot = runtime.session.cwDecoder::snapshot,
+                onCwClear = runtime.session.cwDecoder::clear,
                 receiverGain = receiverGain,
                 gainSteps = gainSteps,
                 spectrumState = spectrumState,
