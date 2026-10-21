@@ -22,8 +22,10 @@ internal class WebSdrBits(private val data: ByteArray, var position: Int = 0) {
 internal class WebSdrAudioDecoder {
     var sampleRate = 8000
         private set
-    var signal = 0
+    var signal = -1
         private set
+    // Matches the reference client's raw / 10 - 127 display scale.
+    val signalDbm: Float? get() = signal.takeIf { it >= 0 }?.let { it / 10f - 127f }
     private var quantizer = 0
     private var flags = 0
     private var rice = 0

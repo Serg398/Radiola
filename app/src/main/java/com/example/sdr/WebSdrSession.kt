@@ -36,6 +36,8 @@ internal class WebSdrSession(context: Context) {
         private set
     var audioSampleRate by mutableIntStateOf(8000)
         private set
+    var signalDbm by mutableStateOf<Float?>(null)
+        private set
     var frame by mutableStateOf<SpectrumFrame?>(null)
         private set
     var waterfallHistory by mutableStateOf(WaterfallHistory(1024))
@@ -142,7 +144,9 @@ internal class WebSdrSession(context: Context) {
                         lastAudioAt = SystemClock.elapsedRealtime()
                         ownedOutput.offer(rate, samples)
                     }
-                    if (decoder.sampleRate != audioSampleRate) publish(token) { audioSampleRate = decoder.sampleRate }
+                    val rate = decoder.sampleRate
+                    val signal = decoder.signalDbm
+                    publish(token) { audioSampleRate = rate; signalDbm = signal }
                 } catch (e: Exception) { publish(token) { fail("Invalid WebSDR audio: ${e.message}") } }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = publish(token) { fail("WebSDR audio connection failed") }
@@ -239,8 +243,12 @@ internal class WebSdrSession(context: Context) {
 
     fun tune(hz: Long) {
         if (!active || bands.isEmpty()) return
-        val index = bands.indexOfFirst { it.contains(hz) }
+        val index = if (bands.getOrNull(currentBand)?.contains(hz) == true) currentBand
+            else bands.indexOfFirst { it.contains(hz) }
         if (index < 0) { error = "Frequency outside this server's bands"; return }
+        tuneBand(index, hz)
+    }
+    private fun tuneBand(index: Int, hz: Long) {
         error = null
         frequencyHz = hz
         val bandChanged = currentBand != index
@@ -252,8 +260,8 @@ internal class WebSdrSession(context: Context) {
         if (bandChanged) openWaterfall()
     }
     fun selectBand(index: Int) {
-        if (index !in bands.indices) return
-        tune(bands[index].defaultHz.coerceIn(bands[index].lowHz, bands[index].highHz))
+        if (!active || index !in bands.indices) return
+        tuneBand(index, bands[index].defaultHz.coerceIn(bands[index].lowHz, bands[index].highHz))
     }
     fun requestMode(value: DemodulationMode) {
         if (!active || value == DemodulationMode.WFM) return
@@ -302,6 +310,7 @@ internal class WebSdrSession(context: Context) {
         frame = null; waterfallHistory = WaterfallHistory(1024)
         viewportCenterHz = null; viewportSpanHz = null; zoom = 0; start = 0; waterWidth = 1024
         lastAudioAt = 0; lastWaterAt = 0
+        signalDbm = null
         if (focusHeld) { audioManager.abandonAudioFocusRequest(focus); focusHeld = false }
         if (active) Log.i("WebSdrConnection", "Native WebSockets disconnected")
         state = WebSdrConnectionState.Idle; error = null

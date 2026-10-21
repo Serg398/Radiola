@@ -7,6 +7,18 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebSdrProtocolTest {
+    @Test fun signalUsesServerScaleAndPersistsAcrossAudioPackets() {
+        val decoder = WebSdrAudioDecoder()
+        assertNull(decoder.signalDbm)
+        decoder.decode(byteArrayOf(0xf2.toByte(), 0x1c)) { _, _ -> }
+        assertEquals(-73f, decoder.signalDbm!!, 0.001f)
+        decoder.decode(byteArrayOf(0x84.toByte())) { _, _ -> }
+        assertEquals(-73f, decoder.signalDbm!!, 0.001f)
+        decoder.decode(byteArrayOf(0xf0.toByte(), 0)) { _, _ -> }
+        assertEquals(-127f, decoder.signalDbm!!, 0.001f)
+        decoder.decode(byteArrayOf(0xf3.toByte(), 0x48)) { _, _ -> }
+        assertEquals(-43f, decoder.signalDbm!!, 0.001f)
+    }
     private fun fixture(name: String) = javaClass.getResourceAsStream("/websdr/$name")!!.use { it.readBytes() }
 
     @Test fun capturedAudioMatchesReferenceAcrossMessageBoundaries() {

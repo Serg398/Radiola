@@ -375,12 +375,18 @@ fun ReceiverScreen(
                     ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
                     }
                     BandwidthControl(activeMode, activeBandwidth, bandwidthDefault, changeBandwidth)
-                    StereoToggle(
+                    if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
+                        webSession.active, webSession::selectBand)
+                    if (activeMode == DemodulationMode.WFM) StereoToggle(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
                     if (remote) {
-                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                        SignalMeter((webSession.signalDbm ?: -127f) + 37f,
+                            receiverSquelch, squelchOpen, onSquelchChange,
+                            Modifier.weight(1f).fillMaxHeight(), remote = true,
+                            signalAvailable = webSession.signalDbm != null)
+                        Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
                             Text(when (webSession.state) {
                                 WebSdrConnectionState.Connected -> "LIVE"
                                 WebSdrConnectionState.Connecting -> "CONNECTING"
@@ -965,7 +971,8 @@ private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier
 @Composable
 private fun SignalMeter(
     dbfs: Float, squelch: ReceiverSquelch, open: Boolean,
-    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier
+    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier,
+    remote: Boolean = false, signalAvailable: Boolean = true,
 ) {
     val currentSquelch by rememberUpdatedState(squelch)
     val displayedSignal = remember { Animatable(dbfs) }
@@ -986,7 +993,7 @@ private fun SignalMeter(
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
     val level = (displayedSignal.value + 90f).coerceIn(0f, 84f)
-    val reading = if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
+    val reading = if (!signalAvailable) "—" else if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
         else "≈S9 +${(level - 54f).roundToInt()}"
     val labelPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -997,19 +1004,24 @@ private fun SignalMeter(
         .background(surface, RoundedCornerShape(5.dp)), verticalAlignment = Alignment.CenterVertically) {
         Canvas(
             Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
-                .pointerInput(Unit) { detectTapGestures(onTap = { setThreshold(it.x) }) }
-                .pointerInput(Unit) {
+                .pointerInput(remote) { if (!remote) detectTapGestures(onTap = { setThreshold(it.x) }) }
+                .pointerInput(remote) {
+                    if (!remote)
                     detectDragGestures(
                         onDragStart = { setThreshold(it.x) },
                         onDrag = { change, _ -> change.consume(); setThreshold(change.position.x) }
                     )
                 }
                 .semantics {
+                    if (!remote) {
                     progressBarRangeInfo = ProgressBarRangeInfo(squelch.thresholdDbfs, -90f..-6f, 83)
                     setProgress { changeSquelch(currentSquelch.copy(thresholdDbfs = it.coerceIn(-90f, -6f))); true }
+                    }
                 }
                 .background(surface, RoundedCornerShape(5.dp))
-                .semantics { contentDescription = "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
+                .semantics { contentDescription = if (!signalAvailable) "Signal unavailable"
+                    else if (remote) "WebSDR signal $reading, ${(dbfs - 37f).roundToInt()} dBm"
+                    else "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
         ) {
             val left = 10.dp.toPx()
             val right = maxOf(left + 1f, size.width - 86.dp.toPx())
@@ -1041,6 +1053,7 @@ private fun SignalMeter(
             drawLine(ivory, Offset(cursorX, barTop - 2.dp.toPx()), Offset(cursorX, barTop + barHeight + 2.dp.toPx()), 1.dp.toPx())
             val sqlX = left + width * (squelch.thresholdDbfs + 90f) / 84f
             val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
+            if (!remote) {
             drawLine(sqlColor, Offset(sqlX, barTop - 3.dp.toPx()), Offset(sqlX, size.height), 1.5.dp.toPx())
             val triangle = Path().apply {
                 moveTo(sqlX, barTop + barHeight + 1.dp.toPx())
@@ -1049,6 +1062,7 @@ private fun SignalMeter(
                 close()
             }
             drawPath(triangle, sqlColor)
+            }
             val readoutX = right + (size.width - right) / 2f
             labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
             labelPaint.textSize = 12.sp.toPx()
@@ -1057,9 +1071,12 @@ private fun SignalMeter(
             labelPaint.isFakeBoldText = false
             labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
             labelPaint.textSize = 9.sp.toPx()
-            drawContext.canvas.nativeCanvas.drawText("SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs), readoutX, size.height - 5.dp.toPx(), labelPaint)
+            val detail = if (remote) {
+                if (signalAvailable) "%.1f dBm".format(Locale.US, displayedSignal.value - 37f) else "WebSDR"
+            } else "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
+            drawContext.canvas.nativeCanvas.drawText(detail, readoutX, size.height - 5.dp.toPx(), labelPaint)
         }
-        Column(
+        if (!remote) Column(
             Modifier.width(46.dp).fillMaxHeight().padding(2.dp)
                 .border(1.dp, if (squelch.enabled) Color(0xFF8A5A2D) else edge, RoundedCornerShape(4.dp))
                 .background(if (squelch.enabled) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
