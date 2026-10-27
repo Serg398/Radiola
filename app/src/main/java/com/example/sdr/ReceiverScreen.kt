@@ -1330,7 +1330,7 @@ private fun AmberSpectrum(
                 fill.lineTo(endX, bottom)
             }
             fill.close()
-            drawPath(fill, Brush.verticalGradient(listOf(RadiolaColors.adaptive(Color(0x66175CE5), Color(0xB3EEA54E)), RadiolaColors.adaptive(Color(0x14175CE5), Color(0x14F7BA6D)), Color.Transparent), startY = top, endY = bottom))
+            drawPath(fill, Brush.verticalGradient(listOf(RadiolaColors.adaptive(Color(0xB3175CE5), Color(0xD9EDA345)), RadiolaColors.adaptive(Color(0x66175CE5), Color(0x804F351B)), RadiolaColors.adaptive(Color(0x26175CE5), Color(0x332E2115))), startY = top, endY = bottom))
             drawPath(trace, warm, style = Stroke(1.dp.toPx()))
         }
         val center = left + width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
