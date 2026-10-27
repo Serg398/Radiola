@@ -272,7 +272,7 @@ fun ReceiverScreen(
             Box(Modifier.fillMaxWidth().height(84.dp)) {
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (remote) {
-                    Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
                         Text(when (webSession.state) {
                             WebSdrConnectionState.Connected -> "WEBSDR  /  LIVE"
@@ -280,10 +280,12 @@ fun ReceiverScreen(
                             WebSdrConnectionState.Error -> "WEBSDR  /  CONNECTION ERROR"
                             else -> "WEBSDR  /  OFFLINE"
                         }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
-                            fontSize = 9.sp, letterSpacing = 0.7.sp, maxLines = 1)
+                            fontSize = 8.sp, lineHeight = 10.sp, letterSpacing = 0.8.sp, maxLines = 1)
                         Text(webSdrReceiverName.ifBlank { "Select a server on MAP" }, color = ivory,
-                            fontSize = 12.sp, maxLines = if (warning == null) 2 else 1, overflow = TextOverflow.Ellipsis)
-                        if (warning != null) Text(warning, color = muted, fontSize = 9.sp,
+                            fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal,
+                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            maxLines = if (warning == null) 2 else 1, overflow = TextOverflow.Ellipsis)
+                        if (warning != null) Text(warning, color = RadiolaColors.warning, fontSize = 9.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
