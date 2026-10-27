@@ -24,18 +24,22 @@ internal fun WebSdrBandControl(
     val warm = RadiolaColors.primary
     val ivory = RadiolaColors.text
     Box {
-        Row(
+        Column(
             Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
                 .background(surface, RoundedCornerShape(5.dp))
                 .clickable(enabled = active && bands.isNotEmpty()) { expanded = true }
                 .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Text(bands.getOrNull(selected)?.name?.ifBlank { "BAND" } ?: "BAND",
+            Text("BAND", color = RadiolaColors.secondaryText, fontSize = 8.sp)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(bands.getOrNull(selected)?.name?.ifBlank { "—" } ?: "—",
                 color = if (active) warm else ivory.copy(alpha = 0.5f), fontSize = 11.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Text("▾", color = warm, fontSize = 11.sp)
+            }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             modifier = Modifier.width(260.dp), containerColor = surface) {
