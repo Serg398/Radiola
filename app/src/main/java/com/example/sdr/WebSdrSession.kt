@@ -24,6 +24,7 @@ internal enum class WebSdrConnectionState { Idle, Connecting, Connected, Error }
 internal class WebSdrSession(context: Context) {
     private val preferences = context.getSharedPreferences("websdr", Context.MODE_PRIVATE)
     val cwDecoder = CwDecodeWorker()
+    val ftxDecoder = FtxDecodeWorker()
     var state by mutableStateOf(WebSdrConnectionState.Idle)
         private set
     var error by mutableStateOf<String?>(null)
@@ -219,6 +220,7 @@ internal class WebSdrSession(context: Context) {
                         lastAudioAt = SystemClock.elapsedRealtime()
                         ownedOutput.offer(rate, samples, decoder.signalDbm)
                         cwDecoder.offer(samples, samples.size, rate, 1)
+                        ftxDecoder.offer(samples, samples.size, rate, 1)
                     }
                     val now = SystemClock.elapsedRealtime()
                     if (now - meterAt >= 100) {
@@ -321,7 +323,7 @@ internal class WebSdrSession(context: Context) {
     private fun backoff(attempt: Int) = (1000L shl attempt.coerceIn(0, 5)).coerceAtMost(30_000)
     private fun recoverAudio(message: String) {
         ++audioGeneration; sound?.cancel(); sound = null; output?.close(); output = null
-        tuning.clear(); cwDecoder.clear(); audioPlaying = false; signalDbm = null
+        tuning.clear(); cwDecoder.clear(); ftxDecoder.clear(); audioPlaying = false; signalDbm = null
         state = WebSdrConnectionState.Connecting; error = "$message; reconnecting"
         handler.removeCallbacks(retryAudio); handler.postDelayed(retryAudio, backoff(audioAttempt++))
         audioOpenedAt = 0
@@ -363,6 +365,7 @@ internal class WebSdrSession(context: Context) {
         audioOpenedAt = 0; waterOpenedAt = 0; lastAudioAt = 0; lastWaterAt = 0
         pendingFrame.set(null); handler.removeCallbacks(render); frameScheduled.set(false)
         cwDecoder.configure(false, frequencyHz)
+        ftxDecoder.configure(null, frequencyHz)
     }
     fun disconnect() {
         handler.removeCallbacks(persist); persist.run()

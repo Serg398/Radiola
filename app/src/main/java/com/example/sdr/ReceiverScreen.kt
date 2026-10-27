@@ -171,7 +171,8 @@ fun ReceiverScreen(
         else onTune()
     }
     val step: (Long) -> Unit = { if (remote) webSession.tune(webSession.frequencyHz + it) else onStep(it) }
-    val changeMode: (DemodulationMode) -> Unit = { if (remote) webSession.requestMode(it) else onDemodulationModeChange(it) }
+    var ftxMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<FtxMode?>(null) }
+    val changeMode: (DemodulationMode) -> Unit = { ftxMode = null; if (remote) webSession.requestMode(it) else onDemodulationModeChange(it) }
     val changeBandwidth: (Int?) -> Unit = { if (remote) webSession.setBandwidth(it) else onBandwidthChange(it) }
     var editingFrequency by remember { mutableStateOf(false) }
     LaunchedEffect(tunedHz, editingFrequency) {
@@ -186,6 +187,18 @@ fun ReceiverScreen(
         ?: spectrumSpanHz else spectrumSpanHz
     val visibleSpanHz = (captureSpanHz / zoom).roundToInt().coerceAtLeast(1)
     val receiving = if (remote) webSession.state == WebSdrConnectionState.Connected else streaming
+    val usbFtx = (context.applicationContext as? RadiolaApplication)?.receiver?.session?.ftxDecoder
+    val activeFtx = if (remote) webSession.ftxDecoder else usbFtx
+    var ftxInformation by remember { mutableStateOf(FtxInformation()) }
+    LaunchedEffect(activeFtx, ftxMode, tunedHz, receiving, activeMode) {
+        usbFtx?.configure(if (!remote && receiving && activeMode == DemodulationMode.USB) ftxMode else null, tunedHz)
+        webSession.ftxDecoder.configure(if (remote && receiving && activeMode == DemodulationMode.USB) ftxMode else null, tunedHz)
+        ftxInformation = FtxInformation()
+        if (ftxMode != null && receiving) while (true) {
+            ftxInformation = activeFtx?.snapshot() ?: FtxInformation()
+            delay(200)
+        }
+    }
     var cwInformation by remember { mutableStateOf(CwInformation()) }
     val latestCwSnapshot by rememberUpdatedState(cwSnapshot)
     LaunchedEffect(remote, activeMode, tunedHz, receiving) {
@@ -248,11 +261,11 @@ fun ReceiverScreen(
                 selected = it
             })
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box(Modifier.fillMaxWidth().height(84.dp)) {
-                Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (remote) {
                     Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
@@ -326,7 +339,7 @@ fun ReceiverScreen(
                     }
                 }
                 }
-                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SourcePlaybackControl(
                         source = source,
                         onSourceChange = {
@@ -376,9 +389,16 @@ fun ReceiverScreen(
                     ModePill("AM", activeMode == DemodulationMode.AM) { changeMode(DemodulationMode.AM) }
                     if (!remote) ModePill("WFM", activeMode == DemodulationMode.WFM) { changeMode(DemodulationMode.WFM) }
                     ModePill("FM", activeMode == DemodulationMode.NFM) { changeMode(DemodulationMode.NFM) }
-                    ModePill("USB", activeMode == DemodulationMode.USB) { changeMode(DemodulationMode.USB) }
+                    ModePill("USB", activeMode == DemodulationMode.USB && ftxMode == null) { changeMode(DemodulationMode.USB) }
                     ModePill("LSB", activeMode == DemodulationMode.LSB) { changeMode(DemodulationMode.LSB) }
                     ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
+                    FtxMode.entries.forEach { protocol ->
+                        ModePill(protocol.name, ftxMode == protocol, if (remote && !webSession.active) null else ({
+                            changeMode(DemodulationMode.USB)
+                            changeBandwidth(3000)
+                            ftxMode = protocol
+                        }))
+                    }
                     }
                     ToolbarDivider()
                     BandwidthControl(activeMode, activeBandwidth,
@@ -436,8 +456,8 @@ fun ReceiverScreen(
                     }
                 } else {
                 Column(
-                    Modifier.fillMaxSize().padding(end = 82.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Modifier.fillMaxSize().padding(end = 78.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
             Box(
                 Modifier.fillMaxWidth().weight(1f)
@@ -524,8 +544,9 @@ fun ReceiverScreen(
                 cwInformation, { if (remote) webSession.cwDecoder.clear() else onCwClear() },
                 if (remote) webSession.cwDecoder.decodingEnabled else cwDecodeEnabled,
                 { if (remote) webSession.cwDecoder.requestDecoding(it) else onCwDecodeChange(it) },
+                ftxMode = ftxMode, ftx = ftxInformation, onFtxClear = { activeFtx?.clear() },
             ) {
-                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     ControlCard(Modifier.weight(1f).fillMaxHeight()) {
                         Text("RECEIVER", color = muted, fontSize = 11.sp, letterSpacing = 1.sp)
                         Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -892,7 +913,7 @@ private fun VerticalEncoder(
                     }
                 }
             }
-            .padding(horizontal = 7.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box {
@@ -927,7 +948,7 @@ private fun VerticalEncoder(
                 }
             }
         }
-        Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp)) {
+        Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp)) {
             val radius = 11.dp.toPx()
             drawRoundRect(
                 brush = Brush.horizontalGradient(listOf(RadiolaColors.adaptive(Color(0xFFD2DEEF), Color(0xFF151515)), RadiolaColors.adaptive(Color(0xFFF8FBFF), Color(0xFF4E4031)), RadiolaColors.adaptive(Color(0xFFC3D2E8), Color(0xFF171717)))),
@@ -1167,7 +1188,7 @@ private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = nu
 private fun ControlCard(modifier: Modifier, content: @Composable () -> Unit) {
     Column(
         modifier.border(1.dp, edge.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
-            .background(surface, RoundedCornerShape(6.dp)).padding(12.dp),
+            .background(surface, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.SpaceBetween,
         content = { content() }
     )

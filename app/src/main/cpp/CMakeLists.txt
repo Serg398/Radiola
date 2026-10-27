@@ -39,3 +39,11 @@ target_include_directories(sdr_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../
 target_compile_options(sdr_native PRIVATE -O3)
 find_library(log_library log)
 target_link_libraries(sdr_native PRIVATE rtlsdr ${log_library} m)
+
+set(FTX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ft8_lib)
+file(GLOB FTX_SOURCES ${FTX_DIR}/ft8/*.c ${FTX_DIR}/fft/*.c)
+add_library(ftx STATIC ${FTX_SOURCES} ${FTX_DIR}/common/monitor.c)
+target_include_directories(ftx PUBLIC ${FTX_DIR})
+target_compile_options(ftx PRIVATE -O3)
+target_sources(sdr_native PRIVATE ftx_decoder.cpp)
+target_link_libraries(sdr_native PRIVATE ftx)

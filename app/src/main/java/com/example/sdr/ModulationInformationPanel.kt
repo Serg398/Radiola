@@ -29,10 +29,14 @@ internal fun ModulationInformationPanel(
     onCwClear: () -> Unit = {},
     cwDecodeEnabled: Boolean = false,
     onCwDecodeChange: (Boolean) -> Unit = {},
+    ftxMode: FtxMode? = null,
+    ftx: FtxInformation = FtxInformation(),
+    onFtxClear: () -> Unit = {},
     otherModes: @Composable () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(106.dp)) {
-    when (mode) {
+    Box(Modifier.fillMaxWidth().height(if (ftxMode != null) 144.dp else 120.dp)) {
+    if (ftxMode != null) FtxInformationPanel(ftxMode, ftx, onFtxClear)
+    else when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)
         DemodulationMode.CW -> CwInformationPanel(cw, onCwClear, cwDecodeEnabled, onCwDecodeChange)
         else -> otherModes()
@@ -63,9 +67,9 @@ private fun WfmInformationPanel(
     Box(
         Modifier.fillMaxSize()
             .border(1.dp, RadiolaColors.border, shape).background(RadiolaColors.surface, shape)
-            .padding(12.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
-        Box(Modifier.offset(x = 96.dp).width(1.dp).fillMaxHeight()
+        Box(Modifier.offset(x = 92.dp).width(1.dp).fillMaxHeight()
             .padding(vertical = 4.dp).background(RadiolaColors.border))
         // Shared rows align the first text baseline even with different font sizes.
         // Their fixed heights keep new text and line wrapping from moving other rows.
@@ -74,7 +78,7 @@ private fun WfmInformationPanel(
                 Text("WFM", Modifier.width(80.dp).alignByBaseline(),
                     color = warm, fontSize = 18.sp, lineHeight = 24.sp,
                     fontWeight = FontWeight.Medium, letterSpacing = .6.sp, style = textStyle)
-                Spacer(Modifier.width(33.dp))
+                Spacer(Modifier.width(25.dp))
                 Text(rds.station, Modifier.weight(1f).alignByBaseline(),
                     color = ivory, fontSize = 20.sp, lineHeight = 24.sp,
                     fontWeight = FontWeight.Medium, style = textStyle,
@@ -85,19 +89,19 @@ private fun WfmInformationPanel(
                     Modifier.width(80.dp).alignByBaseline(),
                     color = textColor, fontSize = 10.sp, lineHeight = 14.sp,
                     letterSpacing = .6.sp, style = textStyle)
-                Spacer(Modifier.width(33.dp))
+                Spacer(Modifier.width(25.dp))
                 Text(metadata, Modifier.weight(1f).alignByBaseline(),
                     color = muted, fontSize = 11.sp, lineHeight = 14.sp, style = textStyle,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Row(Modifier.fillMaxWidth().height(34.dp)) {
+            Row(Modifier.fillMaxWidth().weight(1f)) {
                 Text(if (streaming) "%.0f dBFS".format(Locale.US, signalDbfs) else "",
                     Modifier.width(80.dp).alignByBaseline(),
                     color = muted, fontSize = 10.sp, lineHeight = 14.sp, style = textStyle)
-                Spacer(Modifier.width(33.dp))
+                Spacer(Modifier.width(25.dp))
                 Text(rds.text, Modifier.weight(1f).alignByBaseline(),
                     color = textColor, fontSize = 14.sp, lineHeight = 17.sp, style = textStyle,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
     }

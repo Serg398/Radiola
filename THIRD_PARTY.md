@@ -52,3 +52,23 @@
 
 Драйвер RTL-SDR Blog V4 и libusb собираются из исходников вместе с приложением.
 При распространении приложения необходимо соблюдать условия лицензий этих библиотек.
+
+## FT8 / FT4 decoder
+
+- **ft8_lib**, Karlis Goba, MIT license, source commit
+  `9fec6ca39886edbf96f4f5e71edc76da5074e871` from
+  <https://github.com/kgoba/ft8_lib>. Unmodified DSP, message and monitor sources
+  are vendored in `app/src/main/cpp/third_party/ft8_lib`.
+- The bundled KISS FFT sources are copyright Mark Borgerding, BSD-3-Clause.
+  Complete license texts are included beside the sources and in APK assets.
+- `app/src/androidTest/assets/ft8-websdr.wav` is the upstream
+  `test/wav/websdr_test1.wav` reference recording, distributed with ft8_lib.
+  Its reference transcript includes `LZ1LZ G4UJS IO83`.
+
+## Callsign country reference
+
+- AD1C Contest Country Files #3633, released 23 October 2026, from
+  <https://www.country-files.com/cty/cty.dat>. The unmodified dataset is bundled
+  as `app/src/main/assets/radio/cty.dat`. The accompanying permission and copyright
+  notice from <https://www.country-files.com/cty/copyright.txt> is included in
+  `app/src/main/assets/licenses/country-files.txt`.

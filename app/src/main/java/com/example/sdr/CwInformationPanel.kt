@@ -27,8 +27,8 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
     val scroll = rememberScrollState()
     LaunchedEffect(info.text, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     Row(Modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
-        .background(RadiolaColors.surface, RoundedCornerShape(6.dp)).padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        .background(RadiolaColors.surface, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.width(80.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("CW", color = warm, fontSize = 18.sp)
             Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted, fontSize = 11.sp)

@@ -13,9 +13,10 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     private var connection: UsbDeviceConnection? = null
     @Volatile private var requestedDevice: UsbDevice? = null
     internal val cwDecoder = CwDecodeWorker()
+    internal val ftxDecoder = FtxDecodeWorker()
     private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
-    private val audio = AudioOutput(onSamples = { samples, count -> cwDecoder.offer(samples, count, 48000, 2) }) {
+    private val audio = AudioOutput(onSamples = { samples, count -> cwDecoder.offer(samples, count, 48000, 2); ftxDecoder.offer(samples, count, 48000, 2) }) {
         message -> onAudioError(message, controller.snapshot().sessionId)
     }
     private var audioWarmupEnabled = false
@@ -46,6 +47,7 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
         }
         override fun stop() {
             cwDecoder.configure(false, cwFrequency)
+            ftxDecoder.configure(null, cwFrequency)
             audio.setReceiving(false)
             try { NativeSdr.stopStream() } finally {
                 val owned = connection
@@ -69,7 +71,7 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
             audioWarmupEnabled = enabled
             if (enabled) audio.start() else if (connection == null) audio.stop()
         }
-        override fun close() { try { audio.stop() } finally { cwDecoder.close(); executor.shutdown() } }
+        override fun close() { try { audio.stop() } finally { cwDecoder.close(); ftxDecoder.close(); executor.shutdown() } }
     }) { value ->
         if (value.state != lastLoggedState) {
             Log.d("ReceiverControl", "state=${value.state} session=${value.sessionId} version=${value.version}")
