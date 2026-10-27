@@ -401,7 +401,6 @@ fun ReceiverScreen(
                             changeBandwidth(3000)
                             ftxMode = protocol
                         })
-                    ToolbarDivider()
                     BandwidthControl(activeMode, activeBandwidth,
                         if (remote) webSession.bandwidthDefault else bandwidthDefault, changeBandwidth,
                         if (remote) WebSdrBandwidth.options(activeMode, webSession.bandwidthLimit) else BandwidthOptions.forMode(activeMode))
@@ -1097,7 +1096,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
         listOf("RADIO" to "Radio", "MAP" to "MAP").forEach { (label, targetPage) ->
             val chosen = active && page == targetPage
             Box(Modifier.width(40.dp).fillMaxHeight()
-                .background(if (chosen) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(2.dp))
+                .background(if (chosen) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(3.dp))
                 .semantics { contentDescription = if (targetPage == "Radio") "Show radio" else "Show server map" }
                 .clickable { onSelect(targetPage) }, contentAlignment = Alignment.Center) {
                 Text(label, color = if (chosen) warm else muted, fontSize = 11.sp,
@@ -1161,7 +1160,7 @@ private fun SignalMeter(
                 .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
-            Text("SQL", color = muted, fontSize = 8.sp, fontWeight = FontWeight.Normal,
+            Text("SQL", color = if (squelch.enabled) warm else muted, fontSize = 8.sp, fontWeight = FontWeight.Normal,
                 style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
             Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
                 color = if (squelch.enabled) warm else muted, fontSize = 11.sp,

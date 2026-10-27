@@ -29,8 +29,8 @@ internal fun ModeControl(
             .toolbarButtonSurface()
             .clickable { expanded = true }, horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
-            Text("MODE", color = RadiolaColors.secondaryText, fontSize = 8.sp)
-            Text("$selected ▾", color = RadiolaColors.primary, fontSize = 11.sp)
+            Text("MODE", Modifier.height(10.dp), color = RadiolaColors.secondaryText, fontSize = 8.sp, style = ToolbarCaptionStyle)
+            ToolbarValue(selected)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             containerColor = RadiolaColors.surface) {

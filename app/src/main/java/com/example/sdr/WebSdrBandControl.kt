@@ -32,14 +32,9 @@ internal fun WebSdrBandControl(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("BAND", color = RadiolaColors.secondaryText, fontSize = 8.sp)
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(bands.getOrNull(selected)?.name?.ifBlank { "—" } ?: "—",
-                color = if (active) warm else ivory.copy(alpha = 0.5f), fontSize = 11.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            Text("▾", color = warm, fontSize = 11.sp)
-            }
+            Text("BAND", Modifier.height(10.dp), color = RadiolaColors.secondaryText, fontSize = 8.sp, style = ToolbarCaptionStyle)
+            ToolbarValue(bands.getOrNull(selected)?.name?.ifBlank { "—" } ?: "—",
+                color = if (active) warm else ivory.copy(alpha = 0.5f))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             modifier = Modifier.width(260.dp), containerColor = surface) {

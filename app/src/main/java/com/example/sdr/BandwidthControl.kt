@@ -44,8 +44,8 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
         Column(Modifier.width(68.dp).height(28.dp)
             .toolbarButtonSurface().clickable { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("BW", color = muted, fontSize = 8.sp)
-            Text(bandwidthLabel(hz), color = warm, fontSize = 11.sp, maxLines = 1)
+            Text("BW", Modifier.height(10.dp), color = muted, fontSize = 8.sp, style = ToolbarCaptionStyle)
+            ToolbarValue(bandwidthLabel(hz))
         }
         DropdownMenu(expanded, { expanded = false }, containerColor = surface) {
             DropdownMenuItem(text = { Text("Default (${bandwidthLabel(options.defaultHz)})", color = if (isDefault) warm else muted) },
