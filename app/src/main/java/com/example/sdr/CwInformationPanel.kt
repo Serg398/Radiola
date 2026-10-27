@@ -27,9 +27,9 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
     val scroll = rememberScrollState()
     LaunchedEffect(info.text, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     Row(Modifier.fillMaxSize().border(1.dp, Color(0xFF30302E), RoundedCornerShape(6.dp))
-        .background(Color(0xFF151719), RoundedCornerShape(6.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+        .background(Color(0xFF151719), RoundedCornerShape(6.dp)).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(Modifier.width(80.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.width(80.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("CW", color = warm, fontSize = 18.sp)
             Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted, fontSize = 11.sp)
             Text(if (info.toneHz > 0) "${info.toneHz} Hz" else "AUTO TONE",
@@ -37,7 +37,7 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
         }
         Box(Modifier.width(1.dp).fillMaxHeight().background(Color(0xFF292B2B)))
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("MORSE", color = muted, fontSize = 10.sp, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
                 Text("DECODE", color = if (decodeEnabled) warm else muted, fontSize = 10.sp,
@@ -47,7 +47,7 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
                         .padding(horizontal = 10.dp, vertical = 4.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("CLEAR", color = muted, fontSize = 10.sp,
-                    modifier = Modifier.clickable(onClick = clear).padding(horizontal = 8.dp, vertical = 2.dp))
+                    modifier = Modifier.height(28.dp).clickable(onClick = clear).padding(horizontal = 8.dp).wrapContentHeight(Alignment.CenterVertically))
             }
             Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
                 Text(info.text.trimStart(), color = Color(0xFFF4E8D7), fontSize = 16.sp,

@@ -63,13 +63,13 @@ private fun WfmInformationPanel(
     Box(
         Modifier.fillMaxSize()
             .border(1.dp, Color(0xFF30302E), shape).background(Color(0xFF151719), shape)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(12.dp),
     ) {
         Box(Modifier.offset(x = 96.dp).width(1.dp).fillMaxHeight()
             .padding(vertical = 4.dp).background(Color(0xFF292B2B)))
         // Shared rows align the first text baseline even with different font sizes.
         // Their fixed heights keep new text and line wrapping from moving other rows.
-        Column(Modifier.fillMaxSize().padding(top = 4.dp)) {
+        Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(28.dp)) {
                 Text("WFM", Modifier.width(80.dp).alignByBaseline(),
                     color = warm, fontSize = 18.sp, lineHeight = 24.sp,

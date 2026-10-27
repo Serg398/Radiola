@@ -221,11 +221,11 @@ internal fun WebSdrMap(
             onSelect = { selectedUrl = it.url; currentSelectionCallback(it) },
             modifier = Modifier.fillMaxSize().padding(top = 100.dp, start = 12.dp, end = 12.dp, bottom = 12.dp))
         TextButton(onClick = { listMode = !listMode },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 56.dp)) {
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 56.dp)) {
             Text(if (listMode) "MAP" else "LIST", color = warm, fontSize = 10.sp)
         }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp)
-            .background(Color(0xE60C1013), RoundedCornerShape(4.dp)).padding(6.dp)) {
+            .background(Color(0xE60C1013), RoundedCornerShape(4.dp)).padding(8.dp)) {
             Text("WEBSDR", color = warm, fontSize = 12.sp, letterSpacing = 2.sp)
             val time = if (updatedAt > 0) SimpleDateFormat("dd MMM HH:mm", locale).format(Date(updatedAt)) else ""
             Text(when {
@@ -240,7 +240,7 @@ internal fun WebSdrMap(
                 Text("Refresh", color = if (loading) muted else warm, fontSize = 11.sp)
             }
         }
-        if (!listMode) Column(Modifier.align(Alignment.TopEnd).padding(8.dp)
+        if (!listMode) Column(Modifier.align(Alignment.TopEnd).padding(12.dp)
             .background(Color(0xEE151719), RoundedCornerShape(5.dp))) {
             TextButton(onClick = { transform(1.5f) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(36.dp)) {
                 Text("+", color = warm, fontSize = 22.sp)
@@ -252,7 +252,7 @@ internal fun WebSdrMap(
                 Text("↺", color = warm, fontSize = 20.sp)
             }
         }
-        if (!listMode) Row(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 30.dp)
+        if (!listMode) Row(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 32.dp)
             .background(Color(0xDD0C151B), RoundedCornerShape(5.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("N ↑", color = muted, fontSize = 10.sp)
@@ -285,7 +285,7 @@ internal fun WebSdrMap(
             }
         }
         Text("Natural Earth", color = muted, fontSize = 9.sp,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp))
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp))
     }
 }
 

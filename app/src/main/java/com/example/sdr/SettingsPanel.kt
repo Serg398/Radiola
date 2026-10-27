@@ -58,7 +58,7 @@ internal fun SettingsPanel(
     fun open(next: SettingsPage) { path = path + next }
     BackHandler { back() }
     Column(modifier.fillMaxSize().border(1.dp, settingsEdge, RoundedCornerShape(6.dp))
-        .background(Color(0xFF101214), RoundedCornerShape(6.dp)).padding(14.dp)) {
+        .background(Color(0xFF101214), RoundedCornerShape(6.dp)).padding(12.dp)) {
         Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SettingsButton(if (path.size > 1) "\u2039 Back" else "\u2039 Receiver", onClick = ::back)
@@ -171,8 +171,8 @@ internal fun SettingsPanel(
 private fun SettingsEntry(title: String, subtitle: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, color = settingsIvory, fontSize = 16.sp, modifier = Modifier.weight(1f))
             Text(subtitle, color = settingsMuted, fontSize = 12.sp, modifier = Modifier.weight(1.4f),
                 textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -184,7 +184,7 @@ private fun SettingsEntry(title: String, subtitle: String, modifier: Modifier = 
 
 @Composable
 private fun SettingsInfo(title: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, color = settingsMuted, fontSize = 14.sp)
         Text(value, color = settingsIvory, fontSize = 14.sp)
     }
@@ -192,7 +192,7 @@ private fun SettingsInfo(title: String, value: String) {
 
 @Composable
 private fun SettingsToggle(title: String, subtitle: String, value: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!value) }.padding(horizontal = 10.dp, vertical = 12.dp),
+    Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!value) }.padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, color = if (enabled) settingsIvory else settingsMuted, fontSize = 16.sp)
@@ -205,7 +205,7 @@ private fun SettingsToggle(title: String, subtitle: String, value: Boolean, enab
 @Composable
 private fun SettingsSlider(title: String, reading: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean,
     steps: Int, onChange: (Float) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(title, color = settingsIvory, fontSize = 16.sp)
             Text(reading, color = settingsWarm, fontSize = 15.sp)
@@ -218,7 +218,7 @@ private fun SettingsSlider(title: String, reading: String, value: Float, range: 
 @Composable
 private fun SettingsChoice(label: String, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().height(42.dp).clickable(onClick = onClick).padding(horizontal = 10.dp),
+        Row(Modifier.fillMaxWidth().height(42.dp).clickable(onClick = onClick).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = if (active) settingsWarm else settingsIvory, fontSize = 15.sp, modifier = Modifier.weight(1f))
             if (active) Text("\u2713", color = settingsWarm, fontSize = 17.sp)
@@ -230,7 +230,7 @@ private fun SettingsChoice(label: String, active: Boolean, modifier: Modifier = 
 @Composable
 private fun SettingsButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(Modifier.height(38.dp).clickable(enabled = enabled, onClick = onClick)
-        .padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+        .padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
         Text(label, color = if (enabled) settingsWarm else settingsMuted, fontSize = 14.sp)
     }
 }

@@ -20,14 +20,14 @@ import androidx.compose.ui.unit.sp
 internal fun WebSdrServerList(receivers: List<WebSdrReceiver>, selected: String?,
     onSelect: (WebSdrReceiver) -> Unit, modifier: Modifier) {
     val warm = Color(0xFFF7BA6D)
-    LazyColumn(modifier.background(Color(0xFF0C1013)), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyColumn(modifier.background(Color(0xFF0C1013)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (receivers.isEmpty()) item { Text("No receivers", color = Color(0xFF968E84), modifier = Modifier.padding(16.dp)) }
         items(receivers, key = { it.url }) { receiver ->
             val name = remember(receiver.name) { android.text.Html.fromHtml(receiver.name, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim() }
             Row(Modifier.fillMaxWidth().background(if (receiver.url == selected) Color(0xFF28221B) else Color(0xFF151719), RoundedCornerShape(5.dp))
-                .clickable { onSelect(receiver) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                .clickable { onSelect(receiver) }.padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(name, color = if (receiver.url == selected) warm else Color(0xFFF4E8D7), fontSize = 13.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(listOf(receiver.location, receiver.url).filter { it.isNotBlank() }.joinToString("  /  "),
