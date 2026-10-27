@@ -60,6 +60,9 @@ internal class WebSdrSession(context: Context) {
     val active get() = state == WebSdrConnectionState.Connecting || state == WebSdrConnectionState.Connected
     val audioMetrics get() = output?.metrics ?: WebSdrAudioMetrics()
     private val handler = Handler(Looper.getMainLooper())
+    private val clearFrequencyWarning = Runnable {
+        if (error == "Frequency outside this server's bands") error = null
+    }
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS).build()
@@ -292,10 +295,16 @@ internal class WebSdrSession(context: Context) {
     fun tune(hz: Long) {
         if (!active || bands.isEmpty()) return
         val index = if (bands.getOrNull(currentBand)?.contains(hz) == true) currentBand else bands.indexOfFirst { it.contains(hz) }
-        if (index < 0) { error = "Frequency outside this server's bands"; return }
+        if (index < 0) {
+            error = "Frequency outside this server's bands"
+            handler.removeCallbacks(clearFrequencyWarning)
+            handler.postDelayed(clearFrequencyWarning, 3000)
+            return
+        }
         tuneBand(index, hz)
     }
     private fun tuneBand(index: Int, hz: Long) {
+        handler.removeCallbacks(clearFrequencyWarning)
         error = null; frequencyHz = hz
         val changed = currentBand != index; currentBand = index
         if (changed) {
