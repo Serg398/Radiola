@@ -525,6 +525,15 @@ fun ReceiverScreen(
                                 drawLine(RadiolaColors.adaptive(Color(0x80175CE5), Color(0x80F7BA6D)), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
                                 drawLine(RadiolaColors.adaptive(Color(0xC9175CE5), Color(0xC9FFC073)), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
                             }
+                            Text(
+                                "${if (!receiving) 0 else if (remote) webSession.visualFps else actualWaterfallFps} FPS",
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                                    .background(Color(0xA6111D30), RoundedCornerShape(4.dp))
+                                    .border(.5.dp, Color.White.copy(alpha = .15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                                color = Color.White.copy(alpha = .9f), fontSize = 9.sp, lineHeight = 11.sp,
+                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            )
                         }
                     }
                     Row(
