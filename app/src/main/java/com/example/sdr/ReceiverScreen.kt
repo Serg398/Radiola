@@ -478,7 +478,7 @@ fun ReceiverScreen(
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                             val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
-                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(RadiolaColors.adaptive(Color(0xFFE2ECFF), Color(0xFF4A321D)), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(RadiolaColors.primaryTint, RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
                             }
                             Text(if (remote) "REL" else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
@@ -521,14 +521,14 @@ fun ReceiverScreen(
                                 val channelRight = passbandCenter + channelWidth / 2f
                                 drawRect(
                                     Brush.horizontalGradient(
-                                        listOf(RadiolaColors.adaptive(Color(0x14175CE5), Color(0x14F7BA6D)), RadiolaColors.adaptive(Color(0x33175CE5), Color(0x33F7BA6D)), RadiolaColors.adaptive(Color(0x14175CE5), Color(0x14F7BA6D))),
+                                        listOf(RadiolaColors.adaptive(Color(0x14205BCB), Color(0x14E8B36A)), RadiolaColors.adaptive(Color(0x33205BCB), Color(0x33E8B36A)), RadiolaColors.adaptive(Color(0x14205BCB), Color(0x14E8B36A))),
                                         startX = channelLeft, endX = channelRight
                                     ),
                                     Offset(channelLeft, 0f), Size(channelWidth, size.height)
                                 )
-                                drawLine(RadiolaColors.adaptive(Color(0x80175CE5), Color(0x80F7BA6D)), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.adaptive(Color(0x80175CE5), Color(0x80F7BA6D)), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.adaptive(Color(0xC9175CE5), Color(0xC9FFC073)), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.adaptive(Color(0xC9205BCB), Color(0xC9E8B36A)), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
                             }
                             Text(
                                 "${if (!receiving) 0 else if (remote) webSession.visualFps else actualWaterfallFps} FPS",
@@ -1323,11 +1323,11 @@ private fun AmberSpectrum(
         val height = bottom - top
         for (step in 0..3) {
             val y = top + height * step / 3f
-            drawLine(RadiolaColors.adaptive(Color(0xFFDCE5F2), Color(0xFF252524)), Offset(left, y), Offset(size.width, y), 1f)
+            drawLine(RadiolaColors.plotGrid, Offset(left, y), Offset(size.width, y), 1f)
         }
         for (step in 0..8) {
             val x = left + width * step / 8f
-            drawLine(RadiolaColors.adaptive(Color(0xFFE2EAF5), Color(0xFF222322)), Offset(x, top), Offset(x, bottom), 1f)
+            drawLine(RadiolaColors.plotGrid, Offset(x, top), Offset(x, bottom), 1f)
         }
         axisPaint.textSize = 11.sp.toPx()
         for (step in 0..3) {
@@ -1371,7 +1371,7 @@ private fun AmberSpectrum(
                 fill.lineTo(endX, bottom)
             }
             fill.close()
-            drawPath(fill, Brush.verticalGradient(listOf(RadiolaColors.adaptive(Color(0xB3175CE5), Color(0xD9EDA345)), RadiolaColors.adaptive(Color(0x66175CE5), Color(0x804F351B)), RadiolaColors.adaptive(Color(0x26175CE5), Color(0x332E2115))), startY = top, endY = bottom))
+            drawPath(fill, Brush.verticalGradient(listOf(RadiolaColors.adaptive(Color(0xB3205BCB), Color(0xD9EDA345)), RadiolaColors.adaptive(Color(0x66205BCB), Color(0x804F351B)), RadiolaColors.adaptive(Color(0x26205BCB), Color(0x332E2115))), startY = top, endY = bottom))
             drawPath(trace, warm, style = Stroke(1.dp.toPx()))
         }
         val center = left + width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
@@ -1382,14 +1382,14 @@ private fun AmberSpectrum(
         clipRect(left = left, top = top, right = size.width, bottom = bottom) {
         drawRect(
             Brush.horizontalGradient(
-                listOf(RadiolaColors.adaptive(Color(0x19175CE5), Color(0x19F7BA6D)), RadiolaColors.adaptive(Color(0x38175CE5), Color(0x38F7BA6D)), RadiolaColors.adaptive(Color(0x19175CE5), Color(0x19F7BA6D))),
+                listOf(RadiolaColors.adaptive(Color(0x19205BCB), Color(0x19E8B36A)), RadiolaColors.adaptive(Color(0x38205BCB), Color(0x38E8B36A)), RadiolaColors.adaptive(Color(0x19205BCB), Color(0x19E8B36A))),
                 startX = channelLeft, endX = channelRight
             ),
             Offset(channelLeft, top), Size(channelWidth, height)
         )
-        drawLine(RadiolaColors.adaptive(Color(0x80175CE5), Color(0x80F7BA6D)), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
-        drawLine(RadiolaColors.adaptive(Color(0x80175CE5), Color(0x80F7BA6D)), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
-        drawLine(RadiolaColors.adaptive(Color(0xC9175CE5), Color(0xC9FFC073)), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.adaptive(Color(0xC9205BCB), Color(0xC9E8B36A)), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
         }
         RenderTimings.spectrum.record(System.nanoTime() - started)
     }

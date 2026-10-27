@@ -24,17 +24,18 @@ internal object RadiolaColors {
             .edit().putBoolean("dark", dark).apply()
     }
     fun adaptive(light: Color, night: Color) = if (dark) night else light
-    val background get() = adaptive(Color(0xFFF2F6FC), Color(0xFF0D0F11))
-    val surface get() = adaptive(Color(0xFFFCFDFF), Color(0xFF151719))
-    val sidebar get() = adaptive(Color(0xFFE8EFF8), Color(0xFF171819))
-    val border get() = adaptive(Color(0xFFC7D5E8), Color(0xFF30302E))
-    val primary get() = adaptive(Color(0xFF175CE5), Color(0xFFF7BA6D))
-    val primaryTint get() = adaptive(Color(0xFFE2ECFF), Color(0xFF3C2A1D))
-    val text get() = adaptive(Color(0xFF162842), Color(0xFFF4E8D7))
-    val secondaryText get() = adaptive(Color(0xFF62748E), Color(0xFF968E84))
-    val plot get() = adaptive(Color(0xFFF7FAFF), Color(0xFF0C0E10))
-    val success get() = adaptive(Color(0xFF17855B), Color(0xFFF7BA6D))
-    val warning get() = adaptive(Color(0xFFBD5B1A), Color(0xFFFF8D55))
+    val background get() = adaptive(Color(0xFFF1F3F6), Color(0xFF101214))
+    val surface get() = adaptive(Color(0xFFFFFFFF), Color(0xFF1A1D20))
+    val sidebar get() = adaptive(Color(0xFFE8ECF1), Color(0xFF16191C))
+    val border get() = adaptive(Color(0xFFCAD2DD), Color(0xFF3C4248))
+    val primary get() = adaptive(Color(0xFF205BCB), Color(0xFFE8B36A))
+    val primaryTint get() = adaptive(Color(0xFFE3ECFC), Color(0xFF393025))
+    val text get() = adaptive(Color(0xFF202B3B), Color(0xFFECEEF0))
+    val secondaryText get() = adaptive(Color(0xFF53647A), Color(0xFFACB3BC))
+    val plot get() = adaptive(Color(0xFFFAFBFD), Color(0xFF111416))
+    val plotGrid get() = adaptive(Color(0xFFE2E7EE), Color(0xFF292F34))
+    val success get() = adaptive(Color(0xFF147450), Color(0xFF77C7A2))
+    val warning get() = adaptive(Color(0xFFAC4D14), Color(0xFFF2A269))
     val onPrimary get() = if (dark) surface else Color.White
     val activeMode get() = if (dark) primaryTint else primary
     val onActiveMode get() = if (dark) primary else Color.White
