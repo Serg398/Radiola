@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FtxContactsTest {
+    @Test fun coordinatesUseHemisphereAndStableDecimalFormatting() {
+        assertEquals("55.7500° N", coordinateLabel(55.75, true))
+        assertEquals("33.9000° S", coordinateLabel(-33.9, true))
+        assertEquals("74.0000° W", coordinateLabel(-74.0, false))
+        assertEquals("0.0000° E", coordinateLabel(0.0, false))
+    }
     private val countries = CallsignCountries("""
 Belgium: 14: 27: EU: 50: -4: -1: ON:
     ON,OO,OP;

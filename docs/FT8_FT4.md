@@ -36,7 +36,7 @@ longest-prefix lookup. A country's location is never used to invent a distance.
 Four/six-character Maidenhead locators resolve to cell centers; a bounded station
 grid cache supplies locations for later signal-report/confirmation messages.
 Distance is the great-circle distance in kilometers. WebSDR uses the selected
-server coordinates from the cached directory; USB uses the user-entered RX GRID.
+server coordinates from the cached directory; USB uses the phone location (with foreground coarse/fine location permission).
 Unknown country, grid or receiving location is represented by a dash. Country/DXCC
 is a callsign classification, not proof of the transmitter's physical position.
 
@@ -45,3 +45,11 @@ kilometers, with remaining width allocated to country and message. Column headin
 are omitted. Country labels have ISO regional-indicator flags; DXCC entities map
 to their associated country/territory where known, otherwise a globe is shown.
 Long formal country names are shortened for display without changing lookup data.
+
+The left panel displays latitude/longitude of the receiving source: cached server
+coordinates for WebSDR, current phone location for USB. Phone location subscriptions
+are active only while the USB digital panel is visible and the activity is started.
+Recent system fixes up to two minutes old may seed the display; stopped/disabled
+providers do not supply a guessed location. Manual grid entry is superseded by the
+phone location. A denied permission or unavailable fix leaves coordinates and
+related distances unavailable.

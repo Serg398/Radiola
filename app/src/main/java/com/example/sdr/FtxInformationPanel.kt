@@ -30,10 +30,7 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
     val online = (context.applicationContext as? RadiolaApplication)?.webSdr
     val remote = online?.source == "WebSDR"
     val url = online?.receiverUrl
-    val preferences = remember(context) { context.getSharedPreferences("ftx_location", android.content.Context.MODE_PRIVATE) }
-    var observerGrid by remember { mutableStateOf(preferences.getString("grid", "") ?: "") }
-    var editGrid by remember { mutableStateOf(false) }
-    var gridInput by remember { mutableStateOf("") }
+    val phoneLocation = rememberPhoneLocation(enabled = !remote)
     var countries by remember { mutableStateOf<CallsignCountries?>(null) }
     var serverPoint by remember(url) { mutableStateOf<RadioPoint?>(null) }
     LaunchedEffect(context) {
@@ -47,7 +44,7 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
                 ?.let { RadioPoint(it.lat.toDouble(), it.lon.toDouble()) }
         } else null
     }
-    val origin = if (remote) serverPoint else maidenheadPoint(observerGrid)
+    val origin = if (remote) serverPoint else phoneLocation.point
     val resolver = remember(countries) { countries?.let(::FtxContacts) }
     val rows = remember(info.lines, origin, resolver) { resolver?.rows(info.lines, origin).orEmpty() }
     val scroll = rememberLazyListState()
@@ -60,6 +57,19 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
             Text(mode.name, color = RadiolaColors.primary, fontSize = 18.sp)
             Text("USB / 3 kHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
             Text("${rows.size} messages", color = RadiolaColors.secondaryText, fontSize = 9.sp)
+            Spacer(Modifier.height(2.dp))
+            Text(if (remote) "SERVER" else "PHONE", color = RadiolaColors.secondaryText,
+                fontSize = 8.sp, letterSpacing = .5.sp)
+            if (origin != null) {
+                Text(coordinateLabel(origin.lat, latitude = true), color = RadiolaColors.text,
+                    fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+                Text(coordinateLabel(origin.lon, latitude = false), color = RadiolaColors.text,
+                    fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+            } else {
+                Text(if (remote) "Unavailable" else phoneLocation.status,
+                    color = RadiolaColors.secondaryText, fontSize = 8.sp, maxLines = 2,
+                    modifier = Modifier.clickable(enabled = !remote) { phoneLocation.request() })
+            }
         }
         Box(Modifier.width(1.dp).fillMaxHeight().padding(top = 5.dp, bottom = 4.dp).background(RadiolaColors.border))
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -69,10 +79,6 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
                     color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)))
                 Spacer(Modifier.weight(1f))
-                if (!remote) Text("RX GRID: ${observerGrid.ifBlank { "SET" }}",
-                    color = if (origin != null) RadiolaColors.secondaryText else RadiolaColors.primary,
-                    fontSize = 11.sp, lineHeight = 13.sp,
-                    style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)), modifier = Modifier.clickable(enabled = !remote) { gridInput = observerGrid; editGrid = true })
                 Text("CLEAR", color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)),
                     modifier = Modifier.clickable { clear() }
@@ -89,16 +95,6 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
             }
         }
     }
-    if (editGrid) AlertDialog(onDismissRequest = { editGrid = false },
-        title = { Text("Receiver locator") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Enter your USB receiving location, for example JO20 or JO20AB.")
-            OutlinedTextField(gridInput, { gridInput = it.uppercase(Locale.ROOT).take(6) }, singleLine = true,
-                label = { Text("Maidenhead locator") }, isError = gridInput.isNotBlank() && maidenheadPoint(gridInput) == null)
-        } },
-        confirmButton = { TextButton(enabled = gridInput.isBlank() || maidenheadPoint(gridInput) != null, onClick = {
-            observerGrid = gridInput; preferences.edit().putString("grid", observerGrid).apply(); editGrid = false
-        }) { Text("SAVE") } }, dismissButton = { TextButton(onClick = { editGrid = false }) { Text("CANCEL") } })
 }
 
 @Composable

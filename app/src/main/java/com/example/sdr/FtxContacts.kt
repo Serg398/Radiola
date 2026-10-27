@@ -83,3 +83,8 @@ internal class FtxContacts(private val countries: CallsignCountries) {
         }
     }
 }
+
+internal fun coordinateLabel(value: Double, latitude: Boolean): String {
+    val direction = if (latitude) if (value < 0) "S" else "N" else if (value < 0) "W" else "E"
+    return String.format(Locale.US, "%.4f\u00b0 %s", kotlin.math.abs(value), direction)
+}
