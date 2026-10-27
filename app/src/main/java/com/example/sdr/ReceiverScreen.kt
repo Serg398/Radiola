@@ -53,6 +53,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -61,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.TextStyle
@@ -959,20 +964,54 @@ private fun VerticalEncoder(
         }
         Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp)) {
             val radius = 11.dp.toPx()
-            drawRoundRect(
-                brush = Brush.horizontalGradient(listOf(RadiolaColors.adaptive(Color(0xFFD2DEEF), Color(0xFF151515)), RadiolaColors.adaptive(Color(0xFFF8FBFF), Color(0xFF4E4031)), RadiolaColors.adaptive(Color(0xFFC3D2E8), Color(0xFF171717)))),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius)
-            )
-            clipRect(top = 0f, bottom = size.height) {
-                val gap = pitch
-                var y = phase % gap
-                while (y < size.height) {
-                    drawLine(RadiolaColors.adaptive(Color(0xFF9AAFCB), Color(0xFF080808)), Offset(6.dp.toPx(), y), Offset(size.width - 6.dp.toPx(), y), 3.dp.toPx())
-                    drawLine(RadiolaColors.adaptive(Color(0xFFFFFFFF), Color(0xFF91795C)), Offset(8.dp.toPx(), y + 3.dp.toPx()), Offset(size.width - 8.dp.toPx(), y + 3.dp.toPx()), 1.dp.toPx())
-                    y += gap
-                }
+            val outline = Path().apply {
+                addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(radius)))
             }
-            drawLine(warm, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx())
+            val dark = RadiolaColors.dark
+            clipPath(outline) {
+                // A continuous barrel surface, with the centre catching the light.
+                drawRect(Brush.horizontalGradient(listOf(
+                    RadiolaColors.adaptive(Color(0xFFBBCBE0), Color(0xFF17191B)),
+                    RadiolaColors.adaptive(Color(0xFFE4ECF7), Color(0xFF38342E)),
+                    RadiolaColors.adaptive(Color(0xFFF5F8FD), Color(0xFF51483B)),
+                    RadiolaColors.adaptive(Color(0xFFDDE7F4), Color(0xFF34312C)),
+                    RadiolaColors.adaptive(Color(0xFFAEBFD6), Color(0xFF141618)),
+                )))
+                var y = phase % pitch - pitch
+                val inset = 6.dp.toPx()
+                val ribWidth = (size.width - inset * 2).coerceAtLeast(1f)
+                while (y < size.height + pitch) {
+                    drawRoundRect(
+                        Color.Black.copy(alpha = if (dark) .4f else .13f),
+                        topLeft = Offset(inset, y), size = Size(ribWidth, 2.5.dp.toPx()),
+                        cornerRadius = CornerRadius(2.dp.toPx()),
+                    )
+                    drawLine(
+                        Color.White.copy(alpha = if (dark) .19f else .8f),
+                        Offset(inset + 1.dp.toPx(), y + 3.dp.toPx()),
+                        Offset(size.width - inset - 1.dp.toPx(), y + 3.dp.toPx()),
+                        strokeWidth = .8.dp.toPx(), cap = StrokeCap.Round,
+                    )
+                    y += pitch
+                }
+                // Fade ribs into the rounded ends instead of cutting them off.
+                drawRect(Brush.verticalGradient(listOf(
+                    RadiolaColors.adaptive(Color(0xFFBBCBE0), Color(0xFF17191B)).copy(alpha = .9f),
+                    Color.Transparent, Color.Transparent,
+                    RadiolaColors.adaptive(Color(0xFFAEBFD6), Color(0xFF141618)).copy(alpha = .9f),
+                )))
+                drawRect(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .08f),
+                    Color.Transparent, Color.Transparent, Color.Black.copy(alpha = .12f))))
+            }
+            drawRoundRect(Color.White.copy(alpha = if (dark) .08f else .5f),
+                cornerRadius = CornerRadius(radius), style = Stroke(.75.dp.toPx()))
+            val middle = size.height / 2
+            drawLine(warm.copy(alpha = .15f), Offset(3.dp.toPx(), middle),
+                Offset(size.width - 3.dp.toPx(), middle), 5.dp.toPx(), cap = StrokeCap.Round)
+            drawLine(warm, Offset(2.dp.toPx(), middle), Offset(size.width - 2.dp.toPx(), middle),
+                1.5.dp.toPx(), cap = StrokeCap.Round)
+            drawCircle(warm, 2.dp.toPx(), Offset(3.dp.toPx(), middle))
+            drawCircle(warm, 2.dp.toPx(), Offset(size.width - 3.dp.toPx(), middle))
         }
         Text("▲  ▼", color = warm, fontSize = 11.sp)
     }
