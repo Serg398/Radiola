@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit
 
 /** The worker alone owns AudioTrack, including recreation and release. */
 class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> },
+    private val needsPlayedPcm: () -> Boolean = { false },
+    private val onPlayedPcm: (ShortArray) -> Unit = {},
     private val onFatal: (String) -> Unit = {}) {
     private class Run {
         @Volatile var running = true
@@ -63,9 +65,17 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
         var previousHead = 0L
         var lastReceivingSince = 0L
         val started = SystemClock.elapsedRealtime()
+        val playedPcm = PlaybackPcmTimeline(2)
+        fun playbackHead(): Long {
+            val head = output?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: return 0L
+            if (head < previousHead) headWrap += 1L shl 32
+            previousHead = head
+            if (needsPlayedPcm()) playedPcm.advance(headWrap + head, onPlayedPcm) else playedPcm.clear()
+            return head
+        }
         fun release() {
             output?.let { runCatching { it.pause() }; runCatching { it.flush() }; runCatching { it.release() } }
-            output = null
+            output = null; playedPcm.clear()
         }
         fun reopen(reason: String) {
             while (run.running) {
@@ -92,13 +102,14 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
                 val request = run.flush
                 if (request != null) {
                     try {
-                        track.pause(); track.flush(); NativeSdr.discardAudio()
+                        track.pause(); track.flush(); NativeSdr.discardAudio(); playedPcm.clear()
                         playing = false; writtenFrames = 0; previousHead = 0; headWrap = 0
                     } catch (_: IllegalStateException) { reopen("flush on dead output") }
                     finally { run.flush = null; request.countDown() }
                     if (!run.running) break
                     track = output ?: break
                 }
+                if (playing) playbackHead()
                 val count = if (run.receiving) NativeSdr.readAudio(samples) else {
                     samples.fill(0); samples.size
                 }
@@ -122,7 +133,8 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
                     if (!recovery.wrote(written, SystemClock.elapsedRealtime())) {
                         reopen("write stalled"); break
                     }
-                    if (written == 0) { Thread.sleep(2); continue }
+                    if (written == 0) { if (playing) playbackHead(); Thread.sleep(2); continue }
+                    if (run.receiving && needsPlayedPcm()) playedPcm.record(writtenFrames, samples, offset, written)
                     offset += written; writtenFrames += written / 2
                     if (!playing && writtenFrames >= 960) {
                         try { output!!.play(); playing = true }
@@ -131,9 +143,7 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
                     }
                 }
                 val current = output ?: continue
-                val head = current.playbackHeadPosition.toLong() and 0xffffffffL
-                if (head < previousHead) headWrap += 1L shl 32
-                previousHead = head
+                val head = playbackHead()
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastReport >= 1000) {
                     metrics = AudioMetrics((writtenFrames - headWrap - head).coerceAtLeast(0),

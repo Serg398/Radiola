@@ -13,7 +13,9 @@ internal data class WebSdrAudioMetrics(val queuedMs: Int = 0, val droppedMs: Lon
 
 /** One worker owns the track. Network jitter buffering is measured in milliseconds, not blocks. */
 internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val onError: (String) -> Unit,
-    private val onSignal: (Float?) -> Unit = {}) {
+    private val onSignal: (Float?) -> Unit = {},
+    private val needsPlayedPcm: () -> Boolean = { false },
+    private val onPlayedPcm: (Int, ShortArray) -> Unit = { _, _ -> }) {
     private val queue = WebSdrPcmQueue()
     private val signal = Semaphore(0)
     @Volatile private var running = true
@@ -46,12 +48,14 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         var headWrap = 0L
         val recovery = AudioRecovery()
         val meter = WebSdrSignalTimeline()
+        val playedPcm = PlaybackPcmTimeline(1)
         var reportedSignal: Float? = null
         fun playbackHead(): Long {
             val head = track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: return 0L
             if (head < previousHead) headWrap += 1L shl 32
             previousHead = head
             val played = headWrap + head
+            if (needsPlayedPcm()) playedPcm.advance(played) { onPlayedPcm(rate, it) } else playedPcm.clear()
             val value = meter.advance(played)
             if (value != reportedSignal) { reportedSignal = value; onSignal(value) }
             return played
@@ -59,7 +63,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         fun release() {
             runCatching { track?.pause() }; runCatching { track?.flush() }; runCatching { track?.release() }
             track = null; playing = false; written = 0; previousHead = 0; headWrap = 0
-            meter.clear()
+            meter.clear(); playedPcm.clear()
             if (reportedSignal != null) { reportedSignal = null; onSignal(null) }
         }
         fun create(sampleRate: Int) {
@@ -112,6 +116,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                         Thread.sleep(2); continue
                     }
                     if (offset == 0) meter.record(written, block.signalDbm)
+                    if (needsPlayedPcm()) playedPcm.record(written, block.samples, offset, count)
                     offset += count; written += count
                     if (!playing && written >= rate * targetMs / 1000) { track!!.play(); playing = true }
                 }

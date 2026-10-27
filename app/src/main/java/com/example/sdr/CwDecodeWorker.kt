@@ -50,6 +50,7 @@ internal class CwDecodeWorker {
 
     @Synchronized fun clear() { generation++; queue.clear(); information = CwInformation() }
     fun snapshot(): CwInformation = information
+    fun acceptsAudio(): Boolean = enabled && !closed
     fun offer(samples: ShortArray, count: Int, rate: Int, channels: Int) {
         if (!enabled || closed || count <= 0) return
         val epoch = generation

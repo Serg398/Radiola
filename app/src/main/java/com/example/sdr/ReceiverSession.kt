@@ -16,7 +16,9 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     internal val ftxDecoder = FtxDecodeWorker()
     private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
-    private val audio = AudioOutput(onSamples = { samples, count -> cwDecoder.offer(samples, count, 48000, 2); ftxDecoder.offer(samples, count, 48000, 2) }) {
+    private val audio = AudioOutput(onSamples = { samples, count -> ftxDecoder.offer(samples, count, 48000, 2) },
+        needsPlayedPcm = cwDecoder::acceptsAudio,
+        onPlayedPcm = { samples -> cwDecoder.offer(samples, samples.size, 48000, 2) }) {
         message -> onAudioError(message, controller.snapshot().sessionId)
     }
     private var audioWarmupEnabled = false
