@@ -391,22 +391,12 @@ fun ReceiverScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(Modifier.padding(2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ModePill("AM", activeMode == DemodulationMode.AM) { changeMode(DemodulationMode.AM) }
-                    if (!remote) ModePill("WFM", activeMode == DemodulationMode.WFM) { changeMode(DemodulationMode.WFM) }
-                    ModePill("FM", activeMode == DemodulationMode.NFM) { changeMode(DemodulationMode.NFM) }
-                    ModePill("USB", activeMode == DemodulationMode.USB && ftxMode == null) { changeMode(DemodulationMode.USB) }
-                    ModePill("LSB", activeMode == DemodulationMode.LSB) { changeMode(DemodulationMode.LSB) }
-                    ModePill("CW", activeMode == DemodulationMode.CW) { changeMode(DemodulationMode.CW) }
-                    FtxMode.entries.forEach { protocol ->
-                        ModePill(protocol.name, ftxMode == protocol, if (remote && !webSession.active) null else ({
+                    ModeControl(activeMode, ftxMode, remote, !remote || webSession.active,
+                        onMode = changeMode, onFtx = { protocol ->
                             changeMode(DemodulationMode.USB)
                             changeBandwidth(3000)
                             ftxMode = protocol
-                        }))
-                    }
-                    }
+                        })
                     ToolbarDivider()
                     BandwidthControl(activeMode, activeBandwidth,
                         if (remote) webSession.bandwidthDefault else bandwidthDefault, changeBandwidth,
@@ -1272,18 +1262,6 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
 @Composable
 private fun ToolbarDivider() {
     Box(Modifier.width(1.dp).height(16.dp).background(edge))
-}
-
-@Composable
-private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
-    Box(
-        Modifier.width(36.dp).height(24.dp)
-            .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
-            .clickable(enabled = onClick != null) { onClick?.invoke() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, color = if (active) RadiolaColors.onActiveMode else if (onClick != null) muted else RadiolaColors.secondaryText, fontSize = 11.sp)
-    }
 }
 
 @Composable
