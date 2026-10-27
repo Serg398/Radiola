@@ -7,7 +7,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.provider.Settings
+import android.os.VibrationAttributes
 
 enum class EncoderFeedback(val label: String) { OFF("OFF"), LIGHT("LIGHT"), MEDIUM("MEDIUM") }
 
@@ -18,7 +18,7 @@ class EncoderHaptics(context: Context) {
         appContext.getSystemService(VibratorManager::class.java)?.defaultVibrator
     else @Suppress("DEPRECATION") (appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
     private val attributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build()
+        .setUsage(AudioAttributes.USAGE_GAME).build()
     private val effects = mapOf(
         EncoderFeedback.LIGHT to effect(0.3f, 40),
         EncoderFeedback.MEDIUM to effect(0.65f, 85)
@@ -40,10 +40,14 @@ class EncoderHaptics(context: Context) {
         if (feedback == EncoderFeedback.OFF || vibrator?.hasVibrator() != true) return
         val now = SystemClock.uptimeMillis()
         if (now - lastTickMs < 35) return
-        if (Settings.System.getInt(appContext.contentResolver, Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) == 0) return
         lastTickMs = now
-        @Suppress("DEPRECATION")
-        vibrator.vibrate(effects.getValue(feedback), attributes)
+        if (Build.VERSION.SDK_INT >= 33) {
+            vibrator.vibrate(effects.getValue(feedback), VibrationAttributes.Builder()
+                .setUsage(VibrationAttributes.USAGE_PHYSICAL_EMULATION).build())
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(effects.getValue(feedback), attributes)
+        }
     }
 
     fun cancel() { vibrator?.cancel() }

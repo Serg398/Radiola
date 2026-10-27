@@ -145,7 +145,7 @@ internal fun SettingsPanel(
                             SettingsChoice(option.label, option == feedback) { onFeedbackChange(option) }
                         }
                         Spacer(Modifier.height(10.dp))
-                        Text("Short clicks at the wheel detents. System touch vibration must also be enabled.", color = settingsMuted, fontSize = 13.sp)
+                        Text("Short clicks at the wheel detents, controlled by OFF / LIGHT / MEDIUM.", color = settingsMuted, fontSize = 13.sp)
                     }
                     SettingsPage.DEVICE -> {
                         SettingsInfo("Receiver", deviceName)
