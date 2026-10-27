@@ -458,8 +458,7 @@ fun ReceiverScreen(
                             }
                             Text(if (remote) "REL" else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
                             Text(
-                                "SPAN %d kHz  •  %s %s".format(Locale.US, visibleSpanHz / 1_000, activeMode.label,
-                                    if (activeBandwidth < 1000) "$activeBandwidth Hz" else "%.1f kHz".format(Locale.US, activeBandwidth / 1000.0)),
+                                "SPAN %d kHz".format(Locale.US, visibleSpanHz / 1_000),
                                 Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 4.dp),
                                 color = muted, fontSize = 11.sp
                             )
