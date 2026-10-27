@@ -204,7 +204,8 @@ internal class WebSdrSession(context: Context) {
                     audioAttempt = 0; reconnectAttempt = 0
                     Log.i("WebSdrConnection", "Audio playing; waterfall recovery is independent")
                 }
-            } }, onError = ::reportFailure)
+            } }, onError = ::reportFailure,
+            onSignal = { value -> publish(token) { if (epoch == audioGeneration) signalDbm = value } })
         output = ownedOutput
         sound = client.newWebSocket(socketRequest("/~~stream"), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) = publish(token) {
@@ -216,14 +217,14 @@ internal class WebSdrSession(context: Context) {
                     decoder.decode(bytes.toByteArray()) { rate, samples ->
                         if (generation != token || audioGeneration != epoch) return@decode
                         lastAudioAt = SystemClock.elapsedRealtime()
-                        ownedOutput.offer(rate, samples)
+                        ownedOutput.offer(rate, samples, decoder.signalDbm)
                         cwDecoder.offer(samples, samples.size, rate, 1)
                     }
                     val now = SystemClock.elapsedRealtime()
                     if (now - meterAt >= 100) {
                         meterAt = now
-                        val rate = decoder.sampleRate; val signal = decoder.signalDbm
-                        publish(token) { if (epoch == audioGeneration) { audioSampleRate = rate; signalDbm = signal } }
+                        val rate = decoder.sampleRate
+                        publish(token) { if (epoch == audioGeneration) { audioSampleRate = rate } }
                     }
                 } catch (e: Exception) { reportFailure("Invalid server audio: ${e.message}") }
             }

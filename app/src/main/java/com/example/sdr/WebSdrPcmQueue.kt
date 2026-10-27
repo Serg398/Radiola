@@ -4,7 +4,7 @@ import java.util.ArrayDeque
 
 /** Bounded by audio duration at any sample rate. Producers never wait for the consumer. */
 internal class WebSdrPcmQueue(private val maximumMs: Int = 200) {
-    data class Block(val rate: Int, val samples: ShortArray) {
+    data class Block(val rate: Int, val samples: ShortArray, val signalDbm: Float? = null) {
         val durationUs = samples.size * 1_000_000L / rate
     }
     private val blocks = ArrayDeque<Block>()

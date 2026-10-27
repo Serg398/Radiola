@@ -12,7 +12,8 @@ internal data class WebSdrAudioMetrics(val queuedMs: Int = 0, val droppedMs: Lon
     val underruns: Int = 0, val recoveries: Int = 0, val targetMs: Int = 40, val route: Int = 0)
 
 /** One worker owns the track. Network jitter buffering is measured in milliseconds, not blocks. */
-internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val onError: (String) -> Unit) {
+internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val onError: (String) -> Unit,
+    private val onSignal: (Float?) -> Unit = {}) {
     private val queue = WebSdrPcmQueue()
     private val signal = Semaphore(0)
     @Volatile private var running = true
@@ -20,9 +21,9 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         private set
     private val worker = Thread({ playback() }, "WebSdrAudio").apply { start() }
 
-    fun offer(rate: Int, samples: ShortArray) {
+    fun offer(rate: Int, samples: ShortArray, signalDbm: Float? = null) {
         if (!running) return
-        queue.offer(WebSdrPcmQueue.Block(rate, samples))
+        queue.offer(WebSdrPcmQueue.Block(rate, samples, signalDbm))
         if (signal.availablePermits() == 0) signal.release()
     }
     fun close() { running = false; queue.clear(); worker.interrupt() }
@@ -44,9 +45,22 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         var previousHead = 0L
         var headWrap = 0L
         val recovery = AudioRecovery()
+        val meter = WebSdrSignalTimeline()
+        var reportedSignal: Float? = null
+        fun playbackHead(): Long {
+            val head = track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: return 0L
+            if (head < previousHead) headWrap += 1L shl 32
+            previousHead = head
+            val played = headWrap + head
+            val value = meter.advance(played)
+            if (value != reportedSignal) { reportedSignal = value; onSignal(value) }
+            return played
+        }
         fun release() {
             runCatching { track?.pause() }; runCatching { track?.flush() }; runCatching { track?.release() }
             track = null; playing = false; written = 0; previousHead = 0; headWrap = 0
+            meter.clear()
+            if (reportedSignal != null) { reportedSignal = null; onSignal(null) }
         }
         fun create(sampleRate: Int) {
             release(); rate = sampleRate
@@ -72,12 +86,13 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         }
         try {
             while (running) {
+                if (playing) playbackHead()
                 if (buffering && queue.milliseconds() < targetMs && SystemClock.elapsedRealtime() - prebufferAt < 250) {
                     signal.tryAcquire(20, TimeUnit.MILLISECONDS); continue
                 }
                 buffering = false
                 val block = queue.poll()
-                if (block == null) { signal.tryAcquire(50, TimeUnit.MILLISECONDS); continue }
+                if (block == null) { signal.tryAcquire(10, TimeUnit.MILLISECONDS); continue }
                 if (block.rate != rate || track == null) create(block.rate)
                 if (scratch.size < block.samples.size) scratch = ShortArray(block.samples.size)
                 for (i in block.samples.indices) scratch[i] = (block.samples[i] * .65536f).toInt().toShort()
@@ -90,11 +105,13 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                         reopen("write=$count"); break
                     }
                     if (!recovery.wrote(count, SystemClock.elapsedRealtime())) { reopen("write stalled"); break }
+                    if (playing) playbackHead()
                     if (count == 0) {
                         // Some routes need play before their complete requested prefill fits.
                         if (!playing && written > 0) { track!!.play(); playing = true }
                         Thread.sleep(2); continue
                     }
+                    if (offset == 0) meter.record(written, block.signalDbm)
                     offset += count; written += count
                     if (!playing && written >= rate * targetMs / 1000) { track!!.play(); playing = true }
                 }
@@ -107,10 +124,8 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                     underruns += count - lastUnderruns
                 }
                 lastUnderruns = count
-                val head = current.playbackHeadPosition.toLong() and 0xffffffffL
-                if (head < previousHead) headWrap += 1L shl 32
-                previousHead = head
-                val queued = ((written - headWrap - head).coerceAtLeast(0) * 1000 / rate).toInt() + queue.milliseconds()
+                val played = playbackHead()
+                val queued = ((written - played).coerceAtLeast(0) * 1000 / rate).toInt() + queue.milliseconds()
                 metrics = WebSdrAudioMetrics(queued, queue.droppedUs / 1000, underruns, recoveries, targetMs, current.routedDevice?.type ?: 0)
             }
         } catch (_: InterruptedException) {
