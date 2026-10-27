@@ -654,19 +654,60 @@ private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
             Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = warm, fontSize = 18.sp,
                 fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
         }
-        listOf("Receiver" to "◉", "Settings" to "⚙").forEach { (name, icon) ->
-            Row(
+        listOf("Receiver", "Settings").forEach { name ->
+            val active = selected == name
+            Box(
                 Modifier.fillMaxWidth().height(36.dp)
-                    .background(if (selected == name) RadiolaColors.primaryTint else Color.Transparent)
-                    .clickable { onSelect(name) }
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .background(if (active) warm.copy(alpha = .16f) else Color.Transparent)
+                    .clickable { onSelect(name) },
             ) {
-                Text(icon, Modifier.width(24.dp), color = if (selected == name) warm else muted, fontSize = 19.sp)
-                Text(name, Modifier.padding(start = 8.dp), color = ivory, fontSize = 12.sp, maxLines = 1)
+                if (active) Box(Modifier.align(Alignment.CenterStart).width(3.dp).height(22.dp)
+                    .background(warm, RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)))
+                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    SidebarIcon(name, if (active) warm else muted)
+                    Text(name, Modifier.padding(start = 8.dp), color = if (active) warm else ivory,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 12.sp, maxLines = 1)
+                }
             }
         }
         Box(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SidebarIcon(name: String, tint: Color) {
+    Box(Modifier.width(24.dp).height(24.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.width(20.dp).height(20.dp)) {
+            val unit = size.width / 24f
+            val stroke = 1.7f * unit
+            fun point(x: Float, y: Float) = Offset(x * unit, y * unit)
+            if (name == "Receiver") {
+                val wave = Path().apply {
+                    moveTo(2f * unit, 12f * unit)
+                    listOf(6f to 12f, 8.5f to 5f, 12f to 19f, 15.5f to 8f,
+                        18f to 12f, 22f to 12f).forEach { (x, y) -> lineTo(x * unit, y * unit) }
+                }
+                drawPath(wave, tint, style = Stroke(stroke, cap = StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            } else {
+                val gear = Path().apply {
+                    // Eight rounded teeth, with the same visual bounds as the receiver icon.
+                    repeat(32) { index ->
+                        val angle = index * Math.PI / 16 - Math.PI / 2
+                        val radius = if (index % 4 == 0 || index % 4 == 3) 10f else 8f
+                        val x = (12f + kotlin.math.cos(angle).toFloat() * radius) * unit
+                        val y = (12f + kotlin.math.sin(angle).toFloat() * radius) * unit
+                        if (index == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
+                }
+                drawPath(gear, tint, style = Stroke(stroke,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                drawCircle(tint, 3.2f * unit, point(12f, 12f), style = Stroke(stroke))
+            }
+        }
     }
 }
 
