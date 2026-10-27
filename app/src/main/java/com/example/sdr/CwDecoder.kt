@@ -31,9 +31,18 @@ internal class CwDecoder {
     private var edgeAt = 0.0
     private var unit = 60.0
     private var marks = 0
-    private val units = ArrayDeque<Double>()
+    private data class Timing(val duration: Double, val mark: Boolean)
+    private val timings = ArrayDeque<Timing>()
+    private val probation = StringBuilder()
+    private var locked = false
+    private var credibleMarks = 0
+    private var lastCoherentMark = 0.0
+    private val phases = DoubleArray(15)
+    private var previousDetected = false
+    private val markFrequencies = ArrayList<Double>()
     private var tone = 0
     private val symbols = StringBuilder()
+    private val durations = ArrayList<Double>()
     private val text = StringBuilder()
 
     fun information() = CwInformation(text.toString(), symbols.toString(),
@@ -47,6 +56,9 @@ internal class CwDecoder {
             frequencies.indices.forEach { coefficients[it] = 2 * cos(2 * PI * frequencies[it] / rate) }
             position = 0; first.fill(0.0); second.fill(0.0); energy = 0.0
             keyed = false; candidateCount = 0; symbols.clear(); edgeAt = clock
+            durations.clear(); markFrequencies.clear(); probation.clear(); timings.clear()
+            previousDetected = false; phases.fill(0.0); locked = false; credibleMarks = 0
+            peak = 0.0; noiseFloor = 0.0; amplitudeCount = 0; amplitudeIndex = 0
         }
         var index = 0
         while (index + channels <= samples.size) {
@@ -79,7 +91,21 @@ internal class CwDecoder {
                 val coherence = 2 * strongest / (size * energy + 1e-20)
                 val detected = contrast && coherence > (if (keyed) .32 else .45) &&
                     amplitude > if (keyed) thresholdOff else thresholdOn
-                if (detected) tone = frequencies[best]
+                if (detected) {
+                    tone = frequencies[best]
+                    if (previousDetected) {
+                        val w = 2 * PI * frequencies[best] / rate
+                        val phase = atan2(second[best] * sin(w), first[best] - second[best] * cos(w))
+                        val delta = phase - phases[best] - w * size
+                        val measured = frequencies[best] + atan2(sin(delta), cos(delta)) * rate / (2 * PI * size)
+                        if (markFrequencies.size < 128) markFrequencies.add(measured)
+                    }
+                }
+                for (bin in frequencies.indices) {
+                    val w = 2 * PI * frequencies[bin] / rate
+                    phases[bin] = atan2(second[bin] * sin(w), first[bin] - second[bin] * cos(w))
+                }
+                previousDetected = detected
                 clock += size * 1000.0 / rate
                 tick(detected)
                 first.fill(0.0); second.fill(0.0); energy = 0.0; position = 0
@@ -93,36 +119,70 @@ internal class CwDecoder {
             val at = clock - size * 1000.0 / rate
             val duration = at - edgeAt
             if (keyed) {
-                if (duration in 20.0..1000.0) {
-                    val dash = duration > unit * 2
-                    symbols.append(if (dash) '-' else '.')
-                    val estimate = duration / if (dash) 3 else 1
-                    // Outliers from fades and interference must not drag the speed estimate.
-                    if (estimate in unit * .55..unit * 1.8) {
-                        units.addLast(estimate)
-                        if (units.size > 21) units.removeFirst()
-                        val ordered = units.sorted()
-                        unit = (unit * .7 + ordered[ordered.size / 2] * .3).coerceIn(20.0, 240.0)
-                    }
+                val orderedFrequencies = markFrequencies.sorted()
+                val medianFrequency = orderedFrequencies.getOrNull(orderedFrequencies.size / 2) ?: 0.0
+                val deviations = orderedFrequencies.map { abs(it - medianFrequency) }.sorted()
+                val spread = if (deviations.size >= 2) deviations[deviations.size / 2] * 1.4826 else Double.POSITIVE_INFINITY
+                val clean = duration in 20.0..1000.0 &&
+                    (spread < 12.0 || locked && (spread < 30.0 || markFrequencies.size < 2))
+                if (clean) {
+                    if (spread < 12.0) lastCoherentMark = clock
+                    learn(duration, true)
+                    durations.add(duration)
+                    symbols.clear()
+                    durations.forEach { symbols.append(if (it > unit * 2) '-' else '.') }
+                    credibleMarks++
                     marks++
-                    if (symbols.length > 8) finishLetter()
-                } else symbols.clear()
-            } else if (symbols.isNotEmpty() && duration < unit * 2) {
-                unit = (unit * .85 + duration * .15).coerceIn(20.0, 240.0)
+                    if (!locked && credibleMarks >= 4) { locked = true; text.append(probation); probation.clear() }
+                    if (symbols.length > 8) { symbols.clear(); durations.clear() }
+                } else {
+                    symbols.clear(); durations.clear()
+                    if (!locked) { probation.clear(); credibleMarks = 0 }
+                }
+                markFrequencies.clear()
+            } else {
+                if (credibleMarks > 0 && duration in 20.0..1800.0) learn(duration, false)
             }
             keyed = candidate; edgeAt = at
         }
         if (!keyed && !candidate) {
             val silence = clock - edgeAt
             if (silence >= unit * 2.0) finishLetter()
-            if (silence >= unit * 5.5 && text.isNotEmpty() && text.last() != ' ') text.append(' ')
+            if (silence >= unit * 5.5 && locked && text.isNotEmpty() && text.last() != ' ') text.append(' ')
+            if (silence >= max(700.0, unit * 12)) {
+                locked = false; credibleMarks = 0; probation.clear(); symbols.clear(); durations.clear()
+                markFrequencies.clear()
+            }
         }
         if (text.length > 512) text.delete(0, text.length - 512)
+        if (locked && clock - lastCoherentMark > max(1000.0, unit * 15)) {
+            locked = false; credibleMarks = 0; probation.clear(); symbols.clear(); durations.clear()
+        }
+    }
+
+    private fun learn(duration: Double, mark: Boolean) {
+        timings.addLast(Timing(duration, mark))
+        if (timings.size > 40) timings.removeFirst()
+        val candidates = timings.flatMap { timing ->
+            (if (timing.mark) listOf(1, 3) else listOf(1, 3, 7)).map { timing.duration / it }
+        }.filter { it in 25.0..180.0 }
+        val best = candidates.minByOrNull { candidate ->
+            timings.sumOf { timing ->
+                val ratio = timing.duration / candidate
+                val error = (if (timing.mark) listOf(1, 3) else listOf(1, 3, 7)).minOf { abs(ratio - it) / it }
+                min(error * error, 1.0)
+            } / timings.size + .005 * abs(ln(candidate / unit))
+        } ?: return
+        unit = if (timings.size < 6) best else unit * .65 + best * .35
     }
 
     private fun finishLetter() {
         if (symbols.isEmpty()) return
-        text.append(alphabet[symbols.toString()] ?: '·'); symbols.clear()
+        val letter = alphabet[symbols.toString()]
+        if (letter != null) {
+            if (locked) text.append(letter) else probation.append(letter)
+        }
+        symbols.clear(); durations.clear()
     }
 
     companion object {

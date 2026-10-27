@@ -10,8 +10,8 @@ import java.nio.ByteOrder
 
 class CwDecoderTest {
     private val codes = mapOf('C' to "-.-.", 'Q' to "--.-", 'S' to "...", 'O' to "---", 'T' to "-", 'E' to ".", '5' to ".....", '9' to "----.")
-    private fun decode(message: String, rate: Int, wpm: Int, tone: Int, channels: Int = 1, noise: Double = .0): CwInformation {
-        val decoder = CwDecoder()
+    private fun decode(message: String, rate: Int, wpm: Int, tone: Int, channels: Int = 1, noise: Double = .0,
+        decoder: CwDecoder = CwDecoder()): CwInformation {
         val random = Random(32)
         var phase = 0.0
         fun segment(units: Int, keyed: Boolean) {
@@ -63,6 +63,58 @@ class CwDecoderTest {
         repeat(200) { decoder.process(ShortArray(800) { random.nextInt(-2000, 2001).toShort() }, 8000) }
         decoder.process(ShortArray(16000), 8000)
         assertEquals("", decoder.information().text)
+    }
+
+    @Test fun isolatedTonalNoiseBurstsDoNotBecomeE() {
+        val decoder = CwDecoder()
+        repeat(12) {
+            decoder.process(ShortArray(8000), 8000)
+            decoder.process(ShortArray(320) { i -> (.08 * sin(2 * PI * 750 * i / 8000) * 32767).toInt().toShort() }, 8000)
+        }
+        decoder.process(ShortArray(16000), 8000)
+        assertEquals("", decoder.information().text.trim())
+    }
+
+    @Test fun narrowFilteredReceiverNoiseDoesNotProduceText() {
+        val decoder = CwDecoder()
+        val random = Random(89)
+        var inPhase = 0.0; var quadrature = 0.0; var phase = 0.0
+        repeat(300) {
+            val pcm = ShortArray(800) {
+                inPhase = .96 * inPhase + .04 * (random.nextDouble() * 2 - 1)
+                quadrature = .96 * quadrature + .04 * (random.nextDouble() * 2 - 1)
+                phase += 2 * PI * 750 / 8000
+                ((inPhase * cos(phase) + quadrature * sin(phase)) * 10000).toInt().toShort()
+            }
+            decoder.process(pcm, 8000)
+        }
+        decoder.process(ShortArray(16000), 8000)
+        assertEquals("", decoder.information().text.trim())
+    }
+
+    @Test fun automaticSpeedCoversFastAndSlowSending() {
+        for (wpm in listOf(8, 12, 20, 28, 35, 40)) {
+            val result = decode("CQ CQ SOS TEST 599", 8000, wpm, 700, noise = .015)
+            assertEquals("wpm=$wpm", "CQ CQ SOS TEST 599", result.text.trim())
+            assertEquals("wpm=$wpm", wpm.toDouble(), result.wpm.toDouble(), 3.0)
+        }
+    }
+
+    @Test fun noiseAfterTransmissionDoesNotAppendLetters() {
+        val decoder = CwDecoder()
+        val before = decode("CQ CQ SOS", 8000, 20, 750, decoder = decoder).text.trim()
+        val random = Random(91)
+        var a = 0.0; var b = 0.0; var phase = 0.0
+        repeat(100) {
+            decoder.process(ShortArray(800) {
+                a = .96 * a + .04 * (random.nextDouble() * 2 - 1)
+                b = .96 * b + .04 * (random.nextDouble() * 2 - 1)
+                phase += 2 * PI * 750 / 8000
+                ((a * cos(phase) + b * sin(phase)) * 10000).toInt().toShort()
+            }, 8000)
+        }
+        decoder.process(ShortArray(16000), 8000)
+        assertEquals(before, decoder.information().text.trim())
     }
 
     @Test fun recordedWebSdrNoiseDoesNotCollapseTiming() {

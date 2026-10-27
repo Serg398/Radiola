@@ -63,17 +63,17 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
         }
         Box(Modifier.width(1.dp).fillMaxHeight().padding(top = 5.dp, bottom = 4.dp).background(RadiolaColors.border))
         Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            Row(Modifier.fillMaxWidth().height(10.dp), verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(info.error ?: if (info.decoding) "DECODING" else "LISTENING",
-                    color = RadiolaColors.secondaryText, fontSize = 8.sp, lineHeight = 9.sp,
+                    color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)))
                 Spacer(Modifier.weight(1f))
                 if (!remote) Text("RX GRID: ${observerGrid.ifBlank { "SET" }}",
                     color = if (origin != null) RadiolaColors.secondaryText else RadiolaColors.primary,
-                    fontSize = 8.sp, lineHeight = 9.sp,
+                    fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)), modifier = Modifier.clickable(enabled = !remote) { gridInput = observerGrid; editGrid = true })
-                Text("CLEAR", color = RadiolaColors.primary, fontSize = 8.sp, lineHeight = 9.sp,
+                Text("CLEAR", color = RadiolaColors.primary, fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)),
                     modifier = Modifier.clickable { clear() }
                         .padding(horizontal = 8.dp))
