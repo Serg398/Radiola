@@ -46,6 +46,9 @@ internal class WebSdrSession(context: Context) {
         private set
     var audioSampleRate by mutableIntStateOf(8000)
         private set
+    @Volatile var squelchSetting = ReceiverSquelch()
+    var squelchOpen by mutableStateOf(true)
+        private set
     var signalDbm by mutableStateOf<Float?>(null)
         private set
     var frame by mutableStateOf<SpectrumFrame?>(null)
@@ -207,6 +210,10 @@ internal class WebSdrSession(context: Context) {
                 }
             } }, onError = ::reportFailure,
             onSignal = { value -> publish(token) { if (epoch == audioGeneration) signalDbm = value } },
+            squelchSetting = { squelchSetting },
+            onSquelchOpen = { value -> if (value != squelchOpen) publish(token) {
+                if (epoch == audioGeneration) squelchOpen = value
+            } },
             needsPlayedPcm = { cwDecoder.acceptsAudio() },
             onPlayedPcm = { rate, samples ->
                 if (generation == token && audioGeneration == epoch) cwDecoder.offer(samples, samples.size, rate, 1)

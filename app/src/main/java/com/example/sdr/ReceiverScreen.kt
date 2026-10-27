@@ -191,6 +191,7 @@ fun ReceiverScreen(
     val captureSpanHz = if (remote) webSession.bands.getOrNull(webSession.currentBand)?.spanHz
         ?: spectrumSpanHz else spectrumSpanHz
     val visibleSpanHz = (captureSpanHz / zoom).roundToInt().coerceAtLeast(1)
+    LaunchedEffect(webSession, receiverSquelch) { webSession.squelchSetting = receiverSquelch }
     val receiving = if (remote) webSession.state == WebSdrConnectionState.Connected else streaming
     val usbFtx = (context.applicationContext as? RadiolaApplication)?.receiver?.session?.ftxDecoder
     val activeFtx = if (remote) webSession.ftxDecoder else usbFtx
@@ -1110,7 +1111,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
 private fun WebSdrSignalMeter(session: WebSdrSession, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier) {
     val signal = session.signalDbm
-    SignalMeter((signal ?: -127f) + 37f, squelch.copy(enabled = false), open, onSquelchChange, modifier,
+    SignalMeter((signal ?: -127f) + 37f, squelch, session.squelchOpen, onSquelchChange, modifier,
         remote = true, signalAvailable = signal != null)
 }
 
@@ -1156,7 +1157,7 @@ private fun SignalMeter(
         Column(
             Modifier.width(38.dp).height(28.dp)
                 .toolbarButtonSurface(squelch.enabled)
-                .clickable(enabled = !remote) { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
+                .clickable { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
                 .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
@@ -1169,16 +1170,15 @@ private fun SignalMeter(
         Spacer(Modifier.width(2.dp))
         Canvas(
             Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
-                .pointerInput(remote) { if (!remote) detectTapGestures(onTap = { setThreshold(it.x) }) }
+                .pointerInput(remote) { detectTapGestures(onTap = { setThreshold(it.x) }) }
                 .pointerInput(remote) {
-                    if (!remote)
                     detectDragGestures(
                         onDragStart = { setThreshold(it.x) },
                         onDrag = { change, _ -> change.consume(); setThreshold(change.position.x) }
                     )
                 }
                 .semantics {
-                    if (!remote) {
+                    run {
                     progressBarRangeInfo = ProgressBarRangeInfo(squelch.thresholdDbfs, -90f..-6f, 83)
                     setProgress { changeSquelch(currentSquelch.copy(thresholdDbfs = it.coerceIn(-90f, -6f))); true }
                     }
@@ -1222,7 +1222,7 @@ private fun SignalMeter(
                 Size(1.5.dp.toPx(), barHeight + 2.dp.toPx()), CornerRadius(.75.dp.toPx()))
             val sqlX = left + width * position(squelch.thresholdDbfs + 90f)
             val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
-            if (!remote) {
+            run {
             drawLine(sqlColor, Offset(sqlX, barTop - 3.dp.toPx()), Offset(sqlX, size.height), 1.5.dp.toPx())
             val triangle = Path().apply {
                 moveTo(sqlX, barTop + barHeight + 1.dp.toPx())
@@ -1241,7 +1241,7 @@ private fun SignalMeter(
             labelPaint.isFakeBoldText = false
             labelPaint.color = RadiolaColors.secondaryText.toArgb()
             labelPaint.textSize = 9.sp.toPx()
-            val detail = if (remote) "SQL —" else "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
+            val detail = "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
             drawContext.canvas.nativeCanvas.drawText(detail, readoutX, size.height - 5.dp.toPx(), labelPaint)
         }
 
