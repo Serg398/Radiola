@@ -1142,9 +1142,16 @@ private fun SignalMeter(
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
-    val level = (displayedSignal.value + 90f).coerceIn(0f, 84f)
-    val reading = if (!signalAvailable) "" else if (level <= 54f) "≈S${(level / 6f).roundToInt()}"
-        else "≈S9 +${(level - 54f).roundToInt()}"
+    val rawLevel = (displayedSignal.value + 90f).coerceAtLeast(0f)
+    val maximum = if (remote) 114f else 84f
+    val level = rawLevel.coerceAtMost(maximum)
+    // Give S1–S9 room to breathe while fitting the extended remote over-S9 range.
+    fun position(value: Float): Float = if (remote) {
+        if (value <= 54f) value / 54f * .55f else .55f + (value - 54f) / 60f * .45f
+    } else value / 84f
+    val readingLevel = if (remote) rawLevel else level
+    val reading = if (!signalAvailable) "" else if (readingLevel <= 54f) "≈S${(readingLevel / 6f).roundToInt()}"
+        else "≈S9 +${(readingLevel - 54f).roundToInt()}"
     val labelPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = android.graphics.Paint.Align.CENTER
@@ -1176,30 +1183,34 @@ private fun SignalMeter(
             val right = maxOf(left + 1f, size.width - 86.dp.toPx())
             val width = right - left
             val barTop = size.height - 11.dp.toPx()
-            val barHeight = 6.dp.toPx()
+            val barHeight = 5.dp.toPx()
             val labelY = 13.dp.toPx()
-            val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
-            labelPaint.textSize = 10.sp.toPx()
+            val ticks = if (remote) listOf(6f to "S1", 18f to "3", 30f to "5", 42f to "7",
+                54f to "9", 74f to "+20", 94f to "+40", 114f to "+60")
+                else listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
+            labelPaint.textSize = 9.sp.toPx()
             for ((value, label) in ticks) {
-                val x = left + width * value / 84f
+                val x = left + width * position(value)
                 labelPaint.color = if (value > 54f) RadiolaColors.warning.toArgb()
                     else RadiolaColors.secondaryText.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(label, x, labelY, labelPaint)
-                drawLine(edge, Offset(x, labelY + 2.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), 1.dp.toPx())
+                drawLine(edge, Offset(x, barTop - 3.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), .75.dp.toPx())
             }
             val segments = 42
             val gap = 1.dp.toPx()
             val segmentWidth = maxOf(1f, (width - gap * (segments - 1)) / segments)
             for (index in 0 until segments) {
-                val threshold = (index + 1) * 84f / segments
-                drawRect(
-                    if (level < threshold) RadiolaColors.border
-                    else if (threshold > 54f) RadiolaColors.warning else RadiolaColors.success,
-                    Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight)
+                val fraction = (index + 1f) / segments
+                drawRoundRect(
+                    if (!signalAvailable || position(level) < fraction) RadiolaColors.border.copy(alpha = .55f)
+                    else if (fraction > position(54f)) RadiolaColors.warning else RadiolaColors.success,
+                    Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight),
+                    cornerRadius = CornerRadius(.6.dp.toPx())
                 )
             }
-            val cursorX = left + width * level / 84f
-            drawLine(ivory, Offset(cursorX, barTop - 2.dp.toPx()), Offset(cursorX, barTop + barHeight + 2.dp.toPx()), 1.dp.toPx())
+            val cursorX = left + width * position(level)
+            if (signalAvailable) drawRoundRect(ivory, Offset(cursorX - .75.dp.toPx(), barTop - 1.dp.toPx()),
+                Size(1.5.dp.toPx(), barHeight + 2.dp.toPx()), CornerRadius(.75.dp.toPx()))
             val sqlX = left + width * (squelch.thresholdDbfs + 90f) / 84f
             val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
             if (!remote) {
