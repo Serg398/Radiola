@@ -27,10 +27,10 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val settingsEdge = Color(0xFF30302E)
-private val settingsWarm = Color(0xFFF7BA6D)
-private val settingsIvory = Color(0xFFF4E8D7)
-private val settingsMuted = Color(0xFF968E84)
+private val settingsEdge = RadiolaColors.border
+private val settingsWarm = RadiolaColors.primary
+private val settingsIvory = RadiolaColors.text
+private val settingsMuted = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
     ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
@@ -58,7 +58,7 @@ internal fun SettingsPanel(
     fun open(next: SettingsPage) { path = path + next }
     BackHandler { back() }
     Column(modifier.fillMaxSize().border(1.dp, settingsEdge, RoundedCornerShape(6.dp))
-        .background(Color(0xFF101214), RoundedCornerShape(6.dp)).padding(12.dp)) {
+        .background(RadiolaColors.surface, RoundedCornerShape(6.dp)).padding(12.dp)) {
         Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SettingsButton(if (path.size > 1) "\u2039 Back" else "\u2039 Receiver", onClick = ::back)

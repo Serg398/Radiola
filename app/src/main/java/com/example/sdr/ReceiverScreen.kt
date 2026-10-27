@@ -83,12 +83,12 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val emptySpectrum = FloatArray(0)
-private val backdrop = Color(0xFF0D0F11)
-private val surface = Color(0xFF151719)
-private val edge = Color(0xFF30302E)
-private val warm = Color(0xFFF7BA6D)
-private val muted = Color(0xFF968E84)
-private val ivory = Color(0xFFF4E8D7)
+private val backdrop = RadiolaColors.background
+private val surface = RadiolaColors.surface
+private val edge = RadiolaColors.border
+private val warm = RadiolaColors.primary
+private val muted = RadiolaColors.secondaryText
+private val ivory = RadiolaColors.text
 
 @Composable
 fun ReceiverScreen(
@@ -310,14 +310,14 @@ fun ReceiverScreen(
                             "≈1k",
                             Modifier.alignByBaseline().width(snapWidth)
                                 .semantics { contentDescription = "Round frequency to nearest kilohertz" }
-                                .background(if (canSnap) Color(0xFF241E17) else Color.Transparent, shape)
+                                .background(if (canSnap) RadiolaColors.primaryTint else Color.Transparent, shape)
                                 .clickable(enabled = canSnap) {
                                     encoderBrakeRequest++
                                     encoderRotating = false
                                     step(snapDeltaHz)
                                 }
                                 .padding(vertical = 6.dp),
-                            color = if (canSnap) warm else Color(0xFF665F58),
+                            color = if (canSnap) warm else RadiolaColors.secondaryText,
                             fontSize = 10.sp, lineHeight = 12.sp,
                             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                             textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
@@ -442,7 +442,7 @@ fun ReceiverScreen(
                 Modifier.fillMaxWidth().weight(1f)
                     .clipToBounds()
                     .border(1.dp, edge, RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0C0E10), RoundedCornerShape(6.dp))
+                    .background(RadiolaColors.plot, RoundedCornerShape(6.dp))
             ) {
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
                     if (selected != "Waterfall") {
@@ -452,7 +452,7 @@ fun ReceiverScreen(
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                             val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
-                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFF4A321D), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(Color(0xFFE2ECFF), RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
                             }
                             Text(if (remote) "REL" else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
@@ -496,14 +496,14 @@ fun ReceiverScreen(
                                 val channelRight = passbandCenter + channelWidth / 2f
                                 drawRect(
                                     Brush.horizontalGradient(
-                                        listOf(Color(0x14F7BA6D), Color(0x33F7BA6D), Color(0x14F7BA6D)),
+                                        listOf(Color(0x14175CE5), Color(0x33175CE5), Color(0x14175CE5)),
                                         startX = channelLeft, endX = channelRight
                                     ),
                                     Offset(channelLeft, 0f), Size(channelWidth, size.height)
                                 )
-                                drawLine(Color(0x80F7BA6D), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
-                                drawLine(Color(0x80F7BA6D), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
-                                drawLine(Color(0xC9FFC073), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
+                                drawLine(Color(0x80175CE5), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
+                                drawLine(Color(0x80175CE5), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
+                                drawLine(Color(0xC9175CE5), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
                             }
                         }
                     }
@@ -614,7 +614,7 @@ fun ReceiverScreen(
 
 @Composable
 private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
-    Column(Modifier.width(108.dp).fillMaxHeight().background(Color(0xFF171819))) {
+    Column(Modifier.width(108.dp).fillMaxHeight().background(RadiolaColors.sidebar)) {
         Box(Modifier.fillMaxWidth().height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
             Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = warm, fontSize = 18.sp,
                 fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
@@ -622,7 +622,7 @@ private fun Sidebar(selected: String, onSelect: (String) -> Unit) {
         listOf("Receiver" to "◉", "Settings" to "⚙").forEach { (name, icon) ->
             Row(
                 Modifier.fillMaxWidth().height(36.dp)
-                    .background(if (selected == name) Color(0xFF24211D) else Color.Transparent)
+                    .background(if (selected == name) RadiolaColors.primaryTint else Color.Transparent)
                     .clickable { onSelect(name) }
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -700,7 +700,7 @@ private fun GainPanel(gain: ReceiverGain, gainSteps: List<Int>, onChange: (Recei
 private fun AgcToggle(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.fillMaxHeight()
-            .background(if (enabled) Color(0xFF241E17) else Color.Transparent, RoundedCornerShape(4.dp))
+            .background(if (enabled) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
             .semantics { contentDescription = "$label ${if (enabled) "on" else "off"}" }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -930,15 +930,15 @@ private fun VerticalEncoder(
         Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp)) {
             val radius = 11.dp.toPx()
             drawRoundRect(
-                brush = Brush.horizontalGradient(listOf(Color(0xFF151515), Color(0xFF4E4031), Color(0xFF171717))),
+                brush = Brush.horizontalGradient(listOf(Color(0xFFD2DEEF), Color(0xFFF8FBFF), Color(0xFFC3D2E8))),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius)
             )
             clipRect(top = 0f, bottom = size.height) {
                 val gap = pitch
                 var y = phase % gap
                 while (y < size.height) {
-                    drawLine(Color(0xFF080808), Offset(6.dp.toPx(), y), Offset(size.width - 6.dp.toPx(), y), 3.dp.toPx())
-                    drawLine(Color(0xFF91795C), Offset(8.dp.toPx(), y + 3.dp.toPx()), Offset(size.width - 8.dp.toPx(), y + 3.dp.toPx()), 1.dp.toPx())
+                    drawLine(Color(0xFF9AAFCB), Offset(6.dp.toPx(), y), Offset(size.width - 6.dp.toPx(), y), 3.dp.toPx())
+                    drawLine(Color(0xFFFFFFFF), Offset(8.dp.toPx(), y + 3.dp.toPx()), Offset(size.width - 8.dp.toPx(), y + 3.dp.toPx()), 1.dp.toPx())
                     y += gap
                 }
             }
@@ -950,7 +950,7 @@ private fun VerticalEncoder(
 
 @Composable
 private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier = Modifier) {
-    val tint = if (percent in 0..20 && !charging) Color(0xFFFF8D55) else muted
+    val tint = if (percent in 0..20 && !charging) RadiolaColors.warning else muted
     Row(
         modifier.semantics {
             contentDescription = if (percent < 0) "Battery level unavailable" else "Battery $percent percent${if (charging) ", charging" else ""}"
@@ -988,7 +988,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
         listOf("RADIO" to "Radio", "MAP" to "MAP").forEach { (label, targetPage) ->
             val chosen = active && page == targetPage
             Box(Modifier.width(40.dp).fillMaxHeight()
-                .background(if (chosen) Color(0xFF3C2A1D) else Color.Transparent, RoundedCornerShape(2.dp))
+                .background(if (chosen) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(2.dp))
                 .semantics { contentDescription = if (targetPage == "Radio") "Show radio" else "Show server map" }
                 .clickable { onSelect(targetPage) }, contentAlignment = Alignment.Center) {
                 Text(label, color = if (chosen) warm else muted, fontSize = 9.sp,
@@ -1070,8 +1070,8 @@ private fun SignalMeter(
             labelPaint.textSize = 10.sp.toPx()
             for ((value, label) in ticks) {
                 val x = left + width * value / 84f
-                labelPaint.color = if (value > 54f) android.graphics.Color.rgb(255, 141, 85)
-                    else android.graphics.Color.rgb(212, 194, 169)
+                labelPaint.color = if (value > 54f) android.graphics.Color.rgb(189, 91, 26)
+                    else android.graphics.Color.rgb(76, 103, 136)
                 drawContext.canvas.nativeCanvas.drawText(label, x, labelY, labelPaint)
                 drawLine(edge, Offset(x, labelY + 2.dp.toPx()), Offset(x, barTop - 1.dp.toPx()), 1.dp.toPx())
             }
@@ -1081,8 +1081,8 @@ private fun SignalMeter(
             for (index in 0 until segments) {
                 val threshold = (index + 1) * 84f / segments
                 drawRect(
-                    if (level < threshold) Color(0xFF35302B)
-                    else if (threshold > 54f) Color(0xFFFF8D55) else warm,
+                    if (level < threshold) RadiolaColors.border
+                    else if (threshold > 54f) RadiolaColors.warning else RadiolaColors.success,
                     Offset(left + index * (segmentWidth + gap), barTop), Size(segmentWidth, barHeight)
                 )
             }
@@ -1101,12 +1101,12 @@ private fun SignalMeter(
             drawPath(triangle, sqlColor)
             }
             val readoutX = right + (size.width - right) / 2f
-            labelPaint.color = android.graphics.Color.rgb(247, 186, 109)
+            labelPaint.color = android.graphics.Color.rgb(23, 92, 229)
             labelPaint.textSize = 12.sp.toPx()
             labelPaint.isFakeBoldText = true
             drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 12.dp.toPx(), labelPaint)
             labelPaint.isFakeBoldText = false
-            labelPaint.color = android.graphics.Color.rgb(143, 136, 127)
+            labelPaint.color = android.graphics.Color.rgb(98, 116, 142)
             labelPaint.textSize = 9.sp.toPx()
             val detail = if (remote) {
                 if (signalAvailable) "%.1f dBm".format(Locale.US, displayedSignal.value - 37f) else ""
@@ -1115,8 +1115,8 @@ private fun SignalMeter(
         }
         if (!remote) Column(
             Modifier.width(46.dp).fillMaxHeight().padding(2.dp)
-                .border(1.dp, if (squelch.enabled) Color(0xFF8A5A2D) else edge, RoundedCornerShape(4.dp))
-                .background(if (squelch.enabled) Color(0xFF3C2A1D) else surface, RoundedCornerShape(5.dp))
+                .border(1.dp, if (squelch.enabled) RadiolaColors.primary else edge, RoundedCornerShape(4.dp))
+                .background(if (squelch.enabled) RadiolaColors.primaryTint else surface, RoundedCornerShape(5.dp))
                 .clickable { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
                 .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
@@ -1135,7 +1135,7 @@ private fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, 
     val active = available && enabled
     Column(
         Modifier.width(60.dp).height(28.dp)
-            .background(if (active) Color(0xFF241E17) else surface, RoundedCornerShape(5.dp))
+            .background(if (active) RadiolaColors.primaryTint else surface, RoundedCornerShape(5.dp))
             .clickable(enabled = available) { onChange(!enabled) }
             .semantics { contentDescription = "WFM stereo ${if (active) "enabled" else "disabled"}, pilot ${if (locked) "locked" else "absent"}" },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
@@ -1155,11 +1155,11 @@ private fun ToolbarDivider() {
 private fun ModePill(label: String, active: Boolean, onClick: (() -> Unit)? = null) {
     Box(
         Modifier.width(36.dp).height(24.dp)
-            .background(if (active) Color(0xFF3C2A1D) else Color.Transparent, RoundedCornerShape(4.dp))
+            .background(if (active) RadiolaColors.primary else Color.Transparent, RoundedCornerShape(4.dp))
             .clickable(enabled = onClick != null) { onClick?.invoke() },
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (active) warm else if (onClick != null) muted else Color(0xFF665F58), fontSize = 11.sp)
+        Text(label, color = if (active) Color.White else if (onClick != null) muted else RadiolaColors.secondaryText, fontSize = 11.sp)
     }
 }
 
@@ -1176,8 +1176,8 @@ private fun ControlCard(modifier: Modifier, content: @Composable () -> Unit) {
 @Composable
 private fun SmallAction(label: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier.height(28.dp).border(1.dp, if (enabled) Color(0xFF9E6D3B) else edge, RoundedCornerShape(4.dp))
-            .background(if (enabled) Color(0xFF332417) else surface, RoundedCornerShape(4.dp))
+        modifier.height(28.dp).border(1.dp, if (enabled) RadiolaColors.primary else edge, RoundedCornerShape(4.dp))
+            .background(if (enabled) RadiolaColors.primaryTint else surface, RoundedCornerShape(4.dp))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -1199,7 +1199,7 @@ private fun AmberSpectrum(
     val traceSmoother = remember { SpectrumTraceSmoother() }
     val axisPaint = remember {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.rgb(143, 136, 127)
+            color = android.graphics.Color.rgb(98, 116, 142)
             isAntiAlias = true
         }
     }
@@ -1212,11 +1212,11 @@ private fun AmberSpectrum(
         val height = bottom - top
         for (step in 0..3) {
             val y = top + height * step / 3f
-            drawLine(Color(0xFF252524), Offset(left, y), Offset(size.width, y), 1f)
+            drawLine(Color(0xFFDCE5F2), Offset(left, y), Offset(size.width, y), 1f)
         }
         for (step in 0..8) {
             val x = left + width * step / 8f
-            drawLine(Color(0xFF222322), Offset(x, top), Offset(x, bottom), 1f)
+            drawLine(Color(0xFFE2EAF5), Offset(x, top), Offset(x, bottom), 1f)
         }
         axisPaint.textSize = 11.sp.toPx()
         for (step in 0..3) {
@@ -1260,7 +1260,7 @@ private fun AmberSpectrum(
                 fill.lineTo(endX, bottom)
             }
             fill.close()
-            drawPath(fill, Brush.verticalGradient(listOf(Color(0xB3EEA54E), Color(0x665C3D20), Color.Transparent), startY = top, endY = bottom))
+            drawPath(fill, Brush.verticalGradient(listOf(Color(0x66175CE5), Color(0x14175CE5), Color.Transparent), startY = top, endY = bottom))
             drawPath(trace, warm, style = Stroke(1.dp.toPx()))
         }
         val center = left + width * (0.5f + channelOffsetHz.toFloat() / spectrumSpanHz)
@@ -1271,14 +1271,14 @@ private fun AmberSpectrum(
         clipRect(left = left, top = top, right = size.width, bottom = bottom) {
         drawRect(
             Brush.horizontalGradient(
-                listOf(Color(0x19F7BA6D), Color(0x38F7BA6D), Color(0x19F7BA6D)),
+                listOf(Color(0x19175CE5), Color(0x38175CE5), Color(0x19175CE5)),
                 startX = channelLeft, endX = channelRight
             ),
             Offset(channelLeft, top), Size(channelWidth, height)
         )
-        drawLine(Color(0x80F7BA6D), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
-        drawLine(Color(0x80F7BA6D), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
-        drawLine(Color(0xC9FFC073), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
+        drawLine(Color(0x80175CE5), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
+        drawLine(Color(0x80175CE5), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
+        drawLine(Color(0xC9175CE5), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
         }
         RenderTimings.spectrum.record(System.nanoTime() - started)
     }

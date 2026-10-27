@@ -32,9 +32,9 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChange: (Int?) -> Unit,
     options: BandwidthOptions = BandwidthOptions.forMode(mode)) {
-    val warm = Color(0xFFF7BA6D)
-    val muted = Color(0xFF968E84)
-    val surface = Color(0xFF151719)
+    val warm = RadiolaColors.primary
+    val muted = RadiolaColors.secondaryText
+    val surface = RadiolaColors.surface
     var expanded by remember(mode) { mutableStateOf(false) }
     var custom by remember(mode) { mutableStateOf(false) }
     var input by remember(mode) { mutableStateOf(TextFieldValue("")) }

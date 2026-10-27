@@ -20,9 +20,9 @@ internal fun WebSdrBandControl(
     bands: List<WebSdrTunerBand>, selected: Int, active: Boolean, onSelect: (Int) -> Unit,
 ) {
     var expanded by remember(bands, active) { mutableStateOf(false) }
-    val surface = Color(0xFF151719)
-    val warm = Color(0xFFEFB66B)
-    val ivory = Color(0xFFE8DFD0)
+    val surface = RadiolaColors.surface
+    val warm = RadiolaColors.primary
+    val ivory = RadiolaColors.text
     Box {
         Row(
             Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)

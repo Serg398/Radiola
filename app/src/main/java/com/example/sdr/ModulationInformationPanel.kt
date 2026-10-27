@@ -49,10 +49,10 @@ private fun WfmInformationPanel(
     signalDbfs: Float,
 ) {
     val rds = information.takeIf { streaming && it.frequencyHz == frequencyHz } ?: RdsInformation()
-    val warm = Color(0xFFF7BA6D)
-    val muted = Color(0xFF928B80)
-    val ivory = Color(0xFFF4E8D7)
-    val textColor = Color(0xFFD5CABB)
+    val warm = RadiolaColors.primary
+    val muted = RadiolaColors.secondaryText
+    val ivory = RadiolaColors.text
+    val textColor = RadiolaColors.text
     val textStyle = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
     val shape = RoundedCornerShape(6.dp)
     val metadata = buildList {
@@ -62,11 +62,11 @@ private fun WfmInformationPanel(
     }.joinToString("  /  ")
     Box(
         Modifier.fillMaxSize()
-            .border(1.dp, Color(0xFF30302E), shape).background(Color(0xFF151719), shape)
+            .border(1.dp, RadiolaColors.border, shape).background(RadiolaColors.surface, shape)
             .padding(12.dp),
     ) {
         Box(Modifier.offset(x = 96.dp).width(1.dp).fillMaxHeight()
-            .padding(vertical = 4.dp).background(Color(0xFF292B2B)))
+            .padding(vertical = 4.dp).background(RadiolaColors.border))
         // Shared rows align the first text baseline even with different font sizes.
         // Their fixed heights keep new text and line wrapping from moving other rows.
         Column(Modifier.fillMaxSize()) {
