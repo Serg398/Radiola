@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
@@ -61,7 +62,7 @@ internal fun WebSdrMap(
     val cityOutline = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = android.graphics.Typeface.DEFAULT
         style = Paint.Style.STROKE
-        color = android.graphics.Color.rgb(240, 246, 255)
+        color = RadiolaColors.background.toArgb()
         strokeJoin = Paint.Join.ROUND
     } }
     LaunchedEffect(Unit) {
@@ -136,7 +137,7 @@ internal fun WebSdrMap(
             .coerceIn(-limitY, limitY)
         zoom = next
     }
-    Box(modifier.clipToBounds().background(Brush.verticalGradient(listOf(Color(0xFFEAF2FC), Color(0xFFDFEBFA))))
+    Box(modifier.clipToBounds().background(Brush.verticalGradient(listOf(RadiolaColors.adaptive(Color(0xFFEAF2FC), Color(0xFF111D24)), RadiolaColors.adaptive(Color(0xFFDFEBFA), Color(0xFF080F15)))))
         .border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))) {
         if (!listMode) Canvas(Modifier.fillMaxSize().onSizeChanged { viewport = it }
             .pointerInput(Unit) { detectTransformGestures { centroid, pan, scale, _ -> transform(scale, pan, centroid) } }
@@ -160,27 +161,28 @@ internal fun WebSdrMap(
             }
             for (lon in -180..180 step gridStep) {
                 val x = center.x + lon * unit
-                if (x in 0f..size.width) drawLine(Color(0xFFCAD9EC).copy(alpha = .55f),
+                if (x in 0f..size.width) drawLine(RadiolaColors.adaptive(Color(0xFFCAD9EC), Color(0xFF223039)).copy(alpha = .55f),
                     Offset(x, 0f), Offset(x, size.height), 0.5.dp.toPx())
             }
             for (lat in -90..90 step gridStep) {
                 val y = center.y - lat * unit
-                if (y in 0f..size.height) drawLine(Color(0xFFCAD9EC).copy(alpha = .55f),
+                if (y in 0f..size.height) drawLine(RadiolaColors.adaptive(Color(0xFFCAD9EC), Color(0xFF223039)).copy(alpha = .55f),
                     Offset(0f, y), Offset(size.width, y), 0.5.dp.toPx())
             }
             withTransform({ translate(center.x, center.y); scale(unit, unit, pivot = Offset.Zero) }) {
                 land.forEach { path ->
-                    drawPath(path, Color(0xFFE0EAF6), style = Stroke(4.dp.toPx() / unit))
-                    drawPath(path, Color(0xFFD2E1F2))
-                    drawPath(path, Color(0xFFACBED5).copy(alpha = .65f), style = Stroke(0.6.dp.toPx() / unit))
+                    drawPath(path, RadiolaColors.adaptive(Color(0xFFE0EAF6), Color(0xFF16232A)), style = Stroke(4.dp.toPx() / unit))
+                    drawPath(path, RadiolaColors.adaptive(Color(0xFFD2E1F2), Color(0xFF26353A)))
+                    drawPath(path, RadiolaColors.adaptive(Color(0xFFACBED5), Color(0xFF61706D)).copy(alpha = .65f), style = Stroke(0.6.dp.toPx() / unit))
                 }
                 borders.forEach { path ->
-                    drawPath(path, Color(0xFF8CA9CE).copy(alpha = .55f),
+                    drawPath(path, RadiolaColors.adaptive(Color(0xFF8CA9CE), Color(0xFFAB9C80)).copy(alpha = .55f),
                         style = Stroke(0.65.dp.toPx() / unit))
                 }
             }
             cityPaint.textSize = labelSize
-            cityPaint.color = android.graphics.Color.rgb(45, 72, 106)
+            cityOutline.color = RadiolaColors.background.toArgb()
+            cityPaint.color = RadiolaColors.text.toArgb()
             cityOutline.textSize = labelSize
             cityOutline.strokeWidth = 3.dp.toPx()
             labels.forEach { label ->
@@ -197,7 +199,7 @@ internal fun WebSdrMap(
                     minOf(x - radius, left - cityOutline.strokeWidth) > size.width ||
                     maxOf(y + radius, top + labelSize + cityOutline.strokeWidth) < 0f ||
                     minOf(y - radius, top - cityOutline.strokeWidth) > size.height) return@forEach
-                drawCircle(Color(0xFF536E91), radius, Offset(x, y))
+                drawCircle(RadiolaColors.adaptive(Color(0xFF536E91), Color(0xFFADB5B1)), radius, Offset(x, y))
                 val baseline = top - cityPaint.fontMetrics.ascent
                 drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityOutline)
                 drawContext.canvas.nativeCanvas.drawText(city.name, left, baseline, cityPaint)
@@ -211,9 +213,9 @@ internal fun WebSdrMap(
                         center = position, radius = 23.dp.toPx()), 23.dp.toPx(), position)
                     drawCircle(warm.copy(alpha = .7f), 10.dp.toPx(), position, style = Stroke(1.dp.toPx()))
                 }
-                drawCircle(Color(0xFFFCFDFF), 6.dp.toPx(), position)
-                drawCircle(if (active) Color(0xFF0046CF) else warm.copy(alpha = .9f), 4.dp.toPx(), position)
-                drawCircle(Color(0xFFFCFDFF), 1.5.dp.toPx(), position)
+                drawCircle(RadiolaColors.adaptive(Color(0xFFFCFDFF), Color(0xFF0C151B)), 6.dp.toPx(), position)
+                drawCircle(if (active) RadiolaColors.adaptive(Color(0xFF0046CF), Color(0xFFFFD59A)) else warm.copy(alpha = .9f), 4.dp.toPx(), position)
+                drawCircle(RadiolaColors.adaptive(Color(0xFFFCFDFF), Color(0xFF0C151B)), 1.5.dp.toPx(), position)
 
             }
         }
@@ -225,7 +227,7 @@ internal fun WebSdrMap(
             Text(if (listMode) "MAP" else "LIST", color = warm, fontSize = 10.sp)
         }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp)
-            .background(Color(0xF2FCFDFF), RoundedCornerShape(4.dp)).padding(8.dp)) {
+            .background(RadiolaColors.adaptive(Color(0xF2FCFDFF), Color(0xE60C1013)), RoundedCornerShape(4.dp)).padding(8.dp)) {
             Text("WEBSDR", color = warm, fontSize = 12.sp, letterSpacing = 2.sp)
             val time = if (updatedAt > 0) SimpleDateFormat("dd MMM HH:mm", locale).format(Date(updatedAt)) else ""
             Text(when {
@@ -241,7 +243,7 @@ internal fun WebSdrMap(
             }
         }
         if (!listMode) Column(Modifier.align(Alignment.TopEnd).padding(12.dp)
-            .background(Color(0xF5FCFDFF), RoundedCornerShape(5.dp))) {
+            .background(RadiolaColors.adaptive(Color(0xF5FCFDFF), Color(0xF5151719)), RoundedCornerShape(5.dp))) {
             TextButton(onClick = { transform(1.5f) }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(36.dp)) {
                 Text("+", color = warm, fontSize = 22.sp)
             }
@@ -253,7 +255,7 @@ internal fun WebSdrMap(
             }
         }
         if (!listMode) Row(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 32.dp)
-            .background(Color(0xEEFCFDFF), RoundedCornerShape(5.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+            .background(RadiolaColors.adaptive(Color(0xEEFCFDFF), Color(0xDD0C151B)), RoundedCornerShape(5.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("N ↑", color = muted, fontSize = 10.sp)
             val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
@@ -266,7 +268,7 @@ internal fun WebSdrMap(
         if (!listMode) selectedReceiver?.let { receiver ->
             Column(Modifier.align(Alignment.BottomStart).padding(12.dp)
                 .widthIn(max = 440.dp).heightIn(max = 180.dp)
-                .background(Color(0xF5FCFDFF), RoundedCornerShape(6.dp))
+                .background(RadiolaColors.adaptive(Color(0xF5FCFDFF), Color(0xF5151719)), RoundedCornerShape(6.dp))
                 .border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp)).padding(12.dp)
                 .verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

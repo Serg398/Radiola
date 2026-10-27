@@ -76,7 +76,7 @@ internal fun SourcePlaybackControl(
                 .clickable(enabled = enabled, onClick = onAction),
             contentAlignment = Alignment.Center,
         ) {
-            Text(action, color = if (enabled) Color.White else muted, fontSize = 10.sp,
+            Text(action, color = if (enabled) RadiolaColors.onPrimary else muted, fontSize = 10.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }

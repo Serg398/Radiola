@@ -27,16 +27,16 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val settingsEdge = RadiolaColors.border
-private val settingsWarm = RadiolaColors.primary
-private val settingsIvory = RadiolaColors.text
-private val settingsMuted = RadiolaColors.secondaryText
+private val settingsEdge get() = RadiolaColors.border
+private val settingsWarm get() = RadiolaColors.primary
+private val settingsIvory get() = RadiolaColors.text
+private val settingsMuted get() = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
     ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
     AUDIO("Audio"), DISPLAY("Display"), SPECTRUM("Spectrum"), WATERFALL("Waterfall"),
     ENCODER("Encoder"), STEP("Tuning step"), FEEDBACK("Tactile feedback"),
-    DEVICE("Device"), ABOUT("About")
+    DEVICE("Device"), ABOUT("About"), THEME("Theme")
 }
 
 @Composable
@@ -75,6 +75,7 @@ internal fun SettingsPanel(
                 when (page) {
                     SettingsPage.ROOT -> {
                         val sections = listOf(
+                            Triple(SettingsPage.THEME, "Theme", if (RadiolaColors.dark) "Dark" else "Light"),
                             Triple(SettingsPage.ENCODER, "Encoder", "Tuning step and tactile feedback"),
                             Triple(SettingsPage.ABOUT, "About", stringResource(R.string.app_name)),
                             Triple(SettingsPage.DISPLAY, "Display", "Spectrum and waterfall")
@@ -82,6 +83,11 @@ internal fun SettingsPanel(
                         sections.forEach { (next, title, subtitle) ->
                             SettingsEntry(title, subtitle) { open(next) }
                         }
+                    }
+                    SettingsPage.THEME -> {
+                        val themeContext = LocalContext.current
+                        SettingsChoice("Light", !RadiolaColors.dark) { RadiolaColors.select(false, themeContext) }
+                        SettingsChoice("Dark", RadiolaColors.dark) { RadiolaColors.select(true, themeContext) }
                     }
                     SettingsPage.RECEIVER -> {
                         SettingsEntry("Gain controls", "RF AGC, manual gain and bias-T") { open(SettingsPage.GAIN) }

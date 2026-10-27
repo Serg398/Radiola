@@ -268,7 +268,7 @@ class MainActivity : ComponentActivity() {
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
-            RadiolaLightTheme {
+            RadiolaTheme {
             ReceiverScreen(
                 deviceName = device?.productName ?: "RTL-SDR V4",
                 connected = device != null,
