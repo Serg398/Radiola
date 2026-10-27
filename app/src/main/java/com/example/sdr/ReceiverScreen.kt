@@ -552,7 +552,7 @@ fun ReceiverScreen(
                 }
 
             }
-            ModulationInformationPanel(
+            if (activeMode == DemodulationMode.CW || ftxMode != null) ModulationInformationPanel(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
                 cwInformation, { if (remote) webSession.cwDecoder.clear() else onCwClear() },
