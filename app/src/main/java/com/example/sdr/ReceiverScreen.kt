@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -69,6 +70,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
@@ -273,7 +277,7 @@ fun ReceiverScreen(
             Box(Modifier.fillMaxWidth().height(84.dp)) {
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (remote) {
-                    Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
                         Text(when (webSession.state) {
                             WebSdrConnectionState.Connected -> "WEBSDR  /  LIVE"
@@ -289,18 +293,27 @@ fun ReceiverScreen(
                         if (warning != null) Text(warning, color = RadiolaColors.warning, fontSize = 9.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(200.dp))
+                } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(180.dp))
                 BoxWithConstraints(Modifier.weight(1f)) {
-                val frequencyText = formatFrequency(tunedHz)
-                val frequencyStyle = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
+                val paddedFrequency = String.format(Locale.US, "%d.%03d.%03d.%03d", tunedHz / 1_000_000_000,
+                    tunedHz / 1_000_000 % 1_000, tunedHz / 1_000 % 1_000, tunedHz % 1_000)
+                val firstDigit = paddedFrequency.indexOfFirst { it in '1'..'9' }.let { if (it < 0) paddedFrequency.lastIndex else it }
+                fun frequencyLabel(size: Float) = buildAnnotatedString {
+                    withStyle(SpanStyle(color = muted.copy(alpha = .25f), fontSize = size.sp)) {
+                        append(paddedFrequency.take(firstDigit))
+                    }
+                    append(paddedFrequency.drop(firstDigit))
+                }
+                val frequencyText = frequencyLabel(56f)
+                val frequencyStyle = TextStyle(fontSize = 56.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
                 val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
                 val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 12.sp)).size.width
-                val snapWidth = if (editingFrequency) 0.dp else 32.dp
+                val snapWidth = if (editingFrequency) 0.dp else 44.dp
                 val gaps = if (editingFrequency) 6.dp else 12.dp
                 val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
-                val frequencyFontSize = (40f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
+                val frequencyFontSize = (56f * .94f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
                 Row(
-                    Modifier.align(Alignment.Center),
+                    Modifier.align(Alignment.Center).offset(y = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -316,9 +329,48 @@ fun ReceiverScreen(
                         )
                         Text("✓", Modifier.clickable { applyInput(); editingFrequency = false }, color = warm, fontSize = 36.sp)
                     } else {
+                        var digitLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+                        var pressedDigit by remember { mutableStateOf<Rect?>(null) }
+                        val digitStep by rememberUpdatedState(step)
                         Text(
-                            frequencyText,
-                            Modifier.alignByBaseline().clickable { editingFrequency = true },
+                            frequencyLabel(frequencyFontSize.value),
+                            Modifier.alignByBaseline().drawBehind {
+                                pressedDigit?.let { bounds ->
+                                    drawRoundRect(warm.copy(alpha = .12f), bounds.topLeft, bounds.size,
+                                        CornerRadius(4.dp.toPx()))
+                                }
+                            }.pointerInput(paddedFrequency) {
+                                detectTapGestures(
+                                    onPress = { point ->
+                                        val layout = digitLayout
+                                        val index = layout?.let {
+                                            paddedFrequency.indices.firstOrNull { i ->
+                                                val bounds = it.getBoundingBox(i)
+                                                point.x >= bounds.left && point.x < bounds.right
+                                            }
+                                        }
+                                        if (index != null && frequencyDigitStep(paddedFrequency, index) != null) {
+                                            val bounds = layout.getBoundingBox(index)
+                                            val top = if (point.y < size.height / 2f) 0f else size.height / 2f
+                                            pressedDigit = Rect(bounds.left, top, bounds.right, top + size.height / 2f)
+                                        }
+                                        try { tryAwaitRelease() } finally { pressedDigit = null }
+                                    },
+                                    onLongPress = { editingFrequency = true },
+                                    onTap = { point ->
+                                        val layout = digitLayout ?: return@detectTapGestures
+                                        val index = paddedFrequency.indices.firstOrNull { index ->
+                                            val bounds = layout.getBoundingBox(index)
+                                            point.x >= bounds.left && point.x < bounds.right
+                                        } ?: return@detectTapGestures
+                                        val delta = frequencyDigitStep(paddedFrequency, index) ?: return@detectTapGestures
+                                        encoderBrakeRequest++
+                                        encoderRotating = false
+                                        digitStep(if (point.y < size.height / 2f) delta else -delta)
+                                    },
+                                )
+                            },
+                            onTextLayout = { digitLayout = it },
                             color = ivory, fontSize = frequencyFontSize, fontWeight = FontWeight.Light,
                             letterSpacing = (frequencyFontSize.value / 80f).sp, maxLines = 1
                         )
@@ -327,20 +379,18 @@ fun ReceiverScreen(
                     if (!editingFrequency) {
                         val snapDeltaHz = ((tunedHz + 500L) / 1_000L) * 1_000L - tunedHz
                         val canSnap = snapDeltaHz != 0L
-                        val shape = RoundedCornerShape(4.dp)
                         Text(
                             "≈1k",
                             Modifier.alignByBaseline().width(snapWidth)
                                 .semantics { contentDescription = "Round frequency to nearest kilohertz" }
-                                .background(if (canSnap) RadiolaColors.primaryTint else Color.Transparent, shape)
                                 .clickable(enabled = canSnap) {
                                     encoderBrakeRequest++
                                     encoderRotating = false
                                     step(snapDeltaHz)
                                 }
-                                .padding(vertical = 6.dp),
-                            color = if (canSnap) warm else RadiolaColors.secondaryText,
-                            fontSize = 10.sp, lineHeight = 12.sp,
+                                .padding(vertical = 8.dp),
+                            color = if (canSnap) warm else RadiolaColors.secondaryText.copy(alpha = .5f),
+                            fontSize = 15.sp, lineHeight = 18.sp,
                             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                             textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
                         )
