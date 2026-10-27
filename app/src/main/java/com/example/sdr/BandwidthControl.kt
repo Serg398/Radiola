@@ -42,7 +42,7 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
     val keyboard = LocalSoftwareKeyboardController.current
     Box {
         Column(Modifier.width(68.dp).height(28.dp)
-            .background(surface, RoundedCornerShape(5.dp)).clickable { expanded = true },
+            .toolbarButtonSurface().clickable { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("BW", color = muted, fontSize = 8.sp)
             Text(bandwidthLabel(hz), color = warm, fontSize = 11.sp, maxLines = 1)

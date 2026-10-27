@@ -385,9 +385,13 @@ fun ReceiverScreen(
                     BatteryIndicator(batteryPercent, batteryCharging, Modifier.height(28.dp))
                 }
                 }
-                Row(
+                BoxWithConstraints(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
                         .background(surface, RoundedCornerShape(5.dp)),
+                ) {
+                // Leave the middle free for the server view switch in both source layouts.
+                val meterWidth = maxWidth / 2 - 72.dp
+                Row(Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -408,22 +412,25 @@ fun ReceiverScreen(
                         onWfmStereoChange
                     )
                     else if (!remote) Spacer(Modifier.width(60.dp))
-                    ToolbarDivider()
+                    Spacer(Modifier.weight(1f))
+                    Row(Modifier.width(meterWidth).fillMaxHeight(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
                     if (remote) {
                         WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,
                             Modifier.weight(1f).fillMaxHeight())
-                        ServerViewToggle(
-                            page = webSdrPage,
-                            active = selected == "Receiver",
-                            onSelect = {
-                                online.selectPage(it)
-                                selected = "Receiver"
-                            },
-                        )
-                        Spacer(Modifier.width(4.dp))
                     } else {
                         SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
                     }
+                    }
+                }
+                // The plot excludes the encoder (78 dp) and starts after the amplitude axis (31 dp).
+                if (remote) Box(Modifier.align(Alignment.Center).offset(x = (31.dp - 78.dp) / 2)) {
+                    ServerViewToggle(
+                        page = webSdrPage, active = selected == "Receiver",
+                        onSelect = { online.selectPage(it); selected = "Receiver" },
+                    )
+                }
                 }
             }
             Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1085,7 +1092,7 @@ private fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier
 
 @Composable
 private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -> Unit) {
-    Row(Modifier.height(24.dp).border(1.dp, edge, RoundedCornerShape(4.dp)).padding(2.dp),
+    Row(Modifier.height(28.dp).toolbarButtonSurface().padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf("RADIO" to "Radio", "MAP" to "MAP").forEach { (label, targetPage) ->
             val chosen = active && page == targetPage
@@ -1093,7 +1100,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
                 .background(if (chosen) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(2.dp))
                 .semantics { contentDescription = if (targetPage == "Radio") "Show radio" else "Show server map" }
                 .clickable { onSelect(targetPage) }, contentAlignment = Alignment.Center) {
-                Text(label, color = if (chosen) warm else muted, fontSize = 9.sp,
+                Text(label, color = if (chosen) warm else muted, fontSize = 11.sp,
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)))
             }
         }
@@ -1104,7 +1111,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
 private fun WebSdrSignalMeter(session: WebSdrSession, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier) {
     val signal = session.signalDbm
-    SignalMeter((signal ?: -127f) + 37f, squelch, open, onSquelchChange, modifier,
+    SignalMeter((signal ?: -127f) + 37f, squelch.copy(enabled = false), open, onSquelchChange, modifier,
         remote = true, signalAvailable = signal != null)
 }
 
@@ -1127,27 +1134,40 @@ private fun SignalMeter(
     val density = LocalDensity.current
     fun setThreshold(x: Float) {
         val left = with(density) { 10.dp.toPx() }
-        val right = maxOf(left + 1f, meterWidth - with(density) { 86.dp.toPx() })
-        val db = (-90f + 84f * ((x - left) / (right - left)).coerceIn(0f, 1f)).roundToInt().toFloat()
+        val right = maxOf(left + 1f, meterWidth - with(density) { 66.dp.toPx() })
+        val db = (-90f + 104f * ((x - left) / (right - left)).coerceIn(0f, 1f))
+            .coerceIn(-90f, -6f).roundToInt().toFloat()
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
     val rawLevel = (displayedSignal.value + 90f).coerceAtLeast(0f)
-    val maximum = if (remote) 114f else 84f
+    val maximum = 104f
     val level = rawLevel.coerceAtMost(maximum)
-    // Give S1–S9 room to breathe while fitting the extended remote over-S9 range.
-    fun position(value: Float): Float = if (remote) {
-        if (value <= 54f) value / 54f * .55f else .55f + (value - 54f) / 60f * .45f
-    } else value / 84f
-    val readingLevel = if (remote) rawLevel else level
-    val reading = if (!signalAvailable) "" else if (readingLevel <= 54f) "≈S${(readingLevel / 6f).roundToInt()}"
-        else "≈S9 +${(readingLevel - 54f).roundToInt()}"
+    fun position(value: Float): Float = value / maximum
+    val readingLevel = level
+    val reading = if (!signalAvailable) "S0" else if (readingLevel <= 54f) "S${(readingLevel / 6f).roundToInt()}"
+        else "S9 +${(readingLevel - 54f).roundToInt()}"
     val labelPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
     Row(modifier.background(surface, RoundedCornerShape(5.dp)), verticalAlignment = Alignment.CenterVertically) {
+
+        Column(
+            Modifier.width(38.dp).height(28.dp)
+                .toolbarButtonSurface(squelch.enabled)
+                .clickable(enabled = !remote) { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
+                .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+        ) {
+            Text("SQL", color = muted, fontSize = 8.sp, fontWeight = FontWeight.Normal,
+                style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
+            Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
+                color = if (squelch.enabled) warm else muted, fontSize = 11.sp,
+                style = TextStyle(lineHeight = 13.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
+        }
+        Spacer(Modifier.width(2.dp))
         Canvas(
             Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
                 .pointerInput(remote) { if (!remote) detectTapGestures(onTap = { setThreshold(it.x) }) }
@@ -1170,14 +1190,14 @@ private fun SignalMeter(
                     else "Relative signal $reading, ${dbfs.roundToInt()} dBFS" }
         ) {
             val left = 10.dp.toPx()
-            val right = maxOf(left + 1f, size.width - 86.dp.toPx())
+            val right = maxOf(left + 1f, size.width - 66.dp.toPx())
             val width = right - left
             val barTop = size.height - 11.dp.toPx()
             val barHeight = 5.dp.toPx()
             val labelY = 13.dp.toPx()
-            val ticks = if (remote) listOf(6f to "S1", 18f to "3", 30f to "5", 42f to "7",
-                54f to "9", 74f to "+20", 94f to "+40", 114f to "+60")
-                else listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7", 54f to "9", 64f to "+10", 74f to "+20", 84f to "+30")
+            val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7",
+                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50")
+            labelPaint.textAlign = android.graphics.Paint.Align.CENTER
             labelPaint.textSize = 9.sp.toPx()
             for ((value, label) in ticks) {
                 val x = left + width * position(value)
@@ -1198,10 +1218,10 @@ private fun SignalMeter(
                     cornerRadius = CornerRadius(.6.dp.toPx())
                 )
             }
-            val cursorX = left + width * position(level)
-            if (signalAvailable) drawRoundRect(ivory, Offset(cursorX - .75.dp.toPx(), barTop - 1.dp.toPx()),
+            val cursorX = left + width * position(if (signalAvailable) level else 0f)
+            drawRoundRect(ivory, Offset(cursorX - .75.dp.toPx(), barTop - 1.dp.toPx()),
                 Size(1.5.dp.toPx(), barHeight + 2.dp.toPx()), CornerRadius(.75.dp.toPx()))
-            val sqlX = left + width * (squelch.thresholdDbfs + 90f) / 84f
+            val sqlX = left + width * position(squelch.thresholdDbfs + 90f)
             val sqlColor = if (!squelch.enabled) muted.copy(alpha = 0.6f) else if (open) warm else ivory
             if (!remote) {
             drawLine(sqlColor, Offset(sqlX, barTop - 3.dp.toPx()), Offset(sqlX, size.height), 1.5.dp.toPx())
@@ -1213,7 +1233,8 @@ private fun SignalMeter(
             }
             drawPath(triangle, sqlColor)
             }
-            val readoutX = right + (size.width - right) / 2f
+            val readoutX = right + 16.dp.toPx()
+            labelPaint.textAlign = android.graphics.Paint.Align.LEFT
             labelPaint.color = RadiolaColors.primary.toArgb()
             labelPaint.textSize = 12.sp.toPx()
             labelPaint.isFakeBoldText = true
@@ -1221,26 +1242,11 @@ private fun SignalMeter(
             labelPaint.isFakeBoldText = false
             labelPaint.color = RadiolaColors.secondaryText.toArgb()
             labelPaint.textSize = 9.sp.toPx()
-            val detail = if (remote) {
-                if (signalAvailable) "%.1f dBm".format(Locale.US, displayedSignal.value - 37f) else ""
-            } else "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
+            val detail = if (remote) "SQL —" else "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
             drawContext.canvas.nativeCanvas.drawText(detail, readoutX, size.height - 5.dp.toPx(), labelPaint)
         }
-        if (!remote) Column(
-            Modifier.width(46.dp).fillMaxHeight().padding(2.dp)
-                .border(1.dp, if (squelch.enabled) RadiolaColors.primary else edge, RoundedCornerShape(4.dp))
-                .background(if (squelch.enabled) RadiolaColors.primaryTint else surface, RoundedCornerShape(5.dp))
-                .clickable { onSquelchChange(squelch.copy(enabled = !squelch.enabled)) }
-                .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-        ) {
-            Text("SQL", color = if (squelch.enabled) warm else muted, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                style = TextStyle(lineHeight = 12.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
-            Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
-                color = if (squelch.enabled && open) warm else muted, fontSize = 8.sp,
-                style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
-        }
-        if (!remote) Spacer(Modifier.width(8.dp))
+
+
     }
 }
 @Composable

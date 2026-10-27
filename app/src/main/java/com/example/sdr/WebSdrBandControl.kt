@@ -26,7 +26,7 @@ internal fun WebSdrBandControl(
     Box {
         Column(
             Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
-                .background(surface, RoundedCornerShape(5.dp))
+                .toolbarButtonSurface()
                 .clickable(enabled = active && bands.isNotEmpty()) { expanded = true }
                 .padding(horizontal = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

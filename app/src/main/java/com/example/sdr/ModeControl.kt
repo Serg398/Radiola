@@ -26,7 +26,7 @@ internal fun ModeControl(
     val selected = ftxMode?.name ?: modes.firstOrNull { it.second == mode }?.first.orEmpty()
     Box {
         Column(Modifier.width(72.dp).height(28.dp)
-            .background(RadiolaColors.primaryTint, RoundedCornerShape(5.dp))
+            .toolbarButtonSurface()
             .clickable { expanded = true }, horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Text("MODE", color = RadiolaColors.secondaryText, fontSize = 8.sp)
