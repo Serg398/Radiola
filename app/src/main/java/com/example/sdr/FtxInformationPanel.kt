@@ -73,7 +73,7 @@ internal fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, clear: () 
                     color = if (origin != null) RadiolaColors.secondaryText else RadiolaColors.primary,
                     fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)), modifier = Modifier.clickable(enabled = !remote) { gridInput = observerGrid; editGrid = true })
-                Text("CLEAR", color = RadiolaColors.primary, fontSize = 11.sp, lineHeight = 13.sp,
+                Text("CLEAR", color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
                     style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)),
                     modifier = Modifier.clickable { clear() }
                         .padding(horizontal = 8.dp))
