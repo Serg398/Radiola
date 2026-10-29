@@ -57,7 +57,7 @@ internal fun SourcePlaybackControl(
             modifier = Modifier.width(160.dp).border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp)),
         ) {
             listOf("USB", "KiwiSDR", "WebSDR", "OpenWebRX").forEach { label ->
-                val available = label == "USB" || label == "WebSDR"
+                val available = label == "USB" || label == "WebSDR" || label == "OpenWebRX"
                 Row(Modifier.fillMaxWidth().height(36.dp)
                     .clickable(enabled = available) { onSourceChange(label); expanded = false }
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {

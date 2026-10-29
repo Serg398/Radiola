@@ -81,10 +81,12 @@ class WebSdrLifecycleTest {
             try {
                 main {
                     oldUrl = runtime.receiverUrl; oldName = runtime.receiverName; oldSource = runtime.source
-                    oldPage = runtime.page; oldMode = runtime.session.mode; oldFrequency = runtime.session.frequencyHz
+                    oldPage = runtime.page
                     runtime.disconnect()
+                    runtime.selectSource("WebSDR")
+                    oldMode = runtime.session.mode; oldFrequency = runtime.session.frequencyHz
                     runtime.select(WebSdrReceiver(serverUrl, "Test receiver", "", 0f, 0f, null, emptyList()))
-                    runtime.selectSource("WebSDR"); runtime.connect()
+                    runtime.connect()
                 }
                 await("Audio did not start") { runtime.session.state == WebSdrConnectionState.Connected && runtime.session.frame != null }
                 val owned = runtime.session

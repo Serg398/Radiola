@@ -21,44 +21,44 @@ import java.util.concurrent.atomic.AtomicReference
 internal enum class WebSdrConnectionState { Idle, Connecting, Connected, Error }
 
 /** Application-owned session. All controls run on main; stateful network decoders stay on socket workers. */
-internal class WebSdrSession(context: Context) {
+internal class WebSdrSession(context: Context) : OnlineReceiverSession {
     private val preferences = context.getSharedPreferences("websdr", Context.MODE_PRIVATE)
-    val cwDecoder = CwDecodeWorker()
-    val ftxDecoder = FtxDecodeWorker()
-    var state by mutableStateOf(WebSdrConnectionState.Idle)
+    override val cwDecoder = CwDecodeWorker()
+    override val ftxDecoder = FtxDecodeWorker()
+    override var state by mutableStateOf(WebSdrConnectionState.Idle)
         private set
-    var error by mutableStateOf<String?>(null)
+    override var error by mutableStateOf<String?>(null)
         private set
-    var waterfallWarning by mutableStateOf<String?>(null)
+    override var waterfallWarning by mutableStateOf<String?>(null)
         private set
-    var frequencyHz by mutableLongStateOf(preferences.getLong("frequency", 7_100_000L))
+    override var frequencyHz by mutableLongStateOf(preferences.getLong("frequency", 7_100_000L))
         private set
-    var mode by mutableStateOf(runCatching { DemodulationMode.valueOf(preferences.getString("mode", "AM")!!) }
+    override var mode by mutableStateOf(runCatching { DemodulationMode.valueOf(preferences.getString("mode", "AM")!!) }
         .getOrDefault(DemodulationMode.AM).let { if (it == DemodulationMode.WFM) DemodulationMode.AM else it })
         private set
-    var bandwidthHz by mutableIntStateOf(preferences.getInt("bandwidth_${mode.name}", WebSdrBandwidth.default(mode)))
+    override var bandwidthHz by mutableIntStateOf(preferences.getInt("bandwidth_${mode.name}", WebSdrBandwidth.default(mode)))
         private set
-    var bandwidthDefault by mutableStateOf(!preferences.contains("bandwidth_${mode.name}"))
+    override var bandwidthDefault by mutableStateOf(!preferences.contains("bandwidth_${mode.name}"))
         private set
-    var bands by mutableStateOf<List<WebSdrTunerBand>>(emptyList())
+    override var bands by mutableStateOf<List<WebSdrTunerBand>>(emptyList())
         private set
-    var currentBand by mutableIntStateOf(0)
+    override var currentBand by mutableIntStateOf(0)
         private set
-    var audioSampleRate by mutableIntStateOf(8000)
+    override var audioSampleRate by mutableIntStateOf(8000)
         private set
-    @Volatile var squelchSetting = ReceiverSquelch()
-    var squelchOpen by mutableStateOf(true)
+    @Volatile override var squelchSetting = ReceiverSquelch()
+    override var squelchOpen by mutableStateOf(true)
         private set
-    var signalDbm by mutableStateOf<Float?>(null)
+    override var signalDbm by mutableStateOf<Float?>(null)
         private set
-    var frame by mutableStateOf<SpectrumFrame?>(null)
+    override var frame by mutableStateOf<SpectrumFrame?>(null)
         private set
-    var waterfallHistory by mutableStateOf(WaterfallHistory(1024))
+    override var waterfallHistory by mutableStateOf(WaterfallHistory(1024))
         private set
-    var visualFps by mutableIntStateOf(0)
+    override var visualFps by mutableIntStateOf(0)
         private set
-    val active get() = state == WebSdrConnectionState.Connecting || state == WebSdrConnectionState.Connected
-    val audioMetrics get() = output?.metrics ?: WebSdrAudioMetrics()
+    override val active get() = state == WebSdrConnectionState.Connecting || state == WebSdrConnectionState.Connected
+    override val audioMetrics get() = output?.metrics ?: WebSdrAudioMetrics()
     private val handler = Handler(Looper.getMainLooper())
     private val clearFrequencyWarning = Runnable {
         if (error == "Frequency outside this server's bands") error = null
@@ -132,7 +132,7 @@ internal class WebSdrSession(context: Context) {
             if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) disconnect()
         }, handler).build()
 
-    fun connect(url: String) {
+    override fun connect(url: String) {
         disconnect()
         val address = url.toHttpUrlOrNull()
         if (address == null || address.username.isNotEmpty() || address.password.isNotEmpty()) {
@@ -292,7 +292,7 @@ internal class WebSdrSession(context: Context) {
         val nativeMode = when (mode) { DemodulationMode.AM -> 1; DemodulationMode.NFM -> 4; else -> 0 }
         tuning.offer(String.format(Locale.US, "GET /~~param?f=%.3f&band=%d&lo=%.5f&hi=%.5f&mode=%d&name=Radiola", frequency, bands[currentBand].index, low, low + width, nativeMode))
     }
-    fun tune(hz: Long) {
+    override fun tune(hz: Long) {
         if (!active || bands.isEmpty()) return
         val index = if (bands.getOrNull(currentBand)?.contains(hz) == true) currentBand else bands.indexOfFirst { it.contains(hz) }
         if (index < 0) {
@@ -314,26 +314,26 @@ internal class WebSdrSession(context: Context) {
         }
         sendTuning(); saveSoon()
     }
-    fun selectBand(index: Int) {
+    override fun selectBand(index: Int) {
         if (!active || index !in bands.indices) return
         tuneBand(index, bands[index].defaultHz.coerceIn(bands[index].lowHz, bands[index].highHz))
     }
-    val bandwidthLimit get() = WebSdrBandwidth.maximum(mode, bands.getOrNull(currentBand))
-    fun requestMode(value: DemodulationMode) {
+    override val bandwidthLimit get() = WebSdrBandwidth.maximum(mode, bands.getOrNull(currentBand))
+    override fun requestMode(value: DemodulationMode) {
         if (value == DemodulationMode.WFM) return
         mode = value
         bandwidthDefault = !preferences.contains("bandwidth_${value.name}")
         bandwidthHz = preferences.getInt("bandwidth_${value.name}", WebSdrBandwidth.default(value)).coerceIn(100, bandwidthLimit)
         sendTuning(); saveSoon()
     }
-    fun setBandwidth(hz: Int?) {
+    override fun setBandwidth(hz: Int?) {
         bandwidthDefault = hz == null
         bandwidthHz = (hz ?: WebSdrBandwidth.default(mode)).coerceIn(100, bandwidthLimit)
         val edit = preferences.edit()
         if (hz == null) edit.remove("bandwidth_${mode.name}") else edit.putInt("bandwidth_${mode.name}", bandwidthHz)
         edit.apply(); sendTuning()
     }
-    fun setWaterfallViewport(centerHz: Long, spanHz: Int) {
+    override fun setWaterfallViewport(centerHz: Long, spanHz: Int) {
         if (!active || bands.isEmpty()) return
         viewportCenterHz = centerHz; viewportSpanHz = spanHz
         viewport.offer(desiredWindow())
@@ -386,7 +386,7 @@ internal class WebSdrSession(context: Context) {
         cwDecoder.configure(false, frequencyHz)
         ftxDecoder.configure(null, frequencyHz)
     }
-    fun disconnect() {
+    override fun disconnect() {
         handler.removeCallbacks(persist); persist.run()
         closeStreams(); handler.removeCallbacks(health)
         frame = null; waterfallHistory = WaterfallHistory(1024)

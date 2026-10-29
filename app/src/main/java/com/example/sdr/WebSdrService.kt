@@ -49,9 +49,9 @@ class WebSdrService : Service() {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 3, Intent(this, WebSdrService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val title = runtime.receiverName.ifBlank { getString(R.string.app_name) }
+        val title = runtime.selectedName.ifBlank { getString(R.string.app_name) }
         val builder = Notification.Builder(this, "websdr").setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(runtime.receiverName.ifBlank { getString(R.string.app_name) }).setContentText(text)
+            .setContentTitle(runtime.selectedName.ifBlank { getString(R.string.app_name) }).setContentText(text)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
         return playback.decorate(builder, title, text, open, stop, runtime.session.state == WebSdrConnectionState.Connected)
     }

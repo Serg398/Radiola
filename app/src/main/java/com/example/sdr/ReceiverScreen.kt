@@ -164,11 +164,12 @@ fun ReceiverScreen(
     }
     val source = online.source
     val webSdrPage = online.page
-    val webSdrReceiverUrl = online.receiverUrl
-    val webSdrReceiverName = online.receiverName
+    val openWebRx = source == "OpenWebRX"
+    val webSdrReceiverUrl = if (openWebRx) online.openWebRxReceiver?.url else online.receiverUrl
+    val webSdrReceiverName = if (openWebRx) online.openWebRxReceiver?.name.orEmpty() else online.receiverName
     val webSession = online.session
     val mapState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
-    val remote = source == "WebSDR"
+    val remote = source == "WebSDR" || openWebRx
     val tunedHz = if (remote) webSession.frequencyHz else currentFrequencyHz
     val activeMode = if (remote) webSession.mode else demodulationMode
     val activeBandwidth = if (remote) webSession.bandwidthHz else receiveBandwidthHz
@@ -284,10 +285,10 @@ fun ReceiverScreen(
                     Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
                         Text(when (webSession.state) {
-                            WebSdrConnectionState.Connected -> "WEBSDR  /  LIVE"
-                            WebSdrConnectionState.Connecting -> "WEBSDR  /  CONNECTING"
-                            WebSdrConnectionState.Error -> "WEBSDR  /  CONNECTION ERROR"
-                            else -> "WEBSDR  /  OFFLINE"
+                            WebSdrConnectionState.Connected -> "${source.uppercase(Locale.ROOT)}  /  LIVE"
+                            WebSdrConnectionState.Connecting -> "${source.uppercase(Locale.ROOT)}  /  CONNECTING"
+                            WebSdrConnectionState.Error -> "${source.uppercase(Locale.ROOT)}  /  CONNECTION ERROR"
+                            else -> "${source.uppercase(Locale.ROOT)}  /  OFFLINE"
                         }, color = if (webSession.state == WebSdrConnectionState.Connected) warm else muted,
                             fontSize = 8.sp, lineHeight = 10.sp, letterSpacing = 0.8.sp, maxLines = 1)
                         Text(webSdrReceiverName.ifBlank { "Select a server on MAP" }, color = ivory,
@@ -406,6 +407,7 @@ fun ReceiverScreen(
                         source = source,
                         onSourceChange = {
                             if (it != source) {
+                                ftxMode = null
                                 webSession.disconnect()
                                 if (streaming || starting) onStopStream()
                                 encoderBrakeRequest++
@@ -503,14 +505,17 @@ fun ReceiverScreen(
                         onClose = { selected = "Receiver" }
                     )
                 } else if (remote && webSdrPage == "MAP") {
-                    mapState.SaveableStateProvider("websdr-map") {
+                    mapState.SaveableStateProvider("server-map-$source") {
+                    androidx.compose.runtime.key(source) {
                     WebSdrMap(
+                        source = source,
                         modifier = Modifier.fillMaxSize(),
                         selectedReceiverUrl = webSdrReceiverUrl,
                         onReceiverSelected = {
                             online.select(it)
                         },
                     )
+                    }
                     }
                 } else {
                 Column(
@@ -1163,7 +1168,7 @@ private fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -
 }
 
 @Composable
-private fun WebSdrSignalMeter(session: WebSdrSession, squelch: ReceiverSquelch, open: Boolean,
+private fun WebSdrSignalMeter(session: OnlineReceiverSession, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier) {
     val signal = session.signalDbm
     SignalMeter((signal ?: -127f) + 37f, squelch, session.squelchOpen, onSquelchChange, modifier,

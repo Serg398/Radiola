@@ -53,6 +53,7 @@ import java.util.Locale
 internal fun WebSdrMap(
     modifier: Modifier = Modifier,
     selectedReceiverUrl: String? = null,
+    source: String = "WebSDR",
     onReceiverSelected: (WebSdrReceiver) -> Unit = {},
 ) {
     val currentSelectionCallback by rememberUpdatedState(onReceiverSelected)
@@ -71,6 +72,7 @@ internal fun WebSdrMap(
         cities = WebSdrMapAssets.cities(context)
     }
 
+    val openWebRx = source == "OpenWebRX"
     val directory = remember { WebSdrDirectory(context.applicationContext) }
     var mapReceivers by remember { mutableStateOf<List<WebSdrReceiver>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -78,16 +80,16 @@ internal fun WebSdrMap(
     var cached by remember { mutableStateOf(false) }
     var updatedAt by remember { mutableLongStateOf(0L) }
     var refresh by remember { mutableIntStateOf(0) }
-    LaunchedEffect(refresh) {
+    LaunchedEffect(refresh, source) {
         loading = true
         directoryFailed = false
         try {
-            val saved = withContext(Dispatchers.IO) { directory.cached() }
+            val saved = withContext(Dispatchers.IO) { if (openWebRx) OpenWebRxDirectory.snapshot else directory.cached() }
             if (saved != null && mapReceivers.isEmpty()) {
-                mapReceivers = saved.receivers; updatedAt = saved.updatedAt; cached = true
+                mapReceivers = saved.receivers; updatedAt = saved.updatedAt; cached = !openWebRx
             }
-            if (refresh > 0 || saved == null || System.currentTimeMillis() - saved.updatedAt !in 0L..120_000L) {
-                val live = withContext(Dispatchers.IO) { directory.fetch() }
+            if (refresh > 0 || saved == null || (!openWebRx && System.currentTimeMillis() - saved.updatedAt !in 0L..120_000L)) {
+                val live = withContext(Dispatchers.IO) { if (openWebRx) OpenWebRxDirectory.fetch() else directory.fetch() }
                 mapReceivers = live.receivers; updatedAt = live.updatedAt; cached = false
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -250,7 +252,7 @@ internal fun WebSdrMap(
         }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp)
             .background(RadiolaColors.adaptive(Color(0xF2FCFDFF), Color(0xE60C1013)), RoundedCornerShape(4.dp)).padding(8.dp)) {
-            Text("WEBSDR", color = warm, fontSize = 12.sp, letterSpacing = 2.sp)
+            Text(if (openWebRx) "OPENWEBRX" else "WEBSDR", color = warm, fontSize = 12.sp, letterSpacing = 2.sp)
             val time = if (updatedAt > 0) SimpleDateFormat("dd MMM HH:mm", locale).format(Date(updatedAt)) else ""
             Text(when {
                 loadFailed -> "Map unavailable"

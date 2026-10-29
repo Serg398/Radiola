@@ -45,7 +45,8 @@ internal fun WebSdrBandControl(
                     .padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Text(band.name.ifBlank { "Band ${index + 1}" },
                         color = if (index == selected) warm else ivory, fontSize = 13.sp)
-                    Text(String.format(Locale.US, "%.3f – %.3f MHz", band.lowHz / 1e6, band.highHz / 1e6),
+                    Text(if (band.spanHz > 0) String.format(Locale.US, "%.3f – %.3f MHz", band.lowHz / 1e6, band.highHz / 1e6)
+                        else "Select to load range",
                         color = ivory.copy(alpha = 0.6f), fontSize = 11.sp)
                 }
             }
