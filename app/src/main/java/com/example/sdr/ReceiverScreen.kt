@@ -267,7 +267,7 @@ fun ReceiverScreen(
         }
     }
     val channelOffsetHz = 0L
-    val passbandOffsetHz = activeMode.offsetForBandwidth(activeBandwidth).toLong()
+    val passbandOffsetHz = (if (remote) webSession.passbandOffsetHz else activeMode.offsetForBandwidth(activeBandwidth)).toLong()
     val textMeasurer = rememberTextMeasurer()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = {
@@ -453,6 +453,10 @@ fun ReceiverScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ModeControl(activeMode, ftxMode, remote, !remote || webSession.active,
+                        serverModes = if (openWebRx) webSession.serverModes else null,
+                        serverModeId = webSession.serverModeId,
+                        serverModeLabel = webSession.modeLabel,
+                        onServerMode = { ftxMode = null; webSession.requestServerMode(it) },
                         onMode = changeMode, onFtx = { protocol ->
                             changeMode(DemodulationMode.USB)
                             changeBandwidth(3000)
@@ -460,10 +464,11 @@ fun ReceiverScreen(
                         })
                     BandwidthControl(activeMode, activeBandwidth,
                         if (remote) webSession.bandwidthDefault else bandwidthDefault, changeBandwidth,
-                        if (remote) WebSdrBandwidth.options(activeMode, webSession.bandwidthLimit) else BandwidthOptions.forMode(activeMode))
+                        if (remote) webSession.bandwidthOptions else BandwidthOptions.forMode(activeMode),
+                        enabled = !remote || webSession.bandwidthAdjustable)
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
                         webSession.active, webSession::selectBand)
-                    if (activeMode == DemodulationMode.WFM) StereoToggle(
+                    if (!remote && activeMode == DemodulationMode.WFM) StereoToggle(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
@@ -531,7 +536,7 @@ fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, activeMode.offsetForBandwidth(activeBandwidth), visibleCenterHz, Modifier.fillMaxSize(), relative = remote)
+                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote)
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
@@ -611,7 +616,9 @@ fun ReceiverScreen(
                 }
 
             }
-            if (activeMode == DemodulationMode.CW || ftxMode != null) ModulationInformationPanel(
+            if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
+                webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText)
+            else if (activeMode == DemodulationMode.CW || ftxMode != null) ModulationInformationPanel(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
                 cwInformation, { if (remote) webSession.cwDecoder.clear() else onCwClear() },

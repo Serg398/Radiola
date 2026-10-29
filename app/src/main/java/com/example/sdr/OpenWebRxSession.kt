@@ -21,6 +21,24 @@ import kotlin.math.log10
 
 /** Native OpenWebRX client. Socket workers decode; the main thread owns UI state. */
 internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
+    private var modeDescriptors by mutableStateOf<List<OpenWebRxMode>>(emptyList())
+    private var features by mutableStateOf<Map<String, Boolean>>(emptyMap())
+    private var selectedMode by mutableStateOf<OpenWebRxMode?>(null)
+    private var initialModeId = "am"
+    override val serverModes get() = modeDescriptors.filter { candidate -> candidate.requirements.all { features[it] == true } }
+    override val serverModeId get() = selectedMode?.id
+    override val modeLabel get() = selectedMode?.label ?: mode.label
+    override val serverDataMode get() = selectedMode?.secondary == true
+    override var decodedText by mutableStateOf(""); private set
+    override fun clearDecodedText() { decodedText = "" }
+    override val passbandOffsetHz get() = selectedMode?.let {
+        (it.lowCut(bandwidthHz) ?: -bandwidthHz / 2) + bandwidthHz / 2 - it.cwTone
+    } ?: mode.offsetForBandwidth(bandwidthHz)
+    private val needsAudio get() = selectedMode?.hasAudio != false
+    override val bandwidthAdjustable get() = selectedMode?.let { it.low != null } ?: true
+    override val bandwidthOptions get() = BandwidthOptions(selectedMode?.defaultWidth ?: WebSdrBandwidth.default(mode),
+        100, bandwidthLimit, listOf(100, 200, 300, 500, 1000, 2400, 3000, 5000, 6000, 8000, 9000,
+            10000, 12500, 15000, 20000, 25000, 50000, 100000, 150000, 200000, 250000).filter { it <= bandwidthLimit })
     override val cwDecoder = CwDecodeWorker()
     override val ftxDecoder = FtxDecodeWorker()
     override var state by mutableStateOf(WebSdrConnectionState.Idle); private set
@@ -41,7 +59,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override var visualFps by mutableIntStateOf(0); private set
     override val active get() = state == WebSdrConnectionState.Connecting || state == WebSdrConnectionState.Connected
     override val audioMetrics get() = output?.metrics ?: WebSdrAudioMetrics()
-    override val bandwidthLimit get() = if (mode == DemodulationMode.NFM) 24000 else 11000
+    override val bandwidthLimit get() = maxOf(if (mode == DemodulationMode.WFM) 250000 else 24000,
+        selectedMode?.defaultWidth ?: 0).coerceAtMost(20_000_000)
     private val handler = Handler(Looper.getMainLooper())
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
@@ -63,6 +82,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var frameId = 0L
     private var retry = 0
     @Volatile private var lastAudioAt = 0L
+    @Volatile private var lastPacketAt = 0L
     private var openedAt = 0L
     private var fpsAt = 0L
     private data class Row(val token: Long, val bins: FloatArray, val center: Long, val span: Int, val timestampNanos: Long)
@@ -75,6 +95,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                     val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
                     if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
                     waterfallHistory.append(captured); frame = captured; frames++; waterfallWarning = null
+                    if (!needsAudio && initialized && state != WebSdrConnectionState.Connected) {
+                        state = WebSdrConnectionState.Connected; error = null; retry = 0
+                    }
                 }
             }
             handler.postDelayed(this, 34)
@@ -92,7 +115,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             val now = SystemClock.elapsedRealtime()
             if (changingProfile && now - openedAt > 15_000) {
                 recover("Profile change timed out")
-            } else if (openedAt > 0 && now - maxOf(openedAt, lastAudioAt) > 20_000) {
+            } else if (openedAt > 0 && now - maxOf(openedAt, if (needsAudio) lastAudioAt else lastPacketAt) > 20_000) {
                 recover("Audio stream stalled")
             }
             if (now - fpsAt >= 1000) {
@@ -173,6 +196,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (token != generation) return
+                lastPacketAt = SystemClock.elapsedRealtime()
                 try {
                     if (text.startsWith("CLIENT DE SERVER")) {
                         webSocket.send(JSONObject().put("type", "connectionproperties").put("params",
@@ -198,6 +222,25 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                             val entries = message.getJSONArray("value")
                             publish(token) { updateProfiles(entries) }
                         }
+                        "modes" -> {
+                            val descriptors = OpenWebRxMode.parse(message.getJSONArray("value"))
+                            publish(token) { modeDescriptors = descriptors; adoptInitialMode() }
+                        }
+                        "features" -> {
+                            val value = message.getJSONObject("value")
+                            val available = value.keys().asSequence().associateWith { value.optBoolean(it, false) }
+                            publish(token) { features = available }
+                        }
+                        "secondary_demod" -> {
+                            val value = message.opt("value")
+                            val line = formatDecoded(value)
+                            publish(token) {
+                                if (serverDataMode && line.isNotEmpty()) {
+                                    decodedText = (decodedText + line).takeLast(8000)
+                                    if (!needsAudio) state = WebSdrConnectionState.Connected
+                                }
+                            }
+                        }
                         "smeter" -> {
                             val power = message.optDouble("value", Double.NaN)
                             signal = if (power.isFinite() && power > 0) (10 * log10(power)).toFloat() else null
@@ -209,6 +252,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             }
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
                 if (token != generation || bytes.size < 2) return
+                lastPacketAt = SystemClock.elapsedRealtime()
                 try {
                     val payload = bytes.substring(1).toByteArray()
                     when (bytes[0].toInt()) {
@@ -268,14 +312,19 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             val high = centerHz + spanHz / 2
             if (!restoreTuning) frequencyHz = config.optLong("start_freq", centerHz + config.optLong("start_offset_freq", 0)).coerceIn(low, high)
             if (!initialized && !restoreTuning) {
+                selectedMode = null
+                initialModeId = config.optString("start_mod", "am")
                 mode = when (config.optString("start_mod")) {
                     "nfm" -> DemodulationMode.NFM
+                    "wfm" -> DemodulationMode.WFM
                     "usb" -> DemodulationMode.USB
                     "lsb" -> DemodulationMode.LSB
                     "cw" -> DemodulationMode.CW
                     else -> DemodulationMode.AM
                 }
                 bandwidthHz = WebSdrBandwidth.default(mode).coerceAtMost(bandwidthLimit)
+                val initialId = config.optString("start_mod", "am")
+                modeDescriptors.firstOrNull { it.id == initialId }?.let { applyServerMode(it) }
             }
             knownBands[profile] = WebSdrTunerBand(0, "Current", centerHz, spanHz, frequencyHz, 0)
             rebuildBands()
@@ -314,17 +363,46 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private fun sendTuning() {
         if (!initialized || changingProfile) return
         cwDecoder.configure(active && mode == DemodulationMode.CW, frequencyHz)
+        val selected = selectedMode
         val half = bandwidthHz / 2
-        val low = when (mode) {
+        val low = if (selected != null) selected.lowCut(bandwidthHz) else when (mode) {
             DemodulationMode.USB -> 150
             DemodulationMode.LSB -> -150 - bandwidthHz
             DemodulationMode.CW -> 750 - half
             else -> -half
         }
-        tuning.offer(JSONObject().put("mod", mode.name.lowercase())
-            .put("offset_freq", frequencyHz - centerHz - if (mode == DemodulationMode.CW) 750 else 0)
-            .put("low_cut", low).put("high_cut", low + bandwidthHz)
-            .put("squelch_level", -150).put("secondary_mod", false))
+        val tone = selected?.cwTone ?: if (mode == DemodulationMode.CW) 750 else 0
+        tuning.offer(JSONObject().put("mod", selected?.baseId ?: mode.name.lowercase())
+            .put("offset_freq", frequencyHz - centerHz - tone)
+            .put("low_cut", low ?: JSONObject.NULL).put("high_cut", low?.plus(bandwidthHz) ?: JSONObject.NULL)
+            .put("squelch_level", -150).put("secondary_offset_freq", 1000)
+            .put("secondary_mod", if (selected?.secondary == true) selected.id else false))
+    }
+
+    private fun adoptInitialMode() {
+        if (selectedMode != null) return
+        modeDescriptors.firstOrNull { it.id == initialModeId }?.let { applyServerMode(it); sendTuning() }
+    }
+    private fun applyServerMode(descriptor: OpenWebRxMode) {
+        selectedMode = descriptor; mode = descriptor.basicMode
+        initialModeId = descriptor.id
+        bandwidthDefault = true; bandwidthHz = descriptor.defaultWidth.coerceIn(100, bandwidthLimit)
+        decodedText = ""
+        openedAt = SystemClock.elapsedRealtime(); lastAudioAt = 0
+    }
+    override fun requestServerMode(id: String) {
+        val descriptor = serverModes.firstOrNull { it.id == id } ?: return
+        if (descriptor.ifRate != null && spanHz > 0 && descriptor.ifRate > spanHz) {
+            error = "Profile is too narrow for ${descriptor.label}"; return
+        }
+        applyServerMode(descriptor); error = null; sendTuning()
+    }
+    private fun formatDecoded(value: Any?): String = when (value) {
+        is String -> value.take(2000)
+        is JSONObject -> value.keys().asSequence()
+            .filter { it.lowercase() !in setOf("data", "image", "pixels", "samples", "png", "buffer") }
+            .take(12).joinToString("  ") { "$it: ${value.opt(it).toString().take(180)}" }.take(2000) + "\n"
+        else -> ""
     }
 
     override fun tune(hz: Long) {
@@ -342,14 +420,17 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         openedAt = SystemClock.elapsedRealtime(); lastAudioAt = 0
     }
     override fun requestMode(value: DemodulationMode) {
+        val id = value.name.lowercase()
+        if (modeDescriptors.isNotEmpty()) { requestServerMode(id); return }
         if (value == DemodulationMode.WFM) return
+        selectedMode = null
         mode = value; bandwidthDefault = true
         bandwidthHz = WebSdrBandwidth.default(value).coerceAtMost(bandwidthLimit)
         sendTuning()
     }
     override fun setBandwidth(hz: Int?) {
         bandwidthDefault = hz == null
-        bandwidthHz = (hz ?: WebSdrBandwidth.default(mode)).coerceIn(100, bandwidthLimit)
+        bandwidthHz = (hz ?: selectedMode?.defaultWidth ?: WebSdrBandwidth.default(mode)).coerceIn(100, bandwidthLimit)
         sendTuning()
     }
     // OpenWebRX sends the active profile's full FFT; viewport zoom stays local.
@@ -359,7 +440,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         generation++; tuning.clear(); pendingRow.set(null)
         landing?.cancel(); landing = null
         socket?.cancel(); socket = null; output?.close(); output = null
-        initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0
+        initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0
         signalDbm = null; visualFps = 0
         cwDecoder.configure(false, frequencyHz); ftxDecoder.configure(null, frequencyHz)
     }
@@ -374,6 +455,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override fun disconnect() {
         handler.removeCallbacksAndMessages(null); closeTransport()
         bands = emptyList(); knownBands.clear(); profiles = emptyList(); profile = ""
+        modeDescriptors = emptyList(); features = emptyMap(); selectedMode = null; decodedText = ""
         centerHz = 0; spanHz = 0; frame = null; waterfallHistory = WaterfallHistory(1024)
         frames = 0; frameId = 0; retry = 0; fpsAt = SystemClock.elapsedRealtime()
         error = null; waterfallWarning = null; state = WebSdrConnectionState.Idle

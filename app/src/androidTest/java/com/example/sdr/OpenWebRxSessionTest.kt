@@ -45,7 +45,22 @@ class OpenWebRxSessionTest {
                     webSocket.send("""{"type":"config","value":{"audio_compression":"none","fft_compression":"none","fft_size":1024}}""")
                     webSocket.send("""{"type":"config","value":{"sdr_id":"test","profile_id":"hf","center_freq":7100000,"samp_rate":100000,"start_freq":7100000,"start_mod":"am"}}""")
                     webSocket.send("""{"type":"profiles","value":[{"id":"test|hf","name":"40m"},{"id":"test|vhf","name":"2m"}]}""")
-                } else if (JSONObject(text).optString("action") == "start") sockets.addIfAbsent(webSocket)
+                    webSocket.send("""{"type":"features","value":{"voice":false,"wsjt-x":true}}""")
+                    webSocket.send("""{"type":"modes","value":[
+                        {"modulation":"am","name":"AM","type":"analog","bandpass":{"low_cut":-4000,"high_cut":4000}},
+                        {"modulation":"wfm","name":"WFM","type":"analog","bandpass":{"low_cut":-75000,"high_cut":75000}},
+                        {"modulation":"cw","name":"CW","type":"analog","bandpass":{"low_cut":500,"high_cut":1000}},
+                        {"modulation":"usb","name":"USB","type":"analog","bandpass":{"low_cut":300,"high_cut":3000}},
+                        {"modulation":"dmr","name":"DMR","type":"analog","requirements":["voice"]},
+                        {"modulation":"ft8","name":"FT8","type":"digimode","requirements":["wsjt-x"],"underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}}
+                    ]}""")
+                } else {
+                    val message = JSONObject(text)
+                    if (message.optString("action") == "start") sockets.addIfAbsent(webSocket)
+                    if (message.optJSONObject("params")?.optString("secondary_mod") == "ft8") {
+                        webSocket.send("""{"type":"secondary_demod","value":{"message":"CQ TEST AA00","db":-12}}""")
+                    }
+                }
             }
         }
         server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
@@ -69,8 +84,24 @@ class OpenWebRxSessionTest {
                 session!!.connect(serverUrl)
             }
             await("Audio and FFT did not start") { session!!.state == WebSdrConnectionState.Connected && session!!.frame != null }
+            await("Server modes were not received") { session!!.serverModes.any { it.id == "ft8" } }
             main {
                 assertEquals(2, session!!.bands.size)
+                assertFalse(session!!.serverModes.any { it.id == "dmr" })
+                session!!.requestServerMode("ft8")
+                assertEquals("FT8", session!!.modeLabel)
+                assertTrue(session!!.serverDataMode)
+            }
+            await("Server decoder command was not sent") {
+                commands.any { it.contains("\"secondary_mod\":\"ft8\"") && it.contains("\"mod\":\"usb\"") && it.contains("\"low_cut\":0") }
+            }
+            await("Server decoder result was not received") { session!!.decodedText.contains("CQ TEST AA00") }
+            main {
+                session!!.requestServerMode("wfm")
+                assertEquals(150000, session!!.bandwidthHz)
+            }
+            await("WFM command was not sent") { commands.any { it.contains("\"mod\":\"wfm\"") && it.contains("\"high_cut\":75000") } }
+            main {
                 assertEquals(100_000, session!!.frame!!.spanHz)
                 val capturedAt = session!!.frame!!.timestampNanos
                 val now = android.os.SystemClock.elapsedRealtimeNanos()
@@ -133,8 +164,17 @@ class OpenWebRxSessionTest {
             main {
                 assertTrue(runtime.session.bands.isNotEmpty())
                 assertTrue(runtime.session.frame!!.bins.any { it != 0f })
+                assertTrue("Server mode list is empty", runtime.session.serverModes.orEmpty().isNotEmpty())
                 runtime.session.requestMode(DemodulationMode.CW)
                 runtime.session.tune(runtime.session.frequencyHz + 100)
+            }
+            val requestedMode = InstrumentationRegistry.getArguments().getString("openwebrx_mode")
+            if (requestedMode != null) {
+                main { runtime.session.requestServerMode(requestedMode) }
+                await("Requested mode did not start", 20_000) {
+                    runtime.session.serverModeId == requestedMode && runtime.session.state == WebSdrConnectionState.Connected &&
+                        (requestedMode != "wfm" || runtime.session.audioSampleRate == 48000)
+                }
             }
             activity.recreate()
             await("Playback did not survive recreation") { runtime.session.state == WebSdrConnectionState.Connected }

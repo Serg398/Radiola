@@ -31,18 +31,18 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChange: (Int?) -> Unit,
-    options: BandwidthOptions = BandwidthOptions.forMode(mode)) {
+    options: BandwidthOptions = BandwidthOptions.forMode(mode), enabled: Boolean = true) {
     val warm = RadiolaColors.primary
     val muted = RadiolaColors.secondaryText
     val surface = RadiolaColors.surface
-    var expanded by remember(mode) { mutableStateOf(false) }
+    var expanded by remember(mode, enabled) { mutableStateOf(false) }
     var custom by remember(mode) { mutableStateOf(false) }
     var input by remember(mode) { mutableStateOf(TextFieldValue("")) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     Box {
         Column(Modifier.width(68.dp).height(28.dp)
-            .toolbarButtonSurface().clickable { expanded = true },
+            .toolbarButtonSurface().clickable(enabled = enabled) { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("BW", Modifier.height(10.dp), color = muted, fontSize = 8.sp, style = ToolbarCaptionStyle)
             ToolbarValue(bandwidthLabel(hz))

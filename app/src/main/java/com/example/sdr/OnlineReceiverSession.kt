@@ -2,6 +2,16 @@ package com.example.sdr
 
 /** Controls shared by native clients of the two independent online protocols. */
 internal interface OnlineReceiverSession {
+    val serverModes: List<OpenWebRxMode>? get() = null
+    val serverModeId: String? get() = null
+    val modeLabel: String get() = mode.label
+    val passbandOffsetHz: Int get() = mode.offsetForBandwidth(bandwidthHz)
+    val decodedText: String get() = ""
+    val serverDataMode: Boolean get() = false
+    val bandwidthAdjustable: Boolean get() = true
+    val bandwidthOptions: BandwidthOptions get() = WebSdrBandwidth.options(mode, bandwidthLimit)
+    fun requestServerMode(id: String) = Unit
+    fun clearDecodedText() = Unit
     val state: WebSdrConnectionState
     val error: String?
     val waterfallWarning: String?

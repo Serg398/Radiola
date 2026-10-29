@@ -44,7 +44,7 @@ class WebSdrService : Service() {
         return START_NOT_STICKY
     }
     private fun description() = String.format(Locale.US, "%.3f MHz  %s  %s", runtime.session.frequencyHz / 1e6,
-        runtime.session.mode.label, if (runtime.session.state == WebSdrConnectionState.Connected) "LIVE" else "CONNECTING")
+        runtime.session.modeLabel, if (runtime.session.state == WebSdrConnectionState.Connected) "LIVE" else "CONNECTING")
     private fun notification(text: String): Notification {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
