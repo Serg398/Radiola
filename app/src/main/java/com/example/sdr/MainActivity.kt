@@ -65,6 +65,9 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && runtime.session.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
             startService(Intent(this, ReceiverService::class.java).setAction(ReceiverService.REFRESH))
+        val online = (application as RadiolaApplication).webSdr
+        if (granted && online.serviceOwner != null && (online.pending || online.session.active))
+            startService(Intent(this, WebSdrService::class.java).setAction(WebSdrService.REFRESH))
     }
     private val model by lazy { ViewModelProvider(this)[ReceiverViewModel::class.java] }
     private val runtime get() = (application as RadiolaApplication).receiver
@@ -330,6 +333,7 @@ class MainActivity : ComponentActivity() {
                 onCheckConnection = ::checkUsbConnection,
                 onCaptureIq = ::captureIq,
                 onStartStream = ::startStream,
+                onPlaybackStart = ::requestNotificationPermission,
                 onStopStream = ::stopStream,
                 onFrequencyInput = { frequencyInput = it },
                 onTune = ::applyFrequency,
@@ -531,6 +535,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     private fun startStream() {
         val currentDevice = device ?: return
         val state = receiverSession.snapshot().state
@@ -539,8 +548,7 @@ class MainActivity : ComponentActivity() {
         val requestedFrequency = parseFrequency() ?: return
         requestFrequency(requestedFrequency)
         usbCheckResult = null
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        requestNotificationPermission()
         runtime.mode = demodulationMode
         runtime.gain = receiverGain
         runtime.requestStart(currentDevice)

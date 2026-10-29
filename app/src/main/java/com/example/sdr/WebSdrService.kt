@@ -12,6 +12,7 @@ import java.util.Locale
 class WebSdrService : Service() {
     private val runtime get() = (application as RadiolaApplication).webSdr
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var playback: PlaybackNotification
     private var lastText = ""
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { runtime.disconnect() }
@@ -28,6 +29,7 @@ class WebSdrService : Service() {
     }
     override fun onCreate() {
         super.onCreate(); runtime.serviceOwner = this
+        playback = PlaybackNotification(this, "WebSDR receiver") { runtime.disconnect() }
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel("websdr", "Online receiver", NotificationManager.IMPORTANCE_LOW))
         ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
@@ -47,12 +49,14 @@ class WebSdrService : Service() {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 3, Intent(this, WebSdrService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return Notification.Builder(this, "websdr").setSmallIcon(android.R.drawable.ic_media_play)
+        val title = runtime.receiverName.ifBlank { getString(R.string.app_name) }
+        val builder = Notification.Builder(this, "websdr").setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(runtime.receiverName.ifBlank { getString(R.string.app_name) }).setContentText(text)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-            .addAction(Notification.Action.Builder(android.R.drawable.ic_media_pause, "STOP", stop).build()).build()
+        return playback.decorate(builder, title, text, open, stop, runtime.session.state == WebSdrConnectionState.Connected)
     }
     override fun onDestroy() {
+        playback.release()
         handler.removeCallbacksAndMessages(null); unregisterReceiver(noisy)
         if (runtime.serviceOwner === this) {
             runtime.serviceOwner = null
@@ -63,6 +67,7 @@ class WebSdrService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     companion object {
         const val START = "com.example.sdr.WEBSDR_START"
+        const val REFRESH = "com.example.sdr.WEBSDR_REFRESH"
         const val STOP = "com.example.sdr.WEBSDR_STOP"
     }
 }

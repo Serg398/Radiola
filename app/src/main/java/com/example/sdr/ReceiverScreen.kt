@@ -139,6 +139,7 @@ fun ReceiverScreen(
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
     onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
+    onPlaybackStart: () -> Unit = {},
     batteryPercent: Int = -1,
     batteryCharging: Boolean = false,
     receiverSquelch: ReceiverSquelch = ReceiverSquelch(),
@@ -423,7 +424,7 @@ fun ReceiverScreen(
                         onAction = {
                         if (remote) {
                             if (webSession.active || online.pending) online.disconnect()
-                            else { onStopStream(); online.connect() }
+                            else { onPlaybackStart(); onStopStream(); online.connect() }
                         } else {
                         when {
                             streaming || starting -> onStopStream()

@@ -12,6 +12,7 @@ import android.os.IBinder
 
 class ReceiverService : Service() {
     private val runtime get() = (application as RadiolaApplication).receiver
+    private lateinit var playback: PlaybackNotification
     private var lastNotificationAt = 0L
     private var lastState = ReceiverState.Idle
     private var ownedSessionId = -1L
@@ -25,6 +26,7 @@ class ReceiverService : Service() {
     }
     override fun onCreate() {
         super.onCreate()
+        playback = PlaybackNotification(this, "USB receiver") { runtime.stop() }
         runtime.serviceOwner = this
         ownedSessionId = runtime.session.snapshot().sessionId
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -48,13 +50,16 @@ class ReceiverService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, ReceiverService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return Notification.Builder(this, "receiver").setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText("%.3f MHz  %s  %s".format(java.util.Locale.US, value.requestedHz/1_000_000.0, runtime.mode.label, value.state.name))
+        val title = getString(R.string.app_name)
+        val text = "%.3f MHz  %s  %s".format(java.util.Locale.US, value.requestedHz/1_000_000.0, runtime.mode.label, value.state.name)
+        val builder = Notification.Builder(this, "receiver").setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-            .addAction(Notification.Action.Builder(android.R.drawable.ic_media_pause, "STOP", stop).build()).build()
+        return playback.decorate(builder, title, text, open, stop, value.state == ReceiverState.Running)
     }
     override fun onDestroy() {
+        playback.release()
         runtime.removeObserver(observer)
         if (runtime.serviceOwner === this) {
             runtime.serviceOwner = null
