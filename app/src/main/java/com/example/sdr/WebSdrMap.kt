@@ -36,6 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import android.text.Html
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import android.graphics.RectF
 import android.graphics.Paint
@@ -114,11 +116,25 @@ internal fun WebSdrMap(
     val labelSize = with(density) { 10.sp.toPx() }
     val labelGap = with(density) { 13.dp.toPx() }
     val labelSpacing = with(density) { 11.dp.toPx() }
-    val labels = remember(cities, viewport, zoom, labelSize, labelGap, labelSpacing) {
-        cityPaint.textSize = labelSize
-        val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
-        layoutCityLabels(cities, unit, 2f + 1.3f * log2(zoom), cityPaint, labelGap, labelSpacing)
+    // Label collision layout covers the whole world. Rebuild it off the UI thread,
+    // at discrete density levels; coordinates still follow the exact gesture scale.
+    val labelLevel = kotlin.math.floor(log2(zoom) * 4f).toInt()
+    val labels by produceState<List<CityLabel>>(emptyList(), cities, viewport, labelLevel,
+        labelSize, labelGap, labelSpacing) {
+        // Keep expensive density changes out of an ongoing pinch gesture.
+        kotlinx.coroutines.delay(120)
+        val layoutZoom = Math.pow(2.0, labelLevel / 4.0).toFloat()
+        val unit = min(viewport.width / 360f, viewport.height / 180f) * layoutZoom
+        value = withContext(Dispatchers.Default) {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = android.graphics.Typeface.DEFAULT
+                textSize = labelSize
+            }
+            layoutCityLabels(cities, unit, 2f + 1.3f * log2(layoutZoom), paint, labelGap, labelSpacing)
+        }
     }
+    val landBounds = remember(land) { land.map { it.getBounds() } }
+    val borderBounds = remember(borders) { borders.map { it.getBounds() } }
     fun point(receiver: WebSdrReceiver): Offset {
         val unit = min(viewport.width / 360f, viewport.height / 180f) * zoom
         return Offset(viewport.width / 2f + panX + receiver.lon * unit,
@@ -170,12 +186,18 @@ internal fun WebSdrMap(
                     Offset(0f, y), Offset(size.width, y), 0.5.dp.toPx())
             }
             withTransform({ translate(center.x, center.y); scale(unit, unit, pivot = Offset.Zero) }) {
-                land.forEach { path ->
+                val visible = androidx.compose.ui.geometry.Rect(
+                    -center.x / unit, -center.y / unit,
+                    (size.width - center.x) / unit, (size.height - center.y) / unit)
+                    .inflate(4.dp.toPx() / unit)
+                land.forEachIndexed { index, path ->
+                    if (!landBounds[index].overlaps(visible)) return@forEachIndexed
                     drawPath(path, RadiolaColors.adaptive(Color(0xFFE0EAF6), Color(0xFF16232A)), style = Stroke(4.dp.toPx() / unit))
                     drawPath(path, RadiolaColors.adaptive(Color(0xFFD2E1F2), Color(0xFF26353A)))
                     drawPath(path, RadiolaColors.adaptive(Color(0xFFACBED5), Color(0xFF61706D)).copy(alpha = .65f), style = Stroke(0.6.dp.toPx() / unit))
                 }
-                borders.forEach { path ->
+                borders.forEachIndexed { index, path ->
+                    if (!borderBounds[index].overlaps(visible)) return@forEachIndexed
                     drawPath(path, RadiolaColors.adaptive(Color(0xFF8CA9CE), Color(0xFFAB9C80)).copy(alpha = .55f),
                         style = Stroke(0.65.dp.toPx() / unit))
                 }
@@ -294,13 +316,15 @@ internal fun WebSdrMap(
 private data class CityLabel(val city: MapCity, val width: Float)
 
 /** Resolve density in world coordinates; panning and viewport clipping never change this selection. */
-private fun layoutCityLabels(cities: List<MapCity>, unit: Float, level: Float,
+private suspend fun layoutCityLabels(cities: List<MapCity>, unit: Float, level: Float,
     paint: Paint, gap: Float, spacing: Float): List<CityLabel> {
     if (unit <= 0f) return emptyList()
+    val coroutineContext = currentCoroutineContext()
     val cellSize = paint.textSize * 6f
     val cells = HashMap<Pair<Int, Int>, MutableList<RectF>>()
     return buildList {
         for (city in cities) {
+            coroutineContext.ensureActive()
             if (city.minZoom > level) continue
             val width = paint.measureText(city.name)
             val left = city.lon * unit + gap
