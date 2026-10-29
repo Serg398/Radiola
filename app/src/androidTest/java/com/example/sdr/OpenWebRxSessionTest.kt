@@ -113,6 +113,14 @@ class OpenWebRxSessionTest {
             await("CW tuning was not sent") {
                 commands.any { it.contains("\"mod\":\"cw\"") && it.contains("\"offset_freq\":250") }
             }
+            main { session!!.tune(7_102_000) }
+            await("Frequency-only command was not sent") {
+                commands.filter { it.startsWith("{") }.map { JSONObject(it) }.any {
+                    val params = it.optJSONObject("params")
+                    params?.optLong("offset_freq") == 1250L && params.length() == 1
+                }
+            }
+            main { session!!.tune(7_101_000) }
             main { session!!.selectBand(1) }
             await("Profile command was not sent") { commands.any { it.contains("selectprofile") && it.contains("test|vhf") } }
             assertEquals(1, sockets.size)

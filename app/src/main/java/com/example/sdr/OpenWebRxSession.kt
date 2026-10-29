@@ -87,6 +87,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var fpsAt = 0L
     private data class Row(val token: Long, val bins: FloatArray, val center: Long, val span: Int, val timestampNanos: Long)
     private val pendingRow = AtomicReference<Row?>()
+    private var lastSentTuning: JSONObject? = null
     private val render = object : Runnable {
         override fun run() {
             if (!active) return
@@ -105,7 +106,15 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     }
     private val tuning = LatestCommand<JSONObject>(0, SystemClock::elapsedRealtime,
         { task, delay -> handler.postDelayed(task, delay); Unit }, handler::removeCallbacks) {
-        if (active && initialized && !changingProfile) send("dspcontrol", it)
+        if (active && initialized && !changingProfile) {
+            val previous = lastSentTuning
+            val changed = JSONObject()
+            it.keys().forEach { key ->
+                if (previous == null || !previous.has(key) || previous.opt(key) != it.opt(key))
+                    changed.put(key, it.get(key))
+            }
+            if (changed.length() > 0 && send("dspcontrol", changed)) lastSentTuning = it
+        }
     }
     private val clearWarning = Runnable { if (error == "Frequency outside this profile") error = null }
     private val reconnect = Runnable { if (active) open() }
@@ -308,6 +317,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         centerHz = nextCenter; spanHz = nextSpan; profile = nextProfile
         if (spanHz <= 0) return
         if (changed) {
+            lastSentTuning = null
             val low = centerHz - spanHz / 2
             val high = centerHz + spanHz / 2
             if (!restoreTuning) frequencyHz = config.optLong("start_freq", centerHz + config.optLong("start_offset_freq", 0)).coerceIn(low, high)
@@ -356,9 +366,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         currentBand = choices.indexOfFirst { it.first == profile }.coerceAtLeast(0)
     }
 
-    private fun send(type: String, params: JSONObject) {
-        socket?.send(JSONObject().put("type", type).put("params", params).toString())
-    }
+    private fun send(type: String, params: JSONObject): Boolean =
+        socket?.send(JSONObject().put("type", type).put("params", params).toString()) == true
 
     private fun sendTuning() {
         if (!initialized || changingProfile) return
@@ -438,6 +447,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
 
     private fun closeTransport() {
         generation++; tuning.clear(); pendingRow.set(null)
+        lastSentTuning = null
         landing?.cancel(); landing = null
         socket?.cancel(); socket = null; output?.close(); output = null
         initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0
