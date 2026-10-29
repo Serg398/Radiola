@@ -195,7 +195,10 @@ fun ReceiverScreen(
     val activeHistory = if (remote) webSession.waterfallHistory else waterfallHistory
     val captureSpanHz = if (remote) webSession.bands.getOrNull(webSession.currentBand)?.spanHz
         ?: spectrumSpanHz else spectrumSpanHz
-    val visibleSpanHz = (captureSpanHz / zoom).roundToInt().coerceAtLeast(1)
+    val maxWaterfallZoom = if (remote) maxOf(1f, captureSpanHz / 10_000f) else 16f
+    val effectiveZoom = zoom.coerceIn(1f, maxWaterfallZoom)
+    LaunchedEffect(maxWaterfallZoom) { zoom = zoom.coerceIn(1f, maxWaterfallZoom) }
+    val visibleSpanHz = (captureSpanHz / effectiveZoom).roundToInt().coerceAtLeast(1)
     LaunchedEffect(webSession, receiverSquelch) { webSession.squelchSetting = receiverSquelch }
     val receiving = if (remote) webSession.state == WebSdrConnectionState.Connected else streaming
     val usbFtx = (context.applicationContext as? RadiolaApplication)?.receiver?.session?.ftxDecoder
@@ -542,7 +545,8 @@ fun ReceiverScreen(
                     if (selected != "Spectrum") {
                         Box(Modifier.fillMaxWidth().weight(1f).then(waterfallNavigation(
                             visibleSpanHz = visibleSpanHz,
-                            zoom = zoom,
+                            zoom = effectiveZoom,
+                            maxZoom = maxWaterfallZoom,
                             onStep = step,
                             onZoom = { zoom = it },
                             onContact = {

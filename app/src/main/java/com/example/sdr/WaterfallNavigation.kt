@@ -17,12 +17,14 @@ import kotlin.math.sign
 internal fun waterfallNavigation(
     visibleSpanHz: Int,
     zoom: Float,
+    maxZoom: Float = 16f,
     onStep: (Long) -> Unit,
     onZoom: (Float) -> Unit,
     onContact: () -> Unit,
 ): Modifier {
     val currentSpan by rememberUpdatedState(visibleSpanHz)
     val currentZoom by rememberUpdatedState(zoom)
+    val currentMaxZoom by rememberUpdatedState(maxZoom)
     val currentStep by rememberUpdatedState(onStep)
     val currentZoomChange by rememberUpdatedState(onZoom)
     val currentContact by rememberUpdatedState(onContact)
@@ -50,7 +52,7 @@ internal fun waterfallNavigation(
                         val ids = fingers.map { it.id }
                         val distance = abs(fingers[0].position.x - fingers[1].position.x)
                         if (ids == previousIds && distance >= minimumDistance && previousDistance >= minimumDistance) {
-                            currentZoomChange((currentZoom * distance / previousDistance).coerceIn(1f, 16f))
+                            currentZoomChange((currentZoom * distance / previousDistance).coerceIn(1f, currentMaxZoom))
                         }
                         previousDistance = distance
                         previousIds = ids
