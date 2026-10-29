@@ -37,13 +37,16 @@ class OpenWebRxSessionTest {
         val scheduler = Executors.newSingleThreadScheduledExecutor()
         val commands = CopyOnWriteArrayList<String>()
         val sockets = CopyOnWriteArrayList<WebSocket>()
+        val connections = java.util.concurrent.atomic.AtomicInteger()
         val listener = object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 commands.add(text)
                 if (text.startsWith("SERVER DE CLIENT")) {
                     webSocket.send("CLIENT DE SERVER server=openwebrx version=test")
                     webSocket.send("""{"type":"config","value":{"audio_compression":"none","fft_compression":"none","fft_size":1024}}""")
-                    webSocket.send("""{"type":"config","value":{"sdr_id":"test","profile_id":"hf","center_freq":7100000,"samp_rate":100000,"start_freq":7100000,"start_mod":"am"}}""")
+                    webSocket.send(if (connections.incrementAndGet() == 1)
+                        """{"type":"config","value":{"sdr_id":"test","profile_id":"hf","center_freq":7100000,"samp_rate":100000,"start_freq":7100000,"start_mod":"am"}}"""
+                    else """{"type":"config","value":{"sdr_id":"test","profile_id":"vhf","center_freq":138000000,"samp_rate":100000,"start_freq":138000000,"start_mod":"am"}}""")
                     webSocket.send("""{"type":"profiles","value":[{"id":"test|hf","name":"40m"},{"id":"test|vhf","name":"2m"}]}""")
                     webSocket.send("""{"type":"features","value":{"voice":false,"wsjt-x":true}}""")
                     webSocket.send("""{"type":"modes","value":[
@@ -59,6 +62,17 @@ class OpenWebRxSessionTest {
                     if (message.optString("action") == "start") sockets.addIfAbsent(webSocket)
                     if (message.optJSONObject("params")?.optString("secondary_mod") == "ft8") {
                         webSocket.send("""{"type":"secondary_demod","value":{"message":"CQ TEST AA00","db":-12}}""")
+                    }
+                    if (message.optString("type") == "selectprofile" &&
+                        message.optJSONObject("params")?.optString("profile") == "test|hf") {
+                        // Some servers publish identity before the new geometry.
+                        webSocket.send("""{"type":"config","value":{"profile_id":"hf"}}""")
+                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":7100000,"start_freq":7100000,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
+                    }
+                    if (message.optString("type") == "selectprofile" &&
+                        message.optJSONObject("params")?.optString("profile") == "test|vhf") {
+                        webSocket.send("""{"type":"config","value":{"profile_id":"vhf"}}""")
+                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000,"start_freq":138000000,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
                     }
                 }
             }
@@ -121,21 +135,26 @@ class OpenWebRxSessionTest {
                 }
             }
             main { session!!.tune(7_101_000) }
-            main { session!!.selectBand(1) }
-            await("Profile command was not sent") { commands.any { it.contains("selectprofile") && it.contains("test|vhf") } }
             assertEquals(1, sockets.size)
             sockets.first().close(1011, "test reconnect")
             await("Session did not reconnect") { sockets.size > 1 && session!!.state == WebSdrConnectionState.Connected }
             main {
                 assertEquals(DemodulationMode.CW, session!!.mode)
                 assertEquals(7_101_000L, session!!.frequencyHz)
+                assertEquals(7_100_000L, session!!.frame!!.centerFrequencyHz)
             }
+            assertTrue("Selected HF profile was not restored", commands.any { it.contains("selectprofile") && it.contains("test|hf") })
+            main { session!!.selectBand(1) }
+            await("Profile command was not sent") { commands.any { it.contains("selectprofile") && it.contains("test|vhf") } }
+            Thread.sleep(100)
+            main { assertEquals("Partial profile config changed RF frequency", 7_101_000L, session!!.frequencyHz) }
+            await("New profile geometry was not applied") { session!!.currentBand == 1 && session!!.frequencyHz == 138_000_000L }
             sockets.last().close(1011, "test cancel retry")
             await("Retry was not scheduled") { session!!.state == WebSdrConnectionState.Connecting }
             main { session!!.disconnect() }
-            val connections = sockets.size
+            val connectionCount = sockets.size
             Thread.sleep(1500)
-            assertEquals("Disconnected receiver reconnected", connections, sockets.size)
+            assertEquals("Disconnected receiver reconnected", connectionCount, sockets.size)
         } finally {
             main { session?.disconnect() }
             scheduler.shutdownNow(); sockets.forEach { it.close(1000, null) }; server.shutdown(); activity.close()
@@ -151,7 +170,8 @@ class OpenWebRxSessionTest {
         try {
             main {
                 runtime.selectSource("OpenWebRX")
-                runtime.select(WebSdrReceiver(address!!, java.net.URI(address).host, "", 0f, 0f, null, emptyList()))
+                runtime.select(runtime.openWebRxReceiver?.takeIf { it.url == address }
+                    ?: WebSdrReceiver(address!!, java.net.URI(address).host, "", 0f, 0f, null, emptyList()))
                 runtime.connect()
             }
             await("Live server did not provide audio and FFT: ${runtime.session.error}", 40_000) {
@@ -182,6 +202,20 @@ class OpenWebRxSessionTest {
                 await("Requested mode did not start", 20_000) {
                     runtime.session.serverModeId == requestedMode && runtime.session.state == WebSdrConnectionState.Connected &&
                         (requestedMode != "wfm" || runtime.session.audioSampleRate == 48000)
+                }
+            }
+            if (InstrumentationRegistry.getArguments().getString("openwebrx_reconnect") == "true") {
+                var selected = -1
+                var frequency = 0L
+                main {
+                    selected = runtime.session.currentBand; frequency = runtime.session.frequencyHz
+                    val socket = OpenWebRxSession::class.java.getDeclaredField("socket").apply { isAccessible = true }
+                    (socket.get(runtime.session) as WebSocket).cancel()
+                }
+                await("Connection interruption was not detected") { runtime.session.state == WebSdrConnectionState.Connecting }
+                await("Selected profile/frequency did not recover", 40_000) {
+                    runtime.session.state == WebSdrConnectionState.Connected && runtime.session.currentBand == selected &&
+                        runtime.session.frequencyHz == frequency
                 }
             }
             activity.recreate()

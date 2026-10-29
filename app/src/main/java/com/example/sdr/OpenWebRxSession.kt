@@ -76,6 +76,23 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var profile = ""
     private var profiles = emptyList<Pair<String, String>>()
     private val knownBands = mutableMapOf<String, WebSdrTunerBand>()
+    private data class Resume(val profile: String, val frequency: Long?, val mode: DemodulationMode,
+        val descriptor: OpenWebRxMode?, val bandwidth: Int, val defaultBandwidth: Boolean)
+    private var resume: Resume? = null
+    private var requestedProfile: String? = null
+    private var profilesFresh = false
+    private var restoreSent = false
+    private var serverConfig = JSONObject()
+    private var geometryRevision = 0L
+    private var requestedGeometryRevision = -1L
+    private val applyConfig = Runnable { configure(serverConfig) }
+    private fun queueConfig(config: JSONObject) {
+        if (config.has("center_freq") || config.has("samp_rate")) geometryRevision++
+        config.keys().forEach { serverConfig.put(it, config.get(it)) }
+        // A profile's identity, center and start frequency can arrive separately.
+        handler.removeCallbacks(applyConfig)
+        handler.postDelayed(applyConfig, 50)
+    }
     private var initialized = false
     private var changingProfile = false
     private var frames = 0
@@ -92,7 +109,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         override fun run() {
             if (!active) return
             pendingRow.getAndSet(null)?.let { row ->
-                if (row.token == generation && row.center == centerHz && row.span == spanHz) {
+                if (initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
                     val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
                     if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
                     waterfallHistory.append(captured); frame = captured; frames++; waterfallWarning = null
@@ -183,7 +200,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         val origin = base.resolve("/")!!.toString().removeSuffix("/")
         val request = Request.Builder().url(base.resolve("ws/")!!).header("Origin", origin).build()
         val ownedOutput = WebSdrAudioOutput(
-            onPlaying = { publish(token) { state = WebSdrConnectionState.Connected; error = null; retry = 0 } },
+            onPlaying = { publish(token) { if (initialized && !changingProfile) { state = WebSdrConnectionState.Connected; error = null; retry = 0 } } },
             onError = { message -> publish(token) { recover(message) } },
             onSignal = { value -> publish(token) { signalDbm = value } },
             squelchSetting = { squelchSetting },
@@ -225,7 +242,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                             fftSize = config.optInt("fft_size", fftSize)
                             captureCenter = config.optLong("center_freq", captureCenter)
                             captureSpan = config.optInt("samp_rate", captureSpan)
-                            publish(token) { configure(config) }
+                            publish(token) { queueConfig(config) }
                         }
                         "profiles" -> {
                             val entries = message.getJSONArray("value")
@@ -311,11 +328,33 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             val old = profile.split('|')
             config.optString("sdr_id", old.getOrElse(0) { "" }) + "|" + config.optString("profile_id", old.getOrElse(1) { "" })
         } else profile
-        val restoreTuning = !initialized && retry > 0 && nextProfile == profile &&
-            nextCenter == centerHz && nextSpan == spanHz
+        val saved = resume
+        if (saved == null && requestedProfile != null) {
+            if (nextProfile != requestedProfile) return
+            val known = knownBands[nextProfile]
+            val unchangedGeometry = known != null && known.centerHz == nextCenter && known.spanHz == nextSpan
+            if (geometryRevision <= requestedGeometryRevision && !unchangedGeometry) return
+            val start = config.optLong("start_freq", nextCenter + config.optLong("start_offset_freq", 0))
+            if (start !in (nextCenter - nextSpan / 2)..(nextCenter + nextSpan / 2)) return
+        }
+        if (saved != null) {
+            if (nextProfile != saved.profile) { restoreProfile(); return }
+            // Do not combine a new profile ID with the previous profile's geometry.
+            if (saved.frequency != null && saved.frequency !in
+                (nextCenter - nextSpan / 2)..(nextCenter + nextSpan / 2)) return
+        }
+        val restoreTuning = saved != null
         val changed = !initialized || nextCenter != centerHz || nextSpan != spanHz || nextProfile != profile
         centerHz = nextCenter; spanHz = nextSpan; profile = nextProfile
         if (spanHz <= 0) return
+        if (saved != null) {
+            mode = saved.mode; selectedMode = saved.descriptor
+            initialModeId = selectedMode?.id ?: mode.name.lowercase()
+            bandwidthHz = saved.bandwidth.coerceIn(100, bandwidthLimit)
+            bandwidthDefault = saved.defaultBandwidth
+            frequencyHz = saved.frequency ?: config.optLong("start_freq", centerHz)
+            resume = null
+        }
         if (changed) {
             lastSentTuning = null
             val low = centerHz - spanHz / 2
@@ -339,7 +378,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             knownBands[profile] = WebSdrTunerBand(0, "Current", centerHz, spanHz, frequencyHz, 0)
             rebuildBands()
             frame = null; pendingRow.set(null); waterfallHistory = WaterfallHistory(1024)
-            changingProfile = false; initialized = true
+            changingProfile = false; initialized = true; requestedProfile = null
             sendTuning()
             tuning.flush()
             socket?.send(JSONObject().put("type", "dspcontrol").put("action", "start").toString())
@@ -347,17 +386,30 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         }
     }
 
+    private fun restoreProfile() {
+        val saved = resume ?: return
+        if (!profilesFresh || restoreSent) return
+        if (profiles.none { it.first == saved.profile }) {
+            fail("Selected profile is no longer available"); return
+        }
+        restoreSent = true
+        send("selectprofile", JSONObject().put("profile", saved.profile))
+        Log.i("OpenWebRx", "Restoring profile ${saved.profile} frequency=${saved.frequency}")
+    }
+
     private fun updateProfiles(entries: JSONArray) {
+        profilesFresh = true
         profiles = (0 until entries.length()).mapNotNull {
             val item = entries.optJSONObject(it) ?: return@mapNotNull null
             item.optString("id").takeIf(String::isNotBlank)?.let { id -> id to item.optString("name", id) }
         }.distinctBy { it.first }
         rebuildBands()
+        restoreProfile()
     }
 
     private fun rebuildBands() {
         val choices = profiles.toMutableList()
-        if (choices.none { it.first == profile }) choices.add(profile to "Current")
+        if (profile.isNotBlank() && choices.none { it.first == profile }) choices.add(profile to "Current")
         profiles = choices
         bands = choices.mapIndexed { index, (id, name) ->
             knownBands[id]?.copy(index = index, name = name)
@@ -425,7 +477,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override fun selectBand(index: Int) {
         if (!active || index !in profiles.indices || index == currentBand) return
         tuning.clear(); changingProfile = true
-        send("selectprofile", JSONObject().put("profile", profiles[index].first))
+        requestedProfile = profiles[index].first
+        requestedGeometryRevision = geometryRevision
+        send("selectprofile", JSONObject().put("profile", requestedProfile))
         openedAt = SystemClock.elapsedRealtime(); lastAudioAt = 0
     }
     override fun requestMode(value: DemodulationMode) {
@@ -448,6 +502,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private fun closeTransport() {
         generation++; tuning.clear(); pendingRow.set(null)
         lastSentTuning = null
+        profilesFresh = false; restoreSent = false; serverConfig = JSONObject()
+        handler.removeCallbacks(applyConfig)
         landing?.cancel(); landing = null
         socket?.cancel(); socket = null; output?.close(); output = null
         initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0
@@ -455,6 +511,12 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         cwDecoder.configure(false, frequencyHz); ftxDecoder.configure(null, frequencyHz)
     }
     private fun recover(message: String) {
+        if (resume == null && profile.isNotBlank()) {
+            val target = requestedProfile ?: profile
+            resume = Resume(target, if (target == profile) frequencyHz else knownBands[target]?.defaultHz,
+                mode, selectedMode, bandwidthHz, bandwidthDefault)
+        }
+        Log.i("OpenWebRx", "Recovering: $message; selected=${resume?.profile}")
         closeTransport(); error = "$message; reconnecting"; state = WebSdrConnectionState.Connecting
         handler.removeCallbacks(reconnect)
         handler.postDelayed(reconnect, (1000L shl retry++.coerceAtMost(5)).coerceAtMost(30_000))
@@ -466,6 +528,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         handler.removeCallbacksAndMessages(null); closeTransport()
         bands = emptyList(); knownBands.clear(); profiles = emptyList(); profile = ""
         modeDescriptors = emptyList(); features = emptyMap(); selectedMode = null; decodedText = ""
+        resume = null; requestedProfile = null
         centerHz = 0; spanHz = 0; frame = null; waterfallHistory = WaterfallHistory(1024)
         frames = 0; frameId = 0; retry = 0; fpsAt = SystemClock.elapsedRealtime()
         error = null; waterfallWarning = null; state = WebSdrConnectionState.Idle
