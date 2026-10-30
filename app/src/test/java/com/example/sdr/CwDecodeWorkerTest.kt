@@ -21,7 +21,9 @@ class CwDecodeWorkerTest {
             assertFalse(worker.decodingEnabled)
             assertEquals("", worker.snapshot().text)
             worker.requestDecoding(true)
-            worker.offer(pcm, pcm.size, 8000, 1)
+            // Real playback callbacks may contain a single sample. These must
+            // not exhaust the queue while the decoder is processing a window.
+            pcm.forEach { worker.offer(shortArrayOf(it), 1, 8000, 1) }
             val deadline = System.nanoTime() + 2_000_000_000L
             while (worker.snapshot().text.isBlank() && System.nanoTime() < deadline) Thread.sleep(5)
             assertEquals("H", worker.snapshot().text.trim())

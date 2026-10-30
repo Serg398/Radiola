@@ -61,7 +61,7 @@ class ReceiverRuntime(private val context: Context) {
             if (id == session.snapshot().sessionId && session.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
                 stop("Audio output failed: $message")
         }
-    })
+    }, context)
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())

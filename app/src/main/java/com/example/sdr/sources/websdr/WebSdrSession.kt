@@ -39,10 +39,12 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
     override fun ftxInformation() = ftxDecoder.snapshot()
     override fun clearFtx() = ftxDecoder.clear()
     override fun cwInformation() = cwDecoder.snapshot()
+    override val cwBackend get() = cwDecoder.backend
+    override fun selectCwBackend(value: com.example.sdr.decoders.cw.CwBackend) = cwDecoder.selectBackend(value)
     override val cwDecodingEnabled get() = cwDecoder.decodingEnabled
     override fun clearCw() = cwDecoder.clear()
     override fun enableCw(value: Boolean) = cwDecoder.requestDecoding(value)
-    private val cwDecoder = CwDecodeWorker()
+    private val cwDecoder = CwDecodeWorker(context)
     private val ftxDecoder = FtxDecodeWorker()
     override var state by mutableStateOf(ReceiverConnectionState.Idle)
         private set

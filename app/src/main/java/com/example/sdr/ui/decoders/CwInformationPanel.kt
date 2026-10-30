@@ -10,8 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.*
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.example.sdr.decoders.cw.CwBackend
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,7 +29,9 @@ import com.example.sdr.ui.theme.RadiolaColors
 
 @Composable
 internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
-    decodeEnabled: Boolean, onDecodeChange: (Boolean) -> Unit) {
+    decodeEnabled: Boolean, onDecodeChange: (Boolean) -> Unit,
+    backend: CwBackend = CwBackend.CLASSIC, onBackendChange: (CwBackend) -> Unit = {}) {
+    var menu by remember { mutableStateOf(false) }
     val warm = RadiolaColors.primary
     val muted = RadiolaColors.secondaryText
     val headerStyle = TextStyle(lineHeight = 13.sp, platformStyle = PlatformTextStyle(includeFontPadding = false))
@@ -38,8 +42,17 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.width(80.dp).padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("CW", color = warm, fontSize = 18.sp)
-            Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted, fontSize = 11.sp)
-            Text(if (info.toneHz > 0) "${info.toneHz} Hz" else "AUTO TONE",
+            Box {
+                Text(backend.label + " \u25be", color = muted, fontSize = 11.sp,
+                    modifier = Modifier.clickable { menu = true }.padding(vertical = 4.dp))
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    CwBackend.entries.forEach { value ->
+                        DropdownMenuItem(text = { Text(value.label) }, onClick = { menu = false; onBackendChange(value) })
+                    }
+                }
+            }
+            if (backend == CwBackend.CLASSIC) Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted, fontSize = 11.sp)
+            if (backend == CwBackend.CLASSIC) Text(if (info.toneHz > 0) "${info.toneHz} Hz" else "AUTO TONE",
                 color = if (info.tonePresent) warm else muted, fontSize = 10.sp)
         }
         Box(Modifier.width(1.dp).fillMaxHeight().padding(top = 5.dp, bottom = 4.dp).background(RadiolaColors.border))
@@ -63,7 +76,7 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
             Box(Modifier.weight(1f).fillMaxWidth()
                 .background(RadiolaColors.primaryTint.copy(alpha = .12f), RoundedCornerShape(4.dp))
                 .verticalScroll(scroll).padding(horizontal = 6.dp, vertical = 4.dp)) {
-                Text(info.text.trim(), color = RadiolaColors.text, fontSize = 13.sp,
+                Text(if (info.status.isNotBlank()) info.status else info.text.trim(), color = RadiolaColors.text, fontSize = 13.sp,
                     lineHeight = 19.sp, letterSpacing = .25.sp,
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                     fontFamily = FontFamily.Monospace)

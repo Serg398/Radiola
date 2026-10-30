@@ -35,6 +35,8 @@ internal fun ModulationInformationPanel(
     onCwClear: () -> Unit = {},
     cwDecodeEnabled: Boolean = false,
     onCwDecodeChange: (Boolean) -> Unit = {},
+    cwBackend: com.example.sdr.decoders.cw.CwBackend = com.example.sdr.decoders.cw.CwBackend.CLASSIC,
+    onCwBackendChange: (com.example.sdr.decoders.cw.CwBackend) -> Unit = {},
     ftxMode: FtxMode? = null,
     ftx: FtxInformation = FtxInformation(),
     onFtxClear: () -> Unit = {},
@@ -46,7 +48,7 @@ internal fun ModulationInformationPanel(
     if (ftxMode != null) FtxInformationRoute(ftxMode, ftx, onFtxClear, source, serverUrl)
     else when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)
-        DemodulationMode.CW -> CwInformationPanel(cw, onCwClear, cwDecodeEnabled, onCwDecodeChange)
+        DemodulationMode.CW -> CwInformationPanel(cw, onCwClear, cwDecodeEnabled, onCwDecodeChange, cwBackend, onCwBackendChange)
         else -> otherModes()
     }
     }

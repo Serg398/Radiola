@@ -42,6 +42,10 @@ internal class ReceiverPresentation(
             session.bandwidthHz, session.state == ReceiverConnectionState.Connected)
         else ReceiverUiState(source, local.frequencyHz, local.mode, local.bandwidthHz, local.receiving)
     }
+    val cwBackend get() = if (online.source.online) online.session.cwBackend else usb.session.cwDecoder.backend
+    fun selectCwBackend(value: com.example.sdr.decoders.cw.CwBackend) {
+        if (online.source.online) online.session.selectCwBackend(value) else usb.session.cwDecoder.selectBackend(value)
+    }
     val cwEnabled get() = if (online.source.online) online.session.cwDecodingEnabled else usb.session.cwDecoder.decodingEnabled
 
     init {

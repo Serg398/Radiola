@@ -6,7 +6,7 @@ data class CwCharacter(val value: Char, val confidence: Int, val alternative: Ch
 
 data class CwInformation(val text: String = "", val pending: String = "", val wpm: Int = 0,
     val toneHz: Int = 0, val tonePresent: Boolean = false,
-    val characters: List<CwCharacter> = emptyList())
+    val characters: List<CwCharacter> = emptyList(), val status: String = "")
 
 /** Streaming PCM detector. A 10 ms Goertzel bank tracks a CW tone without modifying audio. */
 internal class CwDecoder {

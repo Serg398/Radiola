@@ -42,6 +42,8 @@ internal interface OnlineReceiverSession {
     fun ftxInformation(): FtxInformation
     fun clearFtx()
     fun cwInformation(): CwInformation
+    val cwBackend: com.example.sdr.decoders.cw.CwBackend get() = com.example.sdr.decoders.cw.CwBackend.CLASSIC
+    fun selectCwBackend(value: com.example.sdr.decoders.cw.CwBackend) = Unit
     val cwDecodingEnabled: Boolean
     fun clearCw()
     fun enableCw(value: Boolean)

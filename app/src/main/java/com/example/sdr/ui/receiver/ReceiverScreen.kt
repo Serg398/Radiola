@@ -464,6 +464,7 @@ internal fun ReceiverScreen(
                 cwInformation, presentation::clearCw,
                 presentation.cwEnabled,
                 presentation::enableCw,
+                cwBackend = presentation.cwBackend, onCwBackendChange = presentation::selectCwBackend,
                 ftxMode = ftxMode, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
                 source = source, serverUrl = webSdrReceiverUrl,
             ) {}

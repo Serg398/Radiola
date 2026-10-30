@@ -15,11 +15,11 @@ import java.util.concurrent.Executors
 
 /** USB/native/audio ownership stays on one worker; control state is independently cancellable. */
 class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSnapshot) -> Unit,
-    onAudioError: (String, Long) -> Unit = { _, _ -> }) {
+    onAudioError: (String, Long) -> Unit = { _, _ -> }, context: android.content.Context? = null) {
     private val executor = Executors.newSingleThreadExecutor()
     private var connection: UsbDeviceConnection? = null
     @Volatile private var requestedDevice: UsbDevice? = null
-    internal val cwDecoder = CwDecodeWorker()
+    internal val cwDecoder = CwDecodeWorker(context)
     internal val ftxDecoder = FtxDecodeWorker()
     private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
