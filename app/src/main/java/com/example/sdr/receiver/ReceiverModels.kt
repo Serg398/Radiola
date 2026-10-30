@@ -10,7 +10,7 @@ internal enum class ReceiverSource(val storedValue: String, val online: Boolean)
 
 internal enum class ReceiverConnectionState { Idle, Connecting, Connected, Error }
 
-internal data class ReceiverModeOption(val id: String, val label: String)
+internal data class ReceiverModeOption(val id: String, val label: String, val digital: Boolean = false)
 
 internal data class ReceiverBand(
     val index: Int, val name: String, val centerHz: Long, val spanHz: Int, val defaultHz: Long,

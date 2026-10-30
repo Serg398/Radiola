@@ -42,7 +42,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var selectedMode by mutableStateOf<OpenWebRxMode?>(null)
     private var initialModeId = "am"
     private val availableModes get() = modeDescriptors.filter { candidate -> candidate.requirements.all { features[it] == true } }
-    override val serverModes get() = availableModes.map { ReceiverModeOption(it.id, it.label) }
+    override val serverModes get() = availableModes.map {
+        ReceiverModeOption(it.id, it.label, it.secondary || it.id !in setOf("am", "nfm", "fm", "wfm", "usb", "lsb", "cw", "sam"))
+    }
     override val serverModeId get() = selectedMode?.id
     override val modeLabel get() = selectedMode?.label ?: mode.label
     override val serverDataMode get() = selectedMode?.secondary == true

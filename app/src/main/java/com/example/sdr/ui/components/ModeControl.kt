@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -26,13 +27,13 @@ internal fun ModeControl(
     serverModeLabel: String? = null,
     onServerMode: (String) -> Unit = {},
 ) {
-    var expanded by remember(remote) { mutableStateOf(false) }
+    var expanded by remember(remote, serverModes != null) { mutableStateOf(false) }
     val modes = listOf("AM" to DemodulationMode.AM) +
         (if (remote) emptyList() else listOf("WFM" to DemodulationMode.WFM)) +
         listOf("FM" to DemodulationMode.NFM, "USB" to DemodulationMode.USB,
             "LSB" to DemodulationMode.LSB, "CW" to DemodulationMode.CW)
-    val selected = if (serverModes != null) serverModeLabel.orEmpty()
-        else ftxMode?.name ?: modes.firstOrNull { it.second == mode }?.first.orEmpty()
+    val selected = ftxMode?.name ?: if (serverModes != null) serverModeLabel.orEmpty()
+        else modes.firstOrNull { it.second == mode }?.first.orEmpty()
     Box {
         Column(Modifier.width(72.dp).height(28.dp)
             .toolbarButtonSurface()
@@ -42,7 +43,7 @@ internal fun ModeControl(
             ToolbarValue(selected)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            containerColor = RadiolaColors.surface) {
+            modifier = Modifier.heightIn(max = 340.dp), containerColor = RadiolaColors.surface) {
             @Composable
             fun Entry(label: String, enabled: Boolean = true, action: () -> Unit) {
                 val active = label == selected
@@ -54,27 +55,54 @@ internal fun ModeControl(
                     Text(label, color = color.copy(alpha = if (enabled) 1f else .4f), fontSize = 11.sp)
                 }
             }
-            if (serverModes != null) {
+            @Composable
+            fun Header(title: String, subtitle: String) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = RadiolaColors.primary, fontSize = 10.sp, letterSpacing = 1.sp)
+                    Text(subtitle, color = RadiolaColors.secondaryText, fontSize = 9.sp,
+                        modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+            Header("LOCAL", if (remote) "DECODERS / SERVER AUDIO" else "MODULATION")
+            if (!remote) {
+                Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    modes.forEach { (label, value) -> Entry(label) { onMode(value) } }
+                }
+                Text("DECODERS", color = RadiolaColors.secondaryText, fontSize = 9.sp,
+                    modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 3.dp))
+            }
+            Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                FtxMode.entries.forEach { value -> Entry(value.name, ftxEnabled) { onFtx(value) } }
+            }
+            if (remote) {
+                HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = RadiolaColors.border)
+                Header("SERVER", "MODULATION")
+            }
+            if (remote && serverModes != null) {
                 if (serverModes.isEmpty()) Text("Connect to load modes", color = RadiolaColors.secondaryText,
                     fontSize = 11.sp, modifier = Modifier.padding(12.dp))
-                serverModes.chunked(5).forEach { row ->
-                    Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        row.forEach { option ->
-                            val active = option.id == serverModeId
-                            Box(Modifier.width(82.dp).height(36.dp)
-                                .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
-                                .clickable { expanded = false; onServerMode(option.id) }, contentAlignment = Alignment.Center) {
-                                Text(option.label, color = if (active) RadiolaColors.onActiveMode else RadiolaColors.text,
-                                    fontSize = 11.sp, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                listOf(serverModes.filterNot { it.digital }, serverModes.filter { it.digital }).forEachIndexed { index, options ->
+                    if (index == 1 && options.isNotEmpty()) Text("DIGITAL", color = RadiolaColors.secondaryText,
+                        fontSize = 9.sp, modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 3.dp))
+                    options.chunked(5).forEach { row ->
+                        Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            row.forEach { option ->
+                                val active = ftxMode == null && option.id == serverModeId
+                                Box(Modifier.width(82.dp).height(36.dp)
+                                    .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
+                                    .clickable { expanded = false; onServerMode(option.id) }, contentAlignment = Alignment.Center) {
+                                    Text(option.label, color = if (active) RadiolaColors.onActiveMode else RadiolaColors.text,
+                                        fontSize = 11.sp, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
                             }
                         }
                     }
                 }
-            } else Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp),
+            } else if (remote) Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-            modes.forEach { (label, value) -> Entry(label) { onMode(value) } }
-            FtxMode.entries.forEach { value -> Entry(value.name, ftxEnabled) { onFtx(value) } }
+                modes.forEach { (label, value) -> Entry(label) { onMode(value) } }
             }
         }
     }

@@ -296,7 +296,8 @@ internal fun ReceiverScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ModeControl(activeMode, ftxMode, remote, !remote || webSession.active,
+                    ModeControl(activeMode, ftxMode, remote,
+                        !remote || webSession.active && (!openWebRx || webSession.serverModes?.any { it.id == "usb" } == true),
                         serverModes = if (openWebRx) webSession.serverModes else null,
                         serverModeId = webSession.serverModeId,
                         serverModeLabel = webSession.modeLabel,
