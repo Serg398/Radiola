@@ -2,6 +2,7 @@ package com.example.sdr.receiver
 
 enum class TuningStep(val label: String, val fixedHz: Long?) {
     AUTO("AUTO", null),
+    KHZ_0_5("0,5 kHz", 500L),
     KHZ_1("1 kHz", 1_000L),
     KHZ_10("10 kHz", 10_000L),
     KHZ_12_5("12,5 kHz", 12_500L),
@@ -22,6 +23,7 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     }
 
     fun shortLabel(hz: Long): String = when {
+        hz == 500L -> "0,5k"
         hz == 12_500L -> "12,5k"
         hz >= 1_000_000L -> "${hz / 1_000_000}M"
         else -> "${hz / 1000}k"

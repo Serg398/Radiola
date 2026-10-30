@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,6 +54,9 @@ import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+
+private const val SIGNAL_METER_MAXIMUM = 134f // S9 (54 dB above S0) + 80 dB.
 
 @Composable
 internal fun WebSdrSignalMeter(session: OnlineReceiverSession, squelch: ReceiverSquelch, open: Boolean,
@@ -69,6 +73,18 @@ internal fun SignalMeter(
     remote: Boolean = false, signalAvailable: Boolean = true,
 ) {
     val currentSquelch by rememberUpdatedState(squelch)
+    val currentSignal by rememberUpdatedState(dbfs)
+    val currentSignalAvailable by rememberUpdatedState(signalAvailable)
+    var readoutSignal by remember { mutableStateOf(dbfs) }
+    // Keep the bar responsive while giving the numeric reading time to settle.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(250)
+            readoutSignal = if (currentSignalAvailable) {
+                readoutSignal + (currentSignal - readoutSignal) * .4f
+            } else currentSignal
+        }
+    }
     val displayedSignal = remember { Animatable(dbfs) }
     LaunchedEffect(dbfs) {
         displayedSignal.animateTo(dbfs, tween(
@@ -82,18 +98,19 @@ internal fun SignalMeter(
     fun setThreshold(x: Float) {
         val left = with(density) { 10.dp.toPx() }
         val right = maxOf(left + 1f, meterWidth - with(density) { 66.dp.toPx() })
-        val db = (-90f + 104f * ((x - left) / (right - left)).coerceIn(0f, 1f))
+        val db = (-90f + SIGNAL_METER_MAXIMUM * ((x - left) / (right - left)).coerceIn(0f, 1f))
             .coerceIn(-90f, -6f).roundToInt().toFloat()
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
     val rawLevel = (displayedSignal.value + 90f).coerceAtLeast(0f)
-    val maximum = 104f
+    val maximum = SIGNAL_METER_MAXIMUM
     val level = rawLevel.coerceAtMost(maximum)
     fun position(value: Float): Float = value / maximum
-    val readingLevel = level
+    val readingLevel = (readoutSignal + 90f).coerceIn(0f, maximum)
+    val overS9 = (readingLevel - 54f).roundToInt().coerceAtLeast(0)
     val reading = if (!signalAvailable) "S0" else if (readingLevel <= 54f) "S${(readingLevel / 6f).roundToInt()}"
-        else "S9 +${(readingLevel - 54f).roundToInt()}"
+        else if (overS9 == 0) "S9" else "S9 +$overS9"
     val labelPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = android.graphics.Paint.Align.CENTER
@@ -142,7 +159,7 @@ internal fun SignalMeter(
             val barHeight = 5.dp.toPx()
             val labelY = 13.dp.toPx()
             val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7",
-                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50")
+                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50", 134f to "+80")
             labelPaint.textAlign = android.graphics.Paint.Align.CENTER
             labelPaint.textSize = 9.sp.toPx()
             for ((value, label) in ticks) {
@@ -184,7 +201,15 @@ internal fun SignalMeter(
             labelPaint.color = RadiolaColors.primary.toArgb()
             labelPaint.textSize = 12.sp.toPx()
             labelPaint.isFakeBoldText = true
-            drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 12.dp.toPx(), labelPaint)
+            if (signalAvailable && overS9 > 10) {
+                val prefix = "S9 "
+                drawContext.canvas.nativeCanvas.drawText(prefix, readoutX, 12.dp.toPx(), labelPaint)
+                val valueX = readoutX + labelPaint.measureText(prefix)
+                labelPaint.color = RadiolaColors.adaptive(Color(0xFFC62828), Color(0xFFFF7373)).toArgb()
+                drawContext.canvas.nativeCanvas.drawText(reading.removePrefix(prefix), valueX, 12.dp.toPx(), labelPaint)
+            } else {
+                drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 12.dp.toPx(), labelPaint)
+            }
             labelPaint.isFakeBoldText = false
             labelPaint.color = RadiolaColors.secondaryText.toArgb()
             labelPaint.textSize = 9.sp.toPx()
