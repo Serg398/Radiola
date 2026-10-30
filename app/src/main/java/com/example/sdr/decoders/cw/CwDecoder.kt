@@ -1,10 +1,12 @@
 package com.example.sdr.decoders.cw
 
-import com.example.sdr.R
 import kotlin.math.*
 
+data class CwCharacter(val value: Char, val confidence: Int, val alternative: Char? = null)
+
 data class CwInformation(val text: String = "", val pending: String = "", val wpm: Int = 0,
-    val toneHz: Int = 0, val tonePresent: Boolean = false)
+    val toneHz: Int = 0, val tonePresent: Boolean = false,
+    val characters: List<CwCharacter> = emptyList())
 
 /** Streaming PCM detector. A 10 ms Goertzel bank tracks a CW tone without modifying audio. */
 internal class CwDecoder {
@@ -30,10 +32,11 @@ internal class CwDecoder {
     private var candidate = false
     private var candidateCount = 0
     private var edgeAt = 0.0
-    private var unit = 60.0
+    private val timing = CwTimingModel()
+    private val unit get() = timing.dotMs
     private var marks = 0
-    private data class Timing(val duration: Double, val mark: Boolean)
-    private val timings = ArrayDeque<Timing>()
+    private val characters = ArrayList<CwCharacter>()
+    private val probationCharacters = ArrayList<CwCharacter>()
     private val probation = StringBuilder()
     private var locked = false
     private var credibleMarks = 0
@@ -47,7 +50,7 @@ internal class CwDecoder {
     private val text = StringBuilder()
 
     fun information() = CwInformation(text.toString(), symbols.toString(),
-        if (marks >= 3) (1200 / unit).roundToInt() else 0, tone, keyed)
+        if (marks >= 3) (1200 / unit).roundToInt() else 0, tone, keyed, characters.toList())
 
     fun process(samples: ShortArray, sampleRate: Int, channels: Int = 1) {
         require(sampleRate in 4000..48000 && channels in 1..2)
@@ -57,7 +60,7 @@ internal class CwDecoder {
             frequencies.indices.forEach { coefficients[it] = 2 * cos(2 * PI * frequencies[it] / rate) }
             position = 0; first.fill(0.0); second.fill(0.0); energy = 0.0
             keyed = false; candidateCount = 0; symbols.clear(); edgeAt = clock
-            durations.clear(); markFrequencies.clear(); probation.clear(); timings.clear()
+            durations.clear(); markFrequencies.clear(); probation.clear(); probationCharacters.clear(); timing.reset()
             previousDetected = false; phases.fill(0.0); locked = false; credibleMarks = 0
             peak = 0.0; noiseFloor = 0.0; amplitudeCount = 0; amplitudeIndex = 0
         }
@@ -84,7 +87,9 @@ internal class CwDecoder {
                 amplitudeCount = min(amplitudeCount + 1, amplitudes.size)
                 if (amplitudeCount >= 30 && amplitudeIndex % 10 == 0) {
                     val sorted = amplitudes.copyOf(amplitudeCount).apply { sort() }
-                    noiseFloor = sorted[(sorted.size * .2).toInt()]
+                    // Long hand-keyed dashes can occupy >80% of this window.
+                    // Keep the noise estimate in the gaps instead of learning the carrier.
+                    noiseFloor = sorted[(sorted.size * .1).toInt()]
                 }
                 thresholdOn = max(.0008, noiseFloor + (peak - noiseFloor) * .45)
                 thresholdOff = max(.0006, noiseFloor + (peak - noiseFloor) * .25)
@@ -128,60 +133,50 @@ internal class CwDecoder {
                     (spread < 12.0 || locked && (spread < 30.0 || markFrequencies.size < 2))
                 if (clean) {
                     if (spread < 12.0) lastCoherentMark = clock
-                    learn(duration, true)
+                    timing.observe(duration, true)
                     durations.add(duration)
                     symbols.clear()
-                    durations.forEach { symbols.append(if (it > unit * 2) '-' else '.') }
+                    durations.forEach { symbols.append(if (it > timing.markBoundaryMs) '-' else '.') }
                     credibleMarks++
                     marks++
-                    if (!locked && credibleMarks >= 4) { locked = true; text.append(probation); probation.clear() }
+                    if (!locked && credibleMarks >= 4) { locked = true; text.append(probation); characters.addAll(probationCharacters); probation.clear(); probationCharacters.clear() }
                     if (symbols.length > 8) { symbols.clear(); durations.clear() }
                 } else {
                     symbols.clear(); durations.clear()
-                    if (!locked) { probation.clear(); credibleMarks = 0 }
+                    if (!locked) { probation.clear(); probationCharacters.clear(); credibleMarks = 0 }
                 }
                 markFrequencies.clear()
             } else {
-                if (credibleMarks > 0 && duration in 20.0..1800.0) learn(duration, false)
+                if (credibleMarks > 0 && duration in 20.0..1800.0) timing.observe(duration, false)
             }
             keyed = candidate; edgeAt = at
         }
         if (!keyed && !candidate) {
             val silence = clock - edgeAt
-            if (silence >= unit * 2.0) finishLetter()
-            if (silence >= unit * 5.5 && locked && text.isNotEmpty() && text.last() != ' ') text.append(' ')
-            if (silence >= max(700.0, unit * 12)) {
-                locked = false; credibleMarks = 0; probation.clear(); symbols.clear(); durations.clear()
+            if (silence >= timing.characterGapMs) finishLetter()
+            if (timing.hasSpacing && silence >= timing.wordGapMs && locked && text.isNotEmpty() && text.last() != ' ') {
+                text.append(' '); characters.add(CwCharacter(' ', 100))
+            }
+            if (silence >= max(max(700.0, unit * 12), timing.wordGapMs + unit * 3)) {
+                locked = false; credibleMarks = 0; probation.clear(); probationCharacters.clear(); symbols.clear(); durations.clear()
                 markFrequencies.clear()
             }
         }
-        if (text.length > 512) text.delete(0, text.length - 512)
-        if (locked && clock - lastCoherentMark > max(1000.0, unit * 15)) {
-            locked = false; credibleMarks = 0; probation.clear(); symbols.clear(); durations.clear()
+        if (text.length > 512) {
+            val excess = text.length - 512
+            text.delete(0, excess); characters.subList(0, excess).clear()
         }
-    }
-
-    private fun learn(duration: Double, mark: Boolean) {
-        timings.addLast(Timing(duration, mark))
-        if (timings.size > 40) timings.removeFirst()
-        val candidates = timings.flatMap { timing ->
-            (if (timing.mark) listOf(1, 3) else listOf(1, 3, 7)).map { timing.duration / it }
-        }.filter { it in 25.0..180.0 }
-        val best = candidates.minByOrNull { candidate ->
-            timings.sumOf { timing ->
-                val ratio = timing.duration / candidate
-                val error = (if (timing.mark) listOf(1, 3) else listOf(1, 3, 7)).minOf { abs(ratio - it) / it }
-                min(error * error, 1.0)
-            } / timings.size + .005 * abs(ln(candidate / unit))
-        } ?: return
-        unit = if (timings.size < 6) best else unit * .65 + best * .35
+        if (locked && clock - lastCoherentMark > max(max(1000.0, unit * 15), timing.wordGapMs + unit * 2)) {
+            locked = false; credibleMarks = 0; probation.clear(); probationCharacters.clear(); symbols.clear(); durations.clear()
+        }
     }
 
     private fun finishLetter() {
         if (symbols.isEmpty()) return
-        val letter = alphabet[symbols.toString()]
-        if (letter != null) {
-            if (locked) text.append(letter) else probation.append(letter)
+        val character = timing.recognize(durations, alphabet)
+        if (character != null) {
+            if (locked) { text.append(character.value); characters.add(character) }
+            else { probation.append(character.value); probationCharacters.add(character) }
         }
         symbols.clear(); durations.clear()
     }
