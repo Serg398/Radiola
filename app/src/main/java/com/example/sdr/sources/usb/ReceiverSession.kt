@@ -21,9 +21,10 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     @Volatile private var requestedDevice: UsbDevice? = null
     internal val cwDecoder = CwDecodeWorker(context)
     internal val ftxDecoder = FtxDecodeWorker()
-    private var cwMode = DemodulationMode.WFM
+    @Volatile private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
     private val audio = AudioOutput(onSamples = { samples, count -> ftxDecoder.offer(samples, count, 48000, 2) },
+        noiseModel = { com.example.sdr.audio.HamNoiseSettings.model(cwMode) },
         needsPlayedPcm = cwDecoder::acceptsAudio,
         onPlayedPcm = { samples -> cwDecoder.offer(samples, samples.size, 48000, 2) }) {
         message -> onAudioError(message, controller.snapshot().sessionId)

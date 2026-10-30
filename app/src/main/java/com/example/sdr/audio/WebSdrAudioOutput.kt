@@ -15,6 +15,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
     private val onSignal: (Float?) -> Unit = {},
     private val squelchSetting: () -> ReceiverSquelch = { ReceiverSquelch() },
     private val onSquelchOpen: (Boolean) -> Unit = {},
+    private val noiseModel: () -> Int = { 0 },
     private val needsPlayedPcm: () -> Boolean = { false },
     private val onPlayedPcm: (Int, ShortArray) -> Unit = { _, _ -> }) {
     private val queue = WebSdrPcmQueue()
@@ -52,6 +53,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         val gateTimeline = WebSdrSignalTimeline()
         var gate = WebSdrSquelch()
         val playedPcm = PlaybackPcmTimeline(1)
+        val noiseReduction = HamNoiseProcessor()
         var reportedSignal: Float? = null
         fun playbackHead(): Long {
             val head = track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: return 0L
@@ -66,6 +68,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
         }
         fun release() {
             runCatching { track?.pause() }; runCatching { track?.flush() }; runCatching { track?.release() }
+            noiseReduction.close()
             track = null; playing = false; written = 0; previousHead = 0; headWrap = 0
             meter.clear(); gateTimeline.clear(); gate = WebSdrSquelch(); playedPcm.clear()
             if (reportedSignal != null) { reportedSignal = null; onSignal(null) }
@@ -105,9 +108,10 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                 if (scratch.size < block.samples.size) scratch = ShortArray(block.samples.size)
                 for (i in block.samples.indices) scratch[i] = (block.samples[i] * .65536f).toInt().toShort()
                 val gateOpen = gate.process(scratch, block.samples.size, rate, squelchSetting(), block.signalDbm)
+                val audible = noiseReduction.process(scratch, block.samples.size, rate, 1, noiseModel())
                 var offset = 0
                 while (running && offset < block.samples.size) {
-                    val count = try { track!!.write(scratch, offset, block.samples.size - offset, AudioTrack.WRITE_NON_BLOCKING) }
+                    val count = try { track!!.write(audible, offset, block.samples.size - offset, AudioTrack.WRITE_NON_BLOCKING) }
                         catch (_: IllegalStateException) { AudioTrack.ERROR_DEAD_OBJECT }
                     if (count < 0) {
                         check(count != AudioTrack.ERROR_BAD_VALUE) { "Invalid audio write: $count" }

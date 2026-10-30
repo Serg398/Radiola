@@ -233,6 +233,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             onSignal = { value -> publish(token) { signalDbm = value } },
             squelchSetting = { squelchSetting },
             onSquelchOpen = { value -> if (squelchOpen != value) publish(token) { squelchOpen = value } },
+            noiseModel = { if (serverDataMode) 0 else com.example.sdr.audio.HamNoiseSettings.model(mode) },
             needsPlayedPcm = { cwDecoder.acceptsAudio() },
             onPlayedPcm = { rate, samples -> if (token == generation) cwDecoder.offer(samples, samples.size, rate, 1) })
         output = ownedOutput

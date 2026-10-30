@@ -1,0 +1,4 @@
+HamNoise by e04, MIT license.
+Source: https://github.com/e04/HamNoise
+Revision: 178265862264212d7c5f7dda4d162cb9b4b876eb
+Core sources and model weights are unmodified.

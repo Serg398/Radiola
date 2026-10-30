@@ -238,6 +238,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
             onSquelchOpen = { value -> if (value != squelchOpen) publish(token) {
                 if (epoch == audioGeneration) squelchOpen = value
             } },
+            noiseModel = { com.example.sdr.audio.HamNoiseSettings.model(mode) },
             needsPlayedPcm = { cwDecoder.acceptsAudio() },
             onPlayedPcm = { rate, samples ->
                 if (generation == token && audioGeneration == epoch) cwDecoder.offer(samples, samples.size, rate, 1)

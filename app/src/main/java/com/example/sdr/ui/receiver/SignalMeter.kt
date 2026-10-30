@@ -56,7 +56,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
-private const val SIGNAL_METER_MAXIMUM = 134f // S9 (54 dB above S0) + 80 dB.
+private const val SIGNAL_METER_MAXIMUM = 124f // S9 (54 dB above S0) + 70 dB.
 
 @Composable
 internal fun WebSdrSignalMeter(session: OnlineReceiverSession, squelch: ReceiverSquelch, open: Boolean,
@@ -159,7 +159,7 @@ internal fun SignalMeter(
             val barHeight = 5.dp.toPx()
             val labelY = 13.dp.toPx()
             val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7",
-                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50", 134f to "+80")
+                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50", 124f to "+70")
             labelPaint.textAlign = android.graphics.Paint.Align.CENTER
             labelPaint.textSize = 9.sp.toPx()
             for ((value, label) in ticks) {

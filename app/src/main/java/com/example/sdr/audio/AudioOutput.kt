@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit
 class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> },
     private val needsPlayedPcm: () -> Boolean = { false },
     private val onPlayedPcm: (ShortArray) -> Unit = {},
+    private val noiseModel: () -> Int = { 0 },
     private val onFatal: (String) -> Unit = {}) {
     private class Run {
         @Volatile var running = true
@@ -67,6 +68,7 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
         var lastReceivingSince = 0L
         val started = SystemClock.elapsedRealtime()
         val playedPcm = PlaybackPcmTimeline(2)
+        val noiseReduction = HamNoiseProcessor()
         fun playbackHead(): Long {
             val head = output?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: return 0L
             if (head < previousHead) headWrap += 1L shl 32
@@ -76,7 +78,7 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
         }
         fun release() {
             output?.let { runCatching { it.pause() }; runCatching { it.flush() }; runCatching { it.release() } }
-            output = null; playedPcm.clear()
+            output = null; playedPcm.clear(); noiseReduction.close()
         }
         fun reopen(reason: String) {
             while (run.running) {
@@ -103,7 +105,7 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
                 val request = run.flush
                 if (request != null) {
                     try {
-                        track.pause(); track.flush(); NativeSdr.discardAudio(); playedPcm.clear()
+                        track.pause(); track.flush(); NativeSdr.discardAudio(); playedPcm.clear(); noiseReduction.close()
                         playing = false; writtenFrames = 0; previousHead = 0; headWrap = 0
                     } catch (_: IllegalStateException) { reopen("flush on dead output") }
                     finally { run.flush = null; request.countDown() }
@@ -120,10 +122,11 @@ class AudioOutput(private val onSamples: (ShortArray, Int) -> Unit = { _, _ -> }
                     lastReceivingSince = run.receivingSince
                     Log.d("SdrAudio", "first_received_pcm_ms=${SystemClock.elapsedRealtime()-lastReceivingSince} route=${track.routedDevice?.type}")
                 }
+                val audible = noiseReduction.process(samples, count, 48000, 2, if (run.receiving) noiseModel() else 0)
                 var offset = 0
                 while (run.running && run.flush == null && offset < count) {
                     val written = try {
-                        output!!.write(samples, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING)
+                        output!!.write(audible, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING)
                     } catch (_: IllegalStateException) { AudioTrack.ERROR_DEAD_OBJECT }
                     if (written < 0) {
                         if (written == AudioTrack.ERROR_BAD_VALUE) error("Invalid audio write: $written")

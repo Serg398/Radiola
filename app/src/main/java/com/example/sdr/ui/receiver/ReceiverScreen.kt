@@ -291,7 +291,7 @@ internal fun ReceiverScreen(
                         .background(surface, RoundedCornerShape(5.dp)),
                 ) {
                 // Leave the middle free for the server view switch in both source layouts.
-                val meterWidth = maxWidth / 2 - 72.dp
+                val meterWidth = maxWidth / 2 - 96.dp
                 Row(Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -313,8 +313,10 @@ internal fun ReceiverScreen(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
-                    else if (!remote) Spacer(Modifier.width(60.dp))
                     Spacer(Modifier.weight(1f))
+                    com.example.sdr.ui.components.NoiseReductionControl(
+                        available = com.example.sdr.audio.HamNoiseSettings.model(activeMode) != 0 && !(openWebRx && webSession.serverDataMode),
+                        cw = activeMode == DemodulationMode.CW)
                     Row(Modifier.width(meterWidth).fillMaxHeight(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
