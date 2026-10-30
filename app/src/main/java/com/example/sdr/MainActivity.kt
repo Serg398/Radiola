@@ -1,34 +1,44 @@
 package com.example.sdr
 
-import android.app.PendingIntent
 import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.hardware.usb.UsbDevice
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
-import android.os.Bundle
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.View
 import android.view.Choreographer
+import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import androidx.lifecycle.ViewModelProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import kotlin.math.roundToLong
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
+import com.example.sdr.platform.DisplaySettings
+import com.example.sdr.platform.EncoderFeedback
+import com.example.sdr.platform.EncoderHaptics
+import com.example.sdr.receiver.offsetForBandwidth
+import com.example.sdr.sources.usb.ReceiverSnapshot
+import com.example.sdr.sources.usb.ReceiverState
+import com.example.sdr.telemetry.RenderTimings
+import com.example.sdr.ui.receiver.ReceiverScreen
+import com.example.sdr.ui.receiver.ReceiverViewModel
+import com.example.sdr.ui.receiver.WaterfallFrameRate
+import com.example.sdr.ui.theme.RadiolaTheme
 import kotlin.math.roundToInt
 
 private const val USB_PERMISSION_ACTION = "com.example.sdr.USB_PERMISSION"
@@ -273,6 +283,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             RadiolaTheme {
             ReceiverScreen(
+                presentation = model.presentation,
                 deviceName = device?.productName ?: "RTL-SDR V4",
                 connected = device != null,
                 permitted = hasUsbPermission,
@@ -282,17 +293,9 @@ class MainActivity : ComponentActivity() {
                 starting = receiverSnapshot.state == ReceiverState.Starting,
                 receiverState = receiverSnapshot.state,
                 frequencyInput = frequencyInput,
-                currentFrequencyHz = frequencyHz,
                 spectrumSpanHz = receiverRates[0],
-                receiveBandwidthHz = runtime.bandwidth(demodulationMode),
                 bandwidthDefault = runtime.bandwidths[demodulationMode] == null,
-                onBandwidthChange = { runtime.setBandwidth(demodulationMode, it) },
-                demodulationMode = demodulationMode,
                 rdsInformation = runtime.rds,
-                cwSnapshot = runtime.session.cwDecoder::snapshot,
-                onCwClear = runtime.session.cwDecoder::clear,
-                cwDecodeEnabled = runtime.session.cwDecoder.decodingEnabled,
-                onCwDecodeChange = runtime.session.cwDecoder::requestDecoding,
                 receiverGain = receiverGain,
                 gainSteps = gainSteps,
                 spectrumState = spectrumState,
@@ -336,10 +339,8 @@ class MainActivity : ComponentActivity() {
                 onPlaybackStart = ::requestNotificationPermission,
                 onStopStream = ::stopStream,
                 onFrequencyInput = { frequencyInput = it },
-                onTune = ::applyFrequency,
-                onStep = ::stepFrequency,
-                onDemodulationModeChange = ::changeDemodulationMode,
-                onReceiverGainChange = ::changeReceiverGain,
+                onTune = model::applyFrequency,
+                onReceiverGainChange = model::changeReceiverGain,
                 onTuningStepChange = { option ->
                     tuningStep = option
                     displaySettings.saveTuningStep(option)
@@ -545,8 +546,8 @@ class MainActivity : ComponentActivity() {
         val state = receiverSession.snapshot().state
         if (state in listOf(ReceiverState.Starting, ReceiverState.Running, ReceiverState.Stopping) ||
             !usbManager.hasPermission(currentDevice)) return
-        val requestedFrequency = parseFrequency() ?: return
-        requestFrequency(requestedFrequency)
+        val requestedFrequency = model.parseFrequency() ?: return
+        model.requestFrequency(requestedFrequency)
         usbCheckResult = null
         requestNotificationPermission()
         runtime.mode = demodulationMode
@@ -558,47 +559,6 @@ class MainActivity : ComponentActivity() {
         runtime.stop()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
-    }
-
-    private fun parseFrequency(): Long? {
-        val mhz = frequencyInput.replace(',', '.').toDoubleOrNull()
-        if (mhz == null || mhz !in 0.5..1766.0) {
-            usbCheckResult = "Введите частоту от 0,5 до 1766 МГц"
-            return null
-        }
-        return (mhz * 1_000_000.0).roundToLong()
-    }
-
-    private fun applyFrequency() {
-        parseFrequency()?.let(::requestFrequency)
-    }
-
-    private fun requestFrequency(hz: Long) {
-        inputError = null
-        usbCheckResult = null
-        // Display the request immediately; only the controller tracks hardware acknowledgements.
-        frequencyHz = hz
-        frequencyInput = "%.3f".format(java.util.Locale.US, hz / 1_000_000.0)
-        receiverSession.tune(hz)
-    }
-
-    private fun changeDemodulationMode(mode: DemodulationMode) {
-        if (mode == demodulationMode) return
-        demodulationMode = mode
-        runtime.mode = mode
-        receiverSession.setMode(mode)
-    }
-
-    private fun changeReceiverGain(value: ReceiverGain) {
-        if (value == receiverGain) return
-        receiverGain = value
-        runtime.gain = value
-        displaySettings.saveReceiverGain(value)
-        receiverSession.setGain(value)
-    }
-
-    private fun stepFrequency(deltaHz: Long) {
-        requestFrequency((frequencyHz + deltaHz).coerceIn(500_000L, 1_766_000_000L))
     }
 
     private fun resetFrameTiming() {

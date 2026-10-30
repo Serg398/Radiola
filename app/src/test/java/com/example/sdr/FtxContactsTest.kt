@@ -1,5 +1,11 @@
 package com.example.sdr
 
+import com.example.sdr.decoders.ftx.CallsignCountries
+import com.example.sdr.decoders.ftx.FtxContacts
+import com.example.sdr.decoders.ftx.RadioPoint
+import com.example.sdr.decoders.ftx.coordinateLabel
+import com.example.sdr.decoders.ftx.maidenheadPoint
+import com.example.sdr.decoders.ftx.radioDistanceKm
 import org.junit.Assert.*
 import org.junit.Test
 

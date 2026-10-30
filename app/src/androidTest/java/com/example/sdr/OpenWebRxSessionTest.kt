@@ -3,6 +3,15 @@ package com.example.sdr
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.sdr.receiver.ReceiverConnectionState
+import com.example.sdr.receiver.ReceiverSource
+import com.example.sdr.sources.openwebrx.OpenWebRxSession
+import com.example.sdr.sources.websdr.WebSdrReceiver
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import okhttp3.*
 import okhttp3.mockwebserver.*
 import okio.ByteString.Companion.toByteString
@@ -11,11 +20,6 @@ import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class OpenWebRxSessionTest {
@@ -97,7 +101,7 @@ class OpenWebRxSessionTest {
                 session = OpenWebRxSession(instrumentation.targetContext)
                 session!!.connect(serverUrl)
             }
-            await("Audio and FFT did not start") { session!!.state == WebSdrConnectionState.Connected && session!!.frame != null }
+            await("Audio and FFT did not start") { session!!.state == ReceiverConnectionState.Connected && session!!.frame != null }
             await("Server modes were not received") { session!!.serverModes.any { it.id == "ft8" } }
             main {
                 assertEquals(2, session!!.bands.size)
@@ -137,7 +141,7 @@ class OpenWebRxSessionTest {
             main { session!!.tune(7_101_000) }
             assertEquals(1, sockets.size)
             sockets.first().close(1011, "test reconnect")
-            await("Session did not reconnect") { sockets.size > 1 && session!!.state == WebSdrConnectionState.Connected }
+            await("Session did not reconnect") { sockets.size > 1 && session!!.state == ReceiverConnectionState.Connected }
             main {
                 assertEquals(DemodulationMode.CW, session!!.mode)
                 assertEquals(7_101_000L, session!!.frequencyHz)
@@ -150,7 +154,7 @@ class OpenWebRxSessionTest {
             main { assertEquals("Partial profile config changed RF frequency", 7_101_000L, session!!.frequencyHz) }
             await("New profile geometry was not applied") { session!!.currentBand == 1 && session!!.frequencyHz == 138_000_000L }
             sockets.last().close(1011, "test cancel retry")
-            await("Retry was not scheduled") { session!!.state == WebSdrConnectionState.Connecting }
+            await("Retry was not scheduled") { session!!.state == ReceiverConnectionState.Connecting }
             main { session!!.disconnect() }
             val connectionCount = sockets.size
             Thread.sleep(1500)
@@ -169,13 +173,13 @@ class OpenWebRxSessionTest {
         val runtime = (instrumentation.targetContext.applicationContext as RadiolaApplication).webSdr
         try {
             main {
-                runtime.selectSource("OpenWebRX")
+                runtime.selectSource(ReceiverSource.OPEN_WEB_RX)
                 runtime.select(runtime.openWebRxReceiver?.takeIf { it.url == address }
                     ?: WebSdrReceiver(address!!, java.net.URI(address).host, "", 0f, 0f, null, emptyList()))
                 runtime.connect()
             }
             await("Live server did not provide audio and FFT: ${runtime.session.error}", 40_000) {
-                runtime.session.state == WebSdrConnectionState.Connected && runtime.session.frame != null
+                runtime.session.state == ReceiverConnectionState.Connected && runtime.session.frame != null
             }
             val targetProfile = InstrumentationRegistry.getArguments().getString("openwebrx_profile")
             if (targetProfile != null) {
@@ -200,7 +204,7 @@ class OpenWebRxSessionTest {
             if (requestedMode != null) {
                 main { runtime.session.requestServerMode(requestedMode) }
                 await("Requested mode did not start", 20_000) {
-                    runtime.session.serverModeId == requestedMode && runtime.session.state == WebSdrConnectionState.Connected &&
+                    runtime.session.serverModeId == requestedMode && runtime.session.state == ReceiverConnectionState.Connected &&
                         (requestedMode != "wfm" || runtime.session.audioSampleRate == 48000)
                 }
             }
@@ -212,14 +216,14 @@ class OpenWebRxSessionTest {
                     val socket = OpenWebRxSession::class.java.getDeclaredField("socket").apply { isAccessible = true }
                     (socket.get(runtime.session) as WebSocket).cancel()
                 }
-                await("Connection interruption was not detected") { runtime.session.state == WebSdrConnectionState.Connecting }
+                await("Connection interruption was not detected") { runtime.session.state == ReceiverConnectionState.Connecting }
                 await("Selected profile/frequency did not recover", 40_000) {
-                    runtime.session.state == WebSdrConnectionState.Connected && runtime.session.currentBand == selected &&
+                    runtime.session.state == ReceiverConnectionState.Connected && runtime.session.currentBand == selected &&
                         runtime.session.frequencyHz == frequency
                 }
             }
             activity.recreate()
-            await("Playback did not survive recreation") { runtime.session.state == WebSdrConnectionState.Connected }
+            await("Playback did not survive recreation") { runtime.session.state == ReceiverConnectionState.Connected }
         } finally { main { runtime.disconnect() }; activity.close() }
     }
 }

@@ -1,5 +1,7 @@
 package com.example.sdr
 
+import com.example.sdr.receiver.bandwidthLabel
+import com.example.sdr.receiver.offsetForBandwidth
 import org.junit.Assert.*
 import org.junit.Test
 

@@ -1,5 +1,9 @@
 package com.example.sdr
 
+import com.example.sdr.audio.WebSdrPcmQueue
+import com.example.sdr.receiver.LatestCommand
+import com.example.sdr.receiver.ReceiverBand
+import com.example.sdr.sources.websdr.WebSdrBandwidth
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -39,7 +43,7 @@ class WebSdrControlTest {
     }
 
     @Test fun onlineBandwidthLimitsMatchActualFilterEdges() {
-        val band = WebSdrTunerBand(0, "80m", 3650000, 512000, 3660000, 5, 8000)
+        val band = ReceiverBand(0, "80m", 3650000, 512000, 3660000, 5, 8000)
         assertEquals(15200, WebSdrBandwidth.maximum(DemodulationMode.AM, band))
         assertEquals(7450, WebSdrBandwidth.maximum(DemodulationMode.USB, band))
         assertEquals(30000, WebSdrBandwidth.maximum(DemodulationMode.NFM, band))

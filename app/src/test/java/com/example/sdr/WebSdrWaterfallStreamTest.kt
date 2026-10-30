@@ -1,12 +1,15 @@
 package com.example.sdr
 
+import com.example.sdr.receiver.ReceiverBand
+import com.example.sdr.sources.websdr.WebSdrWaterfallStream
+import com.example.sdr.sources.websdr.WebSdrWaterfallWindow
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import okhttp3.*
 import okhttp3.mockwebserver.*
 import okio.ByteString.Companion.toByteString
 import org.junit.Assert.*
 import org.junit.Test
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
 
 class WebSdrWaterfallStreamTest {
     @Test fun viewportChangesReuseSocketsAndPublishOnlyConfirmedCoordinates() {
@@ -14,7 +17,7 @@ class WebSdrWaterfallStreamTest {
         val client = OkHttpClient()
         val rows = LinkedBlockingQueue<Pair<Long, Int>>()
         val failures = LinkedBlockingQueue<String>()
-        val band = WebSdrTunerBand(0, "40m", 7100000, 384000, 7100000, 5)
+        val band = ReceiverBand(0, "40m", 7100000, 384000, 7100000, 5)
         val listener = object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val zoom = Regex("zoom=(\\d+)").find(text)!!.groupValues[1].toInt()

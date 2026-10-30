@@ -4,16 +4,19 @@ import android.content.Intent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.sdr.receiver.ReceiverConnectionState
+import com.example.sdr.receiver.ReceiverSource
+import com.example.sdr.sources.websdr.WebSdrReceiver
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.*
 import okhttp3.mockwebserver.*
 import okio.ByteString.Companion.toByteString
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class WebSdrLifecycleTest {
@@ -75,7 +78,7 @@ class WebSdrLifecycleTest {
             waterSockets.keys.forEach { it.send(ByteArray(128).toByteString()) }
         }, 100, 100, TimeUnit.MILLISECONDS)
         val runtime = (context.applicationContext as RadiolaApplication).webSdr
-        var oldUrl: String? = null; var oldName = ""; var oldSource = "USB"; var oldMode = DemodulationMode.AM
+        var oldUrl: String? = null; var oldName = ""; var oldSource = ReceiverSource.USB; var oldMode = DemodulationMode.AM
         var oldFrequency = 0L; var oldPage = "Radio"
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             try {
@@ -83,12 +86,12 @@ class WebSdrLifecycleTest {
                     oldUrl = runtime.receiverUrl; oldName = runtime.receiverName; oldSource = runtime.source
                     oldPage = runtime.page
                     runtime.disconnect()
-                    runtime.selectSource("WebSDR")
+                    runtime.selectSource(ReceiverSource.WEB_SDR)
                     oldMode = runtime.session.mode; oldFrequency = runtime.session.frequencyHz
                     runtime.select(WebSdrReceiver(serverUrl, "Test receiver", "", 0f, 0f, null, emptyList()))
                     runtime.connect()
                 }
-                await("Audio did not start") { runtime.session.state == WebSdrConnectionState.Connected && runtime.session.frame != null }
+                await("Audio did not start") { runtime.session.state == ReceiverConnectionState.Connected && runtime.session.frame != null }
                 val owned = runtime.session
                 val waterCount = waterConnections.get()
                 Thread.sleep(3100)
@@ -97,22 +100,22 @@ class WebSdrLifecycleTest {
                 Thread.sleep(400)
                 assertEquals("Viewport reopened sockets", waterCount, waterConnections.get())
                 scenario.recreate()
-                await("Session did not survive Activity recreation") { runtime.session === owned && owned.state == WebSdrConnectionState.Connected }
+                await("Session did not survive Activity recreation") { runtime.session === owned && owned.state == ReceiverConnectionState.Connected }
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Thread.sleep(300)
-                main { assertEquals(WebSdrConnectionState.Connected, owned.state) }
+                main { assertEquals(ReceiverConnectionState.Connected, owned.state) }
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 val packets = audioPackets.get()
                 waterSockets.keys.toList().forEach { it.close(1011, "test water failure") }
                 await("Waterfall did not reconnect") { waterConnections.get() > waterCount && owned.waterfallWarning == null }
-                main { assertEquals(WebSdrConnectionState.Connected, owned.state) }
+                main { assertEquals(ReceiverConnectionState.Connected, owned.state) }
                 assertTrue("Audio stopped during waterfall recovery", audioPackets.get() > packets)
                 val audioCount = audioConnections.get()
                 soundSockets.toList().forEach { it.close(1011, "test audio failure") }
-                await("Audio did not reconnect") { audioConnections.get() > audioCount && owned.state == WebSdrConnectionState.Connected }
+                await("Audio did not reconnect") { audioConnections.get() > audioCount && owned.state == ReceiverConnectionState.Connected }
                 main { owned.tune(oldFrequency); owned.requestMode(oldMode) }
                 soundSockets.toList().forEach { it.close(1011, "test cancel retry") }
-                await("Audio retry was not scheduled") { owned.state == WebSdrConnectionState.Connecting }
+                await("Audio retry was not scheduled") { owned.state == ReceiverConnectionState.Connecting }
                 main { context.startService(Intent(context, WebSdrService::class.java).setAction(WebSdrService.STOP)) }
                 await("STOP failed to cancel receiver") { !owned.active && runtime.serviceOwner == null }
                 val count = server.requestCount

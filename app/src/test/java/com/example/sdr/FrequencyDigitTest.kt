@@ -1,5 +1,6 @@
 package com.example.sdr
 
+import com.example.sdr.ui.receiver.frequencyDigitStep
 import org.junit.Assert.*
 import org.junit.Test
 

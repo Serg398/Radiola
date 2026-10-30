@@ -1,0 +1,98 @@
+package com.example.sdr.ui.receiver
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.sdr.R
+import com.example.sdr.ui.theme.RadiolaColors
+import java.util.Locale
+
+@Composable
+internal fun Sidebar(selected: String, onSelect: (String) -> Unit) {
+    Column(Modifier.width(108.dp).fillMaxHeight().background(RadiolaColors.sidebar)) {
+        Box(Modifier.fillMaxWidth().height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
+            Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = RadiolaColors.primary, fontSize = 18.sp,
+                fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
+        }
+        listOf("Receiver", "Settings").forEach { name ->
+            val active = selected == name
+            Box(
+                Modifier.fillMaxWidth().height(36.dp)
+                    .background(if (active) RadiolaColors.primary.copy(alpha = .16f) else Color.Transparent)
+                    .clickable { onSelect(name) },
+            ) {
+                if (active) Box(Modifier.align(Alignment.CenterStart).width(3.dp).height(22.dp)
+                    .background(RadiolaColors.primary, RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)))
+                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    SidebarIcon(name, if (active) RadiolaColors.primary else RadiolaColors.secondaryText)
+                    Text(name, Modifier.padding(start = 8.dp), color = if (active) RadiolaColors.primary else RadiolaColors.text,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 12.sp, maxLines = 1)
+                }
+            }
+        }
+        Box(Modifier.weight(1f))
+    }
+}
+
+@Composable
+internal fun SidebarIcon(name: String, tint: Color) {
+    Box(Modifier.width(24.dp).height(24.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.width(20.dp).height(20.dp)) {
+            val unit = size.width / 24f
+            val stroke = 1.7f * unit
+            fun point(x: Float, y: Float) = Offset(x * unit, y * unit)
+            if (name == "Receiver") {
+                val wave = Path().apply {
+                    moveTo(2f * unit, 12f * unit)
+                    listOf(6f to 12f, 8.5f to 5f, 12f to 19f, 15.5f to 8f,
+                        18f to 12f, 22f to 12f).forEach { (x, y) -> lineTo(x * unit, y * unit) }
+                }
+                drawPath(wave, tint, style = Stroke(stroke, cap = StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            } else {
+                val gear = Path().apply {
+                    // Eight rounded teeth, with the same visual bounds as the receiver icon.
+                    repeat(32) { index ->
+                        val angle = index * Math.PI / 16 - Math.PI / 2
+                        val radius = if (index % 4 == 0 || index % 4 == 3) 10f else 8f
+                        val x = (12f + kotlin.math.cos(angle).toFloat() * radius) * unit
+                        val y = (12f + kotlin.math.sin(angle).toFloat() * radius) * unit
+                        if (index == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
+                }
+                drawPath(gear, tint, style = Stroke(stroke,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                drawCircle(tint, 3.2f * unit, point(12f, 12f), style = Stroke(stroke))
+            }
+        }
+    }
+}

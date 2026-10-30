@@ -1,9 +1,10 @@
 package com.example.sdr
 
-import org.junit.Assert.*
-import org.junit.Test
+import com.example.sdr.decoders.cw.CwDecodeWorker
 import kotlin.math.PI
 import kotlin.math.sin
+import org.junit.Assert.*
+import org.junit.Test
 
 class CwDecodeWorkerTest {
     @Test fun decodingRequiresUserSwitchAndActiveSource() {

@@ -1,16 +1,21 @@
 package com.example.sdr
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.sdr.receiver.WaterfallHistory
+import com.example.sdr.sources.usb.ReceiverState
+import com.example.sdr.ui.receiver.ReceiverViewModel
+import com.example.sdr.ui.receiver.Sidebar
+import com.example.sdr.ui.receiver.WaterfallView
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test

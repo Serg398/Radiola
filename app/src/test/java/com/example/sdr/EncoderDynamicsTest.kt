@@ -1,5 +1,8 @@
 package com.example.sdr
 
+import com.example.sdr.receiver.TuningStep
+import com.example.sdr.ui.receiver.EncoderDynamics
+import com.example.sdr.ui.receiver.FrequencyMotion
 import org.junit.Assert.*
 import org.junit.Test
 

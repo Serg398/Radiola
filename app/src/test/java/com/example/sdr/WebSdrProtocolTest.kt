@@ -1,10 +1,13 @@
 package com.example.sdr
 
-import org.junit.Assert.*
-import org.junit.Test
+import com.example.sdr.sources.websdr.WebSdrAudioDecoder
+import com.example.sdr.sources.websdr.WebSdrBandParser
+import com.example.sdr.sources.websdr.WebSdrWaterfallDecoder
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import org.junit.Assert.*
+import org.junit.Test
 
 class WebSdrProtocolTest {
     @Test fun signalUsesServerScaleAndPersistsAcrossAudioPackets() {
@@ -72,7 +75,7 @@ class WebSdrProtocolTest {
             ];
             alert('must never execute');
         """.trimIndent()
-        val bands = WebSdrTunerBand.parse(source)
+        val bands = WebSdrBandParser.parse(source)
         assertEquals(2, bands.size)
         assertEquals(7_004_000L, bands[0].lowHz)
         assertEquals(7_196_000L, bands[0].highHz)

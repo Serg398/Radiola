@@ -1,5 +1,9 @@
 package com.example.sdr
 
+import com.example.sdr.receiver.ReceiverGain
+import com.example.sdr.sources.usb.ReceiverController
+import com.example.sdr.sources.usb.ReceiverSnapshot
+import com.example.sdr.sources.usb.ReceiverState
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import org.junit.Assert.*

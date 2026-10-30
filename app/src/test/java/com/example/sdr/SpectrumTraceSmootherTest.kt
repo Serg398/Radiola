@@ -1,5 +1,6 @@
 package com.example.sdr
 
+import com.example.sdr.ui.receiver.SpectrumTraceSmoother
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,12 +1,14 @@
 package com.example.sdr
 
-import org.junit.Assert.*
-import org.junit.Test
-import kotlin.math.*
-import kotlin.random.Random
-import java.util.zip.GZIPInputStream
+import com.example.sdr.decoders.cw.CwDecoder
+import com.example.sdr.decoders.cw.CwInformation
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.GZIPInputStream
+import kotlin.math.*
+import kotlin.random.Random
+import org.junit.Assert.*
+import org.junit.Test
 
 class CwDecoderTest {
     private val codes = mapOf('C' to "-.-.", 'Q' to "--.-", 'S' to "...", 'O' to "---", 'T' to "-", 'E' to ".", '5' to ".....", '9' to "----.")

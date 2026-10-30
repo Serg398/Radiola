@@ -1,10 +1,13 @@
 package com.example.sdr
 
+import com.example.sdr.receiver.ReceiverBand
+import com.example.sdr.sources.websdr.WebSdrWaterfallDecoder
+import com.example.sdr.sources.websdr.WebSdrWaterfallWindow
 import org.junit.Assert.*
 import org.junit.Test
 
 class WebSdrWaterfallWindowTest {
-    private val band = WebSdrTunerBand(0, "40m", 7_100_000, 384_000, 7_100_000, 5)
+    private val band = ReceiverBand(0, "40m", 7_100_000, 384_000, 7_100_000, 5)
 
     @Test fun fullBandRetainsTwiceTheHorizontalSamples() {
         val window = WebSdrWaterfallWindow.forViewport(band, band.centerHz, band.spanHz)
