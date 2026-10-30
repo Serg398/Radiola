@@ -12,6 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -65,7 +69,9 @@ internal fun FtxInformationRoute(mode: FtxMode, info: FtxInformation, clear: () 
 private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<FtxContact>,
     origin: RadioPoint?, remote: Boolean, locationStatus: String, requestLocation: () -> Unit, clear: () -> Unit) {
     val scroll = rememberLazyListState()
-    LaunchedEffect(rows.size, rows.lastOrNull()) { if (rows.isNotEmpty()) scroll.scrollToItem(rows.lastIndex) }
+    val newestFirst = remember(rows) { rows.asReversed() }
+    LaunchedEffect(rows.size, rows.lastOrNull()) { if (rows.isNotEmpty()) scroll.scrollToItem(0) }
+    val scrollbarColor = RadiolaColors.secondaryText.copy(alpha = .45f)
     Row(Modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
         .padding(start = 10.dp, end = 8.dp, top = 3.dp, bottom = 4.dp),
@@ -104,8 +110,22 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
             HorizontalDivider(color = RadiolaColors.border.copy(alpha = .6f), thickness = .5.dp)
             if (info.lines.isEmpty()) Text("Waiting for a complete transmission...", color = RadiolaColors.secondaryText,
                 fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-            else LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = scroll) {
-                itemsIndexed(rows) { index, row ->
+            else LazyColumn(Modifier.weight(1f).fillMaxWidth().drawWithContent {
+                drawContent()
+                val layout = scroll.layoutInfo
+                if (layout.totalItemsCount > 0 && (scroll.canScrollForward || scroll.canScrollBackward)) {
+                    val rowHeight = 24.dp.toPx()
+                    val viewport = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
+                    val totalHeight = layout.totalItemsCount * rowHeight
+                    val thumbHeight = (size.height * viewport / totalHeight).coerceIn(12.dp.toPx().coerceAtMost(size.height), size.height)
+                    val offset = scroll.firstVisibleItemIndex * rowHeight + scroll.firstVisibleItemScrollOffset
+                    val progress = (offset / (totalHeight - viewport).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                    drawRoundRect(scrollbarColor,
+                        topLeft = Offset(size.width - 3.dp.toPx(), (size.height - thumbHeight) * progress),
+                        size = Size(2.dp.toPx(), thumbHeight), cornerRadius = CornerRadius(1.dp.toPx()))
+                }
+            }, state = scroll, contentPadding = PaddingValues(end = 7.dp)) {
+                itemsIndexed(newestFirst) { index, row ->
                     Box(Modifier.fillMaxWidth().background(if (index % 2 == 0) RadiolaColors.primaryTint.copy(alpha = .25f)
                         else androidx.compose.ui.graphics.Color.Transparent)) { FtxTableRow(row) }
                 }
