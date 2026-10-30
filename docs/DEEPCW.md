@@ -10,8 +10,8 @@ CW card: select **Classic** or **DeepCW**, then enable **DECODE**. Selection is 
 - Lazy model initialization on the existing bounded CW worker. Model is released when decoding/source is disabled or Classic is selected, reused with a cleared context when tuning.
 - Mono/stereo PCM is converted continuously to 3200 Hz with phase preserved between blocks (linear interpolation, as in the upstream minimal example).
 - Periodic 256-point Hann, reflected edges, hop 48, 65 magnitude bins from 400 to 1200 Hz, reference q90 noise normalization and log1p.
-- Inference starts after 2 seconds and updates once per second, retaining about 12 seconds of context, aligned to the 96-sample output stride.
-- Greedy CTC with an approximately 2-second uncommitted tail. Pending text can change; final history is bounded to 512 characters. This initial integration does not implement upstream multi-channel decoding or weighted posterior stitching.
+- Inference starts after 2 seconds and updates once per second, retaining up to 12 seconds of context (normally about 6-7 seconds, following the upstream context policy), aligned to the 96-sample output stride.
+- Weighted posterior stitching adapted from upstream: log-softmax, one-frame dilation of nonblank classes, smooth edge weights, 4-second left context and a 2-second freeze guard. Complete symbol spans are committed; long blank runs restore word boundaries. Pending text can change; final decoder history is bounded to 512 characters. The CW card retains up to 200 stable display rows. Multi-channel decoding is not implemented.
 - WPM, tone and character confidence from Classic are not invented for the neural backend.
 - Failures are displayed in the CW card; audio continues. Switching backend or restarting decode retries initialization.
 

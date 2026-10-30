@@ -6,3 +6,5 @@ Model SHA-256: cd5ee38106348ad86a8f2d40ef1ce7dccea0d7f7fbfd0f2dee0fd1a8a28773ae
 
 Model and metadata are bundled unmodified. Android streaming integration by Radiola.
 Reference preprocessing: periodic Hann, reflect padding, magnitude spectrum, noise_q90_log1p.
+
+DeepCwStitcher.kt adapts the upstream MIT-licensed posterior stitching algorithm.

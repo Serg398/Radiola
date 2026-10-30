@@ -21,7 +21,7 @@ internal class DeepCwDecoder(context: Context) : AutoCloseable {
     private val firstBin = ceil(meta.getDouble("spectrogram_min_freq_hz") * fft / rate).toInt()
     private val chars = meta.getJSONArray("chars").let { a -> List(a.length()) { a.getString(it) } }
     private val blank = meta.getInt("blank_index")
-    private val space = chars.indexOf(" ")
+    private val stitcher = DeepCwStitcher(chars, blank, meta.getInt("num_classes"), rate.toDouble() / frameSamples, ceil(134.0 / stride).toInt())
     private val session = OrtSession.SessionOptions().use { options ->
         options.setIntraOpNumThreads(2)
         options.setInterOpNumThreads(1)
@@ -38,9 +38,6 @@ internal class DeepCwDecoder(context: Context) : AutoCloseable {
     private var sourceIndex = 0L
     private var nextPosition = 0.0
     private var previous = 0f
-    private var committedFrame = 0L
-    private var previousClass = -1
-    private var blanks = 0
     private val text = StringBuilder()
     private var preview = ""
     var inferenceMs = 0L; private set
@@ -66,8 +63,9 @@ internal class DeepCwDecoder(context: Context) : AutoCloseable {
         val end = baseSample + count
         if (end < nextRun) return
         // Keep 12 seconds, aligned to output frames so CTC timestamps stay absolute.
-        if (count > rate * 12) {
-            val drop = ((count - rate * 12 + frameSamples - 1) / frameSamples) * frameSamples
+        val startFrame = max(stitcher.contextStartFrame, ceil((end - rate * 12).toDouble() / frameSamples).toLong())
+        val drop = (startFrame * frameSamples - baseSample).toInt()
+        if (drop > 0) {
             audio.copyInto(audio, 0, drop, count); count -= drop; baseSample += drop
         }
         val started = System.nanoTime()
@@ -106,36 +104,21 @@ internal class DeepCwDecoder(context: Context) : AutoCloseable {
     }
 
     private fun decode(scores: Array<FloatArray>) {
-        val baseFrame = baseSample / frameSamples
-        val freeze = baseFrame + scores.size - ceil(2.0 * rate / frameSamples).toInt()
-        var last = previousClass; var blankCount = blanks
-        val pending = StringBuilder()
-        val first = max(0L, committedFrame - baseFrame).toInt()
-        for (i in first until scores.size) {
-            val row = scores[i]
-            val index = row.indices.maxBy { row[it] }
-            val stable = baseFrame + i < freeze
-            val target = if (stable) text else pending
-            if (index == blank) { last = -1; blankCount++ }
-            else {
-                if (index != last && index in chars.indices) {
-                    if (blankCount >= ceil(134.0 / stride).toInt() && index != space && (text.isNotEmpty() || pending.isNotEmpty()))
-                        if ((pending.lastOrNull() ?: text.lastOrNull()) != ' ') target.append(' ')
-                    if (index != space || (pending.lastOrNull() ?: text.lastOrNull()) != ' ') target.append(chars[index])
-                }
-                last = index; blankCount = 0
-            }
-            if (stable) { previousClass = last; blanks = blankCount; committedFrame = baseFrame + i + 1 }
+        stitcher.add(baseSample / frameSamples, scores)
+        val (committed, pending) = stitcher.take()
+        if (committed.text.isNotEmpty()) {
+            if (committed.prependSpace && text.isNotEmpty()) text.append(' ')
+            text.append(committed.text)
         }
         if (text.length > 512) text.delete(0, text.length - 512)
-        preview = pending.toString()
+        preview = pending.text
     }
 
     fun information() = CwInformation(text = text.toString(), pending = preview)
     fun reset() {
         count = 0; baseSample = 0; nextRun = rate * 2L; inputRate = 0
         sourceIndex = 0; nextPosition = 0.0; previous = 0f
-        committedFrame = 0; previousClass = -1; blanks = 0; text.clear(); preview = ""
+        stitcher.reset(); text.clear(); preview = ""
     }
     override fun close() = session.close()
 }

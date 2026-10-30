@@ -1,0 +1,19 @@
+0	100	A	True	BC	False	0
+0	133		False	BC	False	0
+0	166	B	False	AC	True	0
+0	199		False	AC	True	0
+0	232	A	True	AC	False	32
+32	265		False	ABC	False	65
+65	298	A	False	BC	False	98
+98	331	B	False	C	True	131
+131	364		False	CC	True	164
+164	397		False	CC	True	197
+197	430	C	True	BC	True	230
+230	463		False	BC	True	263
+263	496	B	True	C	False	296
+296	529		False	CC	True	329
+329	562		False	CC	True	362
+362	595	C	True	C	True	395
+395	628		False	AC	True	428
+428	661		False	AC	True	461
+461	694	A	True	C	True	494

@@ -4,10 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -35,8 +33,6 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
     val warm = RadiolaColors.primary
     val muted = RadiolaColors.secondaryText
     val headerStyle = TextStyle(lineHeight = 13.sp, platformStyle = PlatformTextStyle(includeFontPadding = false))
-    val scroll = rememberScrollState()
-    LaunchedEffect(info.text, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     Row(Modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp)).padding(start = 10.dp, end = 10.dp, top = 3.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -73,14 +69,8 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
                     modifier = Modifier.height(20.dp).clickable(onClick = clear).padding(horizontal = 8.dp).wrapContentHeight(Alignment.CenterVertically))
             }
             HorizontalDivider(color = RadiolaColors.border.copy(alpha = .6f), thickness = .5.dp)
-            Box(Modifier.weight(1f).fillMaxWidth()
-                .background(RadiolaColors.primaryTint.copy(alpha = .12f), RoundedCornerShape(4.dp))
-                .verticalScroll(scroll).padding(horizontal = 6.dp, vertical = 4.dp)) {
-                Text(if (info.status.isNotBlank()) info.status else info.text.trim(), color = RadiolaColors.text, fontSize = 13.sp,
-                    lineHeight = 19.sp, letterSpacing = .25.sp,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                    fontFamily = FontFamily.Monospace)
-            }
+            CwTranscriptView(if (info.status.isNotBlank()) info.status else info.text,
+                Modifier.weight(1f).fillMaxWidth())
 
         }
     }
