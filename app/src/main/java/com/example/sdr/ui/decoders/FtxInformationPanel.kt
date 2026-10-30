@@ -2,7 +2,6 @@ package com.example.sdr.ui.decoders
 
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,11 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +41,6 @@ import com.example.sdr.sources.websdr.WebSdrDirectory
 import com.example.sdr.ui.theme.RadiolaColors
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -76,7 +72,8 @@ internal fun FtxInformationRoute(mode: FtxMode, info: FtxInformation, clear: () 
 private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<FtxContact>,
     origin: RadioPoint?, remote: Boolean, locationStatus: String, requestLocation: () -> Unit, clear: () -> Unit) {
     val scroll = rememberLazyListState()
-    val displayedRows = remember(mode) { mutableStateListOf<Triple<String, FtxContact, Long>>() }
+    var displayedRows by remember(mode) { mutableStateOf(emptyList<Triple<String, FtxContact, Long>>()) }
+    var enteringRows by remember(mode) { mutableIntStateOf(0) }
     // Keep identity independent of resolved country/grid and list position, so
     // existing messages move smoothly instead of appearing to be new decodes.
     val newestFirst = remember(rows) {
@@ -90,21 +87,22 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
         }.asReversed()
     }
     LaunchedEffect(newestFirst, mode) {
-        val target = newestFirst.toMap()
-        displayedRows.removeAll { it.first !in target }
-        // Refresh location/country details without restarting row animations.
-        displayedRows.indices.forEach { index ->
-            val entry = displayedRows[index]
-            displayedRows[index] = entry.copy(second = target.getValue(entry.first))
+        val arrived = displayedRows.associate { it.first to it.third }
+        val headChanged = displayedRows.firstOrNull()?.first != newestFirst.firstOrNull()?.first
+        val now = SystemClock.uptimeMillis()
+        val added = newestFirst.takeWhile { it.first !in arrived }.size
+        enteringRows = if (headChanged) added else 0
+        // Anchor the old first row before publishing, then scroll the complete
+        // batch into view. One list movement keeps every row touching its neighbor.
+        if (enteringRows > 0) scroll.requestScrollToItem(enteringRows)
+        displayedRows = newestFirst.map { (key, row) -> Triple(key, row, arrived[key] ?: now) }
+        if (headChanged) {
+            if (enteringRows > 0) {
+                scroll.scrollToItem(enteringRows)
+                scroll.animateScrollToItem(0)
+            } else scroll.scrollToItem(0)
         }
-        val existing = displayedRows.map { it.first }.toSet()
-        // Insert in reception order, reserving space only for the arriving row.
-        for ((key, row) in newestFirst.asReversed()) {
-            if (key in existing) continue
-            displayedRows.add(0, Triple(key, row, SystemClock.uptimeMillis()))
-            scroll.scrollToItem(0)
-            delay(140)
-        }
+        enteringRows = 0
     }
     val scrollbarColor = RadiolaColors.secondaryText.copy(alpha = .45f)
     Row(Modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
@@ -145,13 +143,15 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
             HorizontalDivider(color = RadiolaColors.border.copy(alpha = .6f), thickness = .5.dp)
             if (info.lines.isEmpty()) Text("Waiting for a complete transmission...", color = RadiolaColors.secondaryText,
                 fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-            else LazyColumn(Modifier.weight(1f).fillMaxWidth().drawWithContent {
+            else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val viewportHeight = maxHeight
+            LazyColumn(Modifier.fillMaxSize().drawWithContent {
                 drawContent()
                 val layout = scroll.layoutInfo
                 if (layout.totalItemsCount > 0 && (scroll.canScrollForward || scroll.canScrollBackward)) {
                     val rowHeight = 24.dp.toPx()
                     val viewport = (layout.viewportEndOffset - layout.viewportStartOffset).toFloat()
-                    val totalHeight = layout.totalItemsCount * rowHeight
+                    val totalHeight = displayedRows.size * rowHeight
                     val thumbHeight = (size.height * viewport / totalHeight).coerceIn(12.dp.toPx().coerceAtMost(size.height), size.height)
                     val offset = scroll.firstVisibleItemIndex * rowHeight + scroll.firstVisibleItemScrollOffset
                     val progress = (offset / (totalHeight - viewport).coerceAtLeast(1f)).coerceIn(0f, 1f)
@@ -161,36 +161,30 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
                 }
             }, state = scroll, contentPadding = PaddingValues(end = 7.dp)) {
                 itemsIndexed(displayedRows, key = { _, item -> item.first }) { index, (key, row, arrivedAt) ->
-                    Box(Modifier.animateItem(
-                        fadeInSpec = null,
-                        placementSpec = tween(durationMillis = 320),
-                        fadeOutSpec = tween(durationMillis = 120)
-                    ).fillMaxWidth().clipToBounds().background(if (index % 2 == 0) RadiolaColors.primaryTint.copy(alpha = .25f)
+                    Box(Modifier.fillMaxWidth().background(if (index % 2 == 0) RadiolaColors.primaryTint.copy(alpha = .25f)
                         else androidx.compose.ui.graphics.Color.Transparent)) {
-                        AnimatedFtxRow(key, row, arrivedAt)
+                        FtxMessageRow(key, row, arrivedAt)
                     }
                 }
+                // Temporary runway lets even the first batch start above the
+                // viewport. It disappears once the shared movement finishes.
+                if (enteringRows > 0) item(key = "arrival-runway") { Spacer(Modifier.height(viewportHeight)) }
+            }
             }
         }
     }
 }
 
 @Composable
-private fun AnimatedFtxRow(key: String, row: FtxContact, arrivedAt: Long) {
+private fun FtxMessageRow(key: String, row: FtxContact, arrivedAt: Long) {
     val fresh = remember(key) { SystemClock.uptimeMillis() - arrivedAt < 1200L }
-    val appearance = remember(key) { Animatable(if (fresh) 0f else 1f) }
     val highlight = remember(key) { Animatable(if (fresh) .24f else 0f) }
     LaunchedEffect(key) {
         if (fresh) {
-            delay((arrivedAt - SystemClock.uptimeMillis()).coerceAtLeast(0L))
-            appearance.animateTo(1f, tween(550, easing = LinearOutSlowInEasing))
             highlight.animateTo(0f, tween(1000))
         }
     }
-    Box(Modifier.fillMaxWidth().graphicsLayer {
-        alpha = appearance.value
-        translationY = -size.height * (1f - appearance.value)
-    }.background(RadiolaColors.primary.copy(alpha = highlight.value))) {
+    Box(Modifier.fillMaxWidth().background(RadiolaColors.primary.copy(alpha = highlight.value))) {
         FtxTableRow(row)
     }
 }
