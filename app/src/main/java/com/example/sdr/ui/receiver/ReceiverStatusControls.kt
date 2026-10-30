@@ -73,10 +73,10 @@ internal fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) 
         listOf("RADIO" to "Radio", "MAP" to "MAP").forEach { (label, targetPage) ->
             val chosen = active && page == targetPage
             Box(Modifier.width(40.dp).fillMaxHeight()
-                .background(if (chosen) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(3.dp))
+                .background(if (chosen) RadiolaColors.primary else Color.Transparent, RoundedCornerShape(3.dp))
                 .semantics { contentDescription = if (targetPage == "Radio") "Show radio" else "Show server map" }
                 .clickable { onSelect(targetPage) }, contentAlignment = Alignment.Center) {
-                Text(label, color = if (chosen) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp,
+                Text(label, color = if (chosen) RadiolaColors.onPrimary else RadiolaColors.secondaryText, fontSize = 11.sp,
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)))
             }
         }
