@@ -115,13 +115,20 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var serverConfig = JSONObject()
     private var geometryRevision = 0L
     private var requestedGeometryRevision = -1L
-    private val applyConfig = Runnable { configure(serverConfig) }
+    private var configScheduled = false
+    private var profileRequestedAt = 0L
+    private val applyConfig = Runnable { configScheduled = false; configure(serverConfig) }
     private fun queueConfig(config: JSONObject) {
         if (config.has("center_freq") || config.has("samp_rate")) geometryRevision++
+        // Servers may send only the relative start frequency for the next profile.
+        // An absolute value retained from the previous profile must not override it.
+        if (config.has("start_offset_freq") && !config.has("start_freq")) serverConfig.remove("start_freq")
         config.keys().forEach { serverConfig.put(it, config.get(it)) }
         // A profile's identity, center and start frequency can arrive separately.
-        handler.removeCallbacks(applyConfig)
-        handler.postDelayed(applyConfig, 50)
+        if (!configScheduled) {
+            configScheduled = true
+            handler.postDelayed(applyConfig, 50)
+        }
     }
     private var initialized = false
     private var changingProfile = false
@@ -413,7 +420,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             sendTuning()
             tuning.flush()
             socket?.send(JSONObject().put("type", "dspcontrol").put("action", "start").toString())
-            Log.i("OpenWebRx", "Profile $profile center=$centerHz span=$spanHz")
+            val switchMs = if (profileRequestedAt > 0) SystemClock.elapsedRealtime() - profileRequestedAt else 0
+            Log.i("OpenWebRx", "Profile $profile center=$centerHz span=$spanHz switchMs=$switchMs")
+            profileRequestedAt = 0
         }
     }
 
@@ -509,6 +518,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         if (!active || index !in profiles.indices || index == currentBand) return
         tuning.clear(); changingProfile = true
         requestedProfile = profiles[index].first
+        profileRequestedAt = SystemClock.elapsedRealtime()
+        Log.i("OpenWebRx", "Request profile $requestedProfile")
         requestedGeometryRevision = geometryRevision
         send("selectprofile", JSONObject().put("profile", requestedProfile))
         openedAt = SystemClock.elapsedRealtime(); lastAudioAt = 0
@@ -535,6 +546,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         lastSentTuning = null
         profilesFresh = false; restoreSent = false; serverConfig = JSONObject()
         handler.removeCallbacks(applyConfig)
+        configScheduled = false; profileRequestedAt = 0
         landing?.cancel(); landing = null
         socket?.cancel(); socket = null; output?.close(); output = null
         initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0

@@ -76,7 +76,8 @@ class OpenWebRxSessionTest {
                     if (message.optString("type") == "selectprofile" &&
                         message.optJSONObject("params")?.optString("profile") == "test|vhf") {
                         webSocket.send("""{"type":"config","value":{"profile_id":"vhf"}}""")
-                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000,"start_freq":138000000,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
+                        // Relative-only start frequency must replace the old absolute HF value.
+                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000,"start_offset_freq":0,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
                     }
                 }
             }
