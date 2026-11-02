@@ -24,11 +24,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.ui.theme.RadiolaColors
 import com.example.sdr.receiver.SstvImage
+import com.example.sdr.receiver.AircraftReport
 
 /** The existing modulation card area, populated by the selected server decoder. */
 @Composable
 internal fun ServerDecodedInformationPanel(label: String, text: String, onClear: () -> Unit,
-    sstv: Boolean = false, image: SstvImage? = null) {
+    sstv: Boolean = false, image: SstvImage? = null,
+    adsb: Boolean = false, aircraft: List<AircraftReport> = emptyList()) {
     var expanded by remember(sstv) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().height(144.dp)
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
@@ -36,7 +38,9 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
         Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = RadiolaColors.primary, fontSize = 16.sp)
             Spacer(Modifier.width(12.dp))
-            Text("SERVER", color = RadiolaColors.secondaryText, fontSize = 9.sp)
+            Text(if (adsb) "SERVER FEED · 1090 MHz · INDEPENDENT OF TUNING" else "SERVER",
+                color = RadiolaColors.secondaryText, fontSize = 9.sp)
+            if (adsb) Text("  ${aircraft.size}", color = RadiolaColors.primary, fontSize = 11.sp)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onClear, contentPadding = PaddingValues(0.dp)) {
                 Text("CLEAR", color = RadiolaColors.secondaryText, fontSize = 10.sp)
@@ -56,7 +60,8 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
                     }
                 }
             }
-        } else Text(text, Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+        } else if (adsb) AircraftInformationPanel(aircraft, Modifier.fillMaxWidth().weight(1f))
+        else Text(text, Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
                 color = RadiolaColors.text, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
     }
     if (expanded && image != null) Dialog(onDismissRequest = { expanded = false },

@@ -461,7 +461,8 @@ internal fun ReceiverScreen(
             }
             if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
                 webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
-                sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage)
+                sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
+                adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)
             else if (activeMode == DemodulationMode.CW || ftxMode != null) ModulationInformationPanel(
                 activeMode, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,

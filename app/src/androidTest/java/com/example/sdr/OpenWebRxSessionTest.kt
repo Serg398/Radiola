@@ -60,7 +60,8 @@ class OpenWebRxSessionTest {
                         {"modulation":"usb","name":"USB","type":"analog","bandpass":{"low_cut":300,"high_cut":3000}},
                         {"modulation":"dmr","name":"DMR","type":"analog","requirements":["voice"]},
                         {"modulation":"ft8","name":"FT8","type":"digimode","requirements":["wsjt-x"],"underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}},
-                        {"modulation":"sstv","name":"SSTV","type":"digimode","underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}}
+                        {"modulation":"sstv","name":"SSTV","type":"digimode","underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}},
+                        {"modulation":"adsb","name":"ADSB","type":"digimode","underlying":["empty"],"ifRate":24000}
                     ]}""")
                 } else {
                     val message = JSONObject(text)
@@ -71,6 +72,9 @@ class OpenWebRxSessionTest {
                     if (message.optJSONObject("params")?.optString("secondary_mod") == "sstv") {
                         webSocket.send("""{"type":"secondary_demod","value":{"mode":"SSTV","width":2,"height":1,"sstvMode":"Martin 1"}}""")
                         webSocket.send("""{"type":"secondary_demod","value":{"mode":"SSTV","width":2,"height":1,"line":0,"pixels":"AAD/AP8A"}}""")
+                    }
+                    if (message.optJSONObject("params")?.optString("secondary_mod") == "adsb") {
+                        webSocket.send("""{"type":"secondary_demod","value":{"mode":"ADSB-LIST","aircraft":[{"icao":"ABC123","flight":"TEST123","altitude":10000,"speed":200}]}}""")
                     }
                     if (message.optString("type") == "selectprofile" &&
                         message.optJSONObject("params")?.optString("profile") == "test|hf") {
@@ -129,8 +133,15 @@ class OpenWebRxSessionTest {
                 session!!.clearDecodedText()
                 assertNull(session!!.sstvImage)
             }
+            main { session!!.requestServerMode("adsb") }
+            await("Aircraft snapshot was not received") { session!!.aircraftReports.size == 1 }
+            main {
+                assertEquals("TEST123", session!!.aircraftReports.single().flight)
+                assertEquals("", session!!.decodedText)
+            }
             main {
                 session!!.requestServerMode("wfm")
+                assertTrue(session!!.aircraftReports.isEmpty())
                 assertEquals(150000, session!!.bandwidthHz)
             }
             await("WFM command was not sent") { commands.any { it.contains("\"mod\":\"wfm\"") && it.contains("\"high_cut\":75000") } }

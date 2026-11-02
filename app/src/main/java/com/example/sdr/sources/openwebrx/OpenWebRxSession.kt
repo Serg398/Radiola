@@ -53,7 +53,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override var decodedText by mutableStateOf(""); private set
     private val sstv = OpenWebRxSstv()
     override var sstvImage by mutableStateOf<com.example.sdr.receiver.SstvImage?>(null); private set
-    override fun clearDecodedText() { decodedText = ""; sstv.clear(); sstvImage = null }
+    override var aircraftReports by mutableStateOf<List<com.example.sdr.receiver.AircraftReport>>(emptyList()); private set
+    override fun clearDecodedText() { decodedText = ""; sstv.clear(); sstvImage = null; aircraftReports = emptyList() }
     override val passbandOffsetHz get() = selectedMode?.let {
         (it.lowCut(bandwidthHz) ?: -bandwidthHz / 2) + bandwidthHz / 2 - it.cwTone
     } ?: mode.offsetForBandwidth(bandwidthHz)
@@ -300,6 +301,17 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                         }
                         "secondary_demod" -> {
                             val value = message.opt("value")
+                            if (value is JSONObject && value.optString("mode") in setOf("ADSB", "ADSB-LIST")) {
+                                val reports = OpenWebRxAircraft.parse(value)
+                                val snapshot = value.optString("mode") == "ADSB-LIST"
+                                publish(token) {
+                                    if (selectedMode?.id == "adsb") {
+                                        aircraftReports = if (snapshot) reports else OpenWebRxAircraft.merge(aircraftReports, reports)
+                                        state = ReceiverConnectionState.Connected; error = null; retry = 0
+                                    }
+                                }
+                                return
+                            }
                             if (value is JSONObject && value.optString("mode").equals("SSTV", ignoreCase = true)) {
                                 publish(token) {
                                     if (selectedMode?.id == "sstv") sstv.accept(value)?.let { sstvImage = it }
