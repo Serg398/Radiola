@@ -43,6 +43,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var features by mutableStateOf<Map<String, Boolean>>(emptyMap())
     private var selectedMode by mutableStateOf<OpenWebRxMode?>(null)
     private var initialModeId = "am"
+    private var appliedStartMode: String? = null
     private val availableModes get() = modeDescriptors.filter { candidate -> candidate.requirements.all { features[it] == true } }
     override val serverModes get() = availableModes.map {
         ReceiverModeOption(it.id, it.label, it.secondary || it.id !in setOf("am", "nfm", "fm", "wfm", "usb", "lsb", "cw", "sam"))
@@ -76,7 +77,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private val ftxDecoder = FtxDecodeWorker()
     override var state by mutableStateOf(ReceiverConnectionState.Idle); private set
     override var error by mutableStateOf<String?>(null); private set
-    override var waterfallWarning by mutableStateOf<String?>(null); private set
+    private var spectrumWarning by mutableStateOf<String?>(null)
+    private var serverNotice by mutableStateOf<String?>(null)
+    override val waterfallWarning get() = spectrumWarning ?: serverNotice
     override var frequencyHz by mutableLongStateOf(7_100_000L); private set
     override var mode by mutableStateOf(DemodulationMode.AM); private set
     override var bandwidthHz by mutableIntStateOf(9000); private set
@@ -110,7 +113,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var profiles = emptyList<Pair<String, String>>()
     private val knownBands = mutableMapOf<String, ReceiverBand>()
     private data class Resume(val profile: String, val frequency: Long?, val mode: DemodulationMode,
-        val descriptor: OpenWebRxMode?, val bandwidth: Int, val defaultBandwidth: Boolean)
+        val descriptor: OpenWebRxMode?, val bandwidth: Int, val defaultBandwidth: Boolean,
+        val profileDefaults: Boolean = false)
     private var resume: Resume? = null
     private var requestedProfile: String? = null
     private var profilesFresh = false
@@ -157,7 +161,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                 if (initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
                     val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
                     if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
-                    waterfallHistory.append(captured); frame = captured; frames++; renderedFft++; waterfallWarning = null
+                    waterfallHistory.append(captured); frame = captured; frames++; renderedFft++; spectrumWarning = null
                     if (!needsAudio && initialized && state != ReceiverConnectionState.Connected) {
                         state = ReceiverConnectionState.Connected; error = null; retry = 0
                     }
@@ -330,6 +334,13 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                             val power = message.optDouble("value", Double.NaN)
                             decoder.signal(power)
                         }
+                        "log_message" -> publish(token) {
+                            val notice = message.optString("value").take(240)
+                            if (notice.isNotBlank()) {
+                                Log.w("OpenWebRx", "Server: $notice")
+                                serverNotice = notice
+                            }
+                        }
                         "backoff" -> publish(token) { fail(message.optString("reason", "Server is busy")) }
                         "sdr_error", "demodulator_error" -> publish(token) { fail(message.optString("value", "Receiver unavailable")) }
                     }
@@ -360,7 +371,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                     }
                 } catch (e: Exception) {
                     publish(token) {
-                        if (bytes[0].toInt() == 1) waterfallWarning = "Cannot decode spectrum: ${e.message}"
+                        if (bytes[0].toInt() == 1) spectrumWarning = "Cannot decode spectrum: ${e.message}"
                         else fail("Invalid OpenWebRX audio: ${e.message}")
                     }
                 }
@@ -387,6 +398,12 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             config.optString("sdr_id", old.getOrElse(0) { "" }) + "|" + config.optString("profile_id", old.getOrElse(1) { "" })
         } else profile
         val saved = resume
+        val unsolicitedProfile = initialized && saved == null && requestedProfile == null && nextProfile != profile
+        if (unsolicitedProfile) {
+            val start = config.optLong("start_freq", nextCenter + config.optLong("start_offset_freq", 0))
+            // Identity/rate often precede center_freq, including server-initiated switches.
+            if (start !in (nextCenter - nextSpan / 2)..(nextCenter + nextSpan / 2)) return
+        }
         if (saved == null && requestedProfile != null) {
             if (nextProfile != requestedProfile) return
             val known = knownBands[nextProfile]
@@ -401,11 +418,19 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             if (saved.frequency != null && saved.frequency !in
                 (nextCenter - nextSpan / 2)..(nextCenter + nextSpan / 2)) return
         }
-        val restoreTuning = saved != null
+        val restoreTuning = saved != null && !saved.profileDefaults
         val changed = !initialized || nextCenter != centerHz || nextSpan != spanHz || nextProfile != profile
+        val startMode = config.optString("start_mod", "am").ifBlank { "am" }
+        val applyDefaultMode = !restoreTuning && (!initialized || nextProfile != profile ||
+            requestedProfile != null || startMode != appliedStartMode)
+        if (unsolicitedProfile) {
+            val name = profiles.firstOrNull { it.first == nextProfile }?.second ?: nextProfile
+            Log.w("OpenWebRx", "Server changed profile without client request: $profile -> $nextProfile")
+            if (serverNotice == null) serverNotice = "Server changed band: ${name.take(100)}"
+        }
         centerHz = nextCenter; spanHz = nextSpan; profile = nextProfile
         if (spanHz <= 0) return
-        if (saved != null) {
+        if (saved != null && !saved.profileDefaults) {
             mode = saved.mode; selectedMode = saved.descriptor
             initialModeId = selectedMode?.id ?: mode.name.lowercase()
             bandwidthHz = saved.bandwidth.coerceIn(100, bandwidthLimit)
@@ -413,26 +438,15 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             frequencyHz = saved.frequency ?: config.optLong("start_freq", centerHz)
             resume = null
         }
+        if (saved?.profileDefaults == true) resume = null
+        // A profile's suggested mode can arrive after its RF geometry.
+        appliedStartMode = startMode
+        if (applyDefaultMode) applyProfileMode(startMode)
         if (changed) {
             lastSentTuning = null
             val low = centerHz - spanHz / 2
             val high = centerHz + spanHz / 2
             if (!restoreTuning) frequencyHz = config.optLong("start_freq", centerHz + config.optLong("start_offset_freq", 0)).coerceIn(low, high)
-            if (!initialized && !restoreTuning) {
-                selectedMode = null
-                initialModeId = config.optString("start_mod", "am")
-                mode = when (config.optString("start_mod")) {
-                    "nfm" -> DemodulationMode.NFM
-                    "wfm" -> DemodulationMode.WFM
-                    "usb" -> DemodulationMode.USB
-                    "lsb" -> DemodulationMode.LSB
-                    "cw" -> DemodulationMode.CW
-                    else -> DemodulationMode.AM
-                }
-                bandwidthHz = WebSdrBandwidth.default(mode).coerceAtMost(bandwidthLimit)
-                val initialId = config.optString("start_mod", "am")
-                modeDescriptors.firstOrNull { it.id == initialId }?.let { applyServerMode(it) }
-            }
             knownBands[profile] = ReceiverBand(0, "Current", centerHz, spanHz, frequencyHz, 0)
             rebuildBands()
             frame = null; pendingRow.set(null); waterfallHistory = WaterfallHistory(1024)
@@ -443,7 +457,25 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             val switchMs = if (profileRequestedAt > 0) SystemClock.elapsedRealtime() - profileRequestedAt else 0
             Log.i("OpenWebRx", "Profile $profile center=$centerHz span=$spanHz switchMs=$switchMs")
             profileRequestedAt = 0
+        } else if (applyDefaultMode) {
+            sendTuning(); tuning.flush()
         }
+    }
+
+    private fun applyProfileMode(id: String) {
+        selectedMode = null; initialModeId = id
+        mode = when (id) {
+            "nfm", "fm" -> DemodulationMode.NFM
+            "wfm" -> DemodulationMode.WFM
+            "usb" -> DemodulationMode.USB
+            "lsb" -> DemodulationMode.LSB
+            "cw" -> DemodulationMode.CW
+            else -> DemodulationMode.AM
+        }
+        bandwidthDefault = true
+        bandwidthHz = WebSdrBandwidth.default(mode).coerceAtMost(bandwidthLimit)
+        clearDecodedText()
+        modeDescriptors.firstOrNull { it.id == id }?.let { applyServerMode(it) }
     }
 
     private fun restoreProfile() {
@@ -538,6 +570,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override fun selectBand(index: Int) {
         if (!active || index !in profiles.indices || index == currentBand) return
         tuning.clear(); changingProfile = true
+        serverNotice = null
         requestedProfile = profiles[index].first
         profileRequestedAt = SystemClock.elapsedRealtime()
         Log.i("OpenWebRx", "Request profile $requestedProfile")
@@ -566,6 +599,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         generation++; tuning.clear(); pendingRow.set(null)
         lastSentTuning = null
         profilesFresh = false; restoreSent = false; serverConfig = JSONObject()
+        appliedStartMode = null
         handler.removeCallbacks(applyConfig)
         configScheduled = false; profileRequestedAt = 0
         landing?.cancel(); landing = null
@@ -578,7 +612,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         if (resume == null && profile.isNotBlank()) {
             val target = requestedProfile ?: profile
             resume = Resume(target, if (target == profile) frequencyHz else knownBands[target]?.defaultHz,
-                mode, selectedMode, bandwidthHz, bandwidthDefault)
+                mode, selectedMode, bandwidthHz, bandwidthDefault, profileDefaults = target != profile)
         }
         Log.i("OpenWebRx", "Recovering: $message; selected=${resume?.profile}")
         closeTransport(); error = "$message; reconnecting"; state = ReceiverConnectionState.Connecting
@@ -595,7 +629,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         resume = null; requestedProfile = null
         centerHz = 0; spanHz = 0; frame = null; waterfallHistory = WaterfallHistory(1024)
         frames = 0; frameId = 0; retry = 0; fpsAt = SystemClock.elapsedRealtime()
-        error = null; waterfallWarning = null; state = ReceiverConnectionState.Idle
+        error = null; spectrumWarning = null; serverNotice = null; state = ReceiverConnectionState.Idle
         if (focusHeld) { audioManager.abandonAudioFocusRequest(focus); focusHeld = false }
     }
 }

@@ -79,6 +79,12 @@ internal class ReceiverPresentation(
         changeMode(DemodulationMode.USB); changeBandwidth(3000); ftxMode = value
     }
     fun selectServerMode(id: String) { ftxMode = null; online.session.requestServerMode(id) }
+    fun selectBand(index: Int) {
+        val session = online.session
+        if (online.source == ReceiverSource.OPEN_WEB_RX && session.active &&
+            index in session.bands.indices && index != session.currentBand) ftxMode = null
+        session.selectBand(index)
+    }
     fun clearFtx() { if (online.source.online) online.session.clearFtx() else usb.session.ftxDecoder.clear() }
     fun clearCw() { if (online.source.online) online.session.clearCw() else usb.session.cwDecoder.clear() }
     fun enableCw(value: Boolean) { if (online.source.online) online.session.enableCw(value) else usb.session.cwDecoder.requestDecoding(value) }

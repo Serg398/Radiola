@@ -76,17 +76,24 @@ class OpenWebRxSessionTest {
                     if (message.optJSONObject("params")?.optString("secondary_mod") == "adsb") {
                         webSocket.send("""{"type":"secondary_demod","value":{"mode":"ADSB-LIST","aircraft":[{"icao":"ABC123","flight":"TEST123","altitude":10000,"speed":200}]}}""")
                     }
+                    if (message.optJSONObject("params")?.optLong("offset_freq", Long.MIN_VALUE) == 42L) {
+                        webSocket.send("""{"type":"config","value":{"profile_id":"vhf","start_freq":138000000,"start_mod":"nfm","samp_rate":100000}}""")
+                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000}}""") }, 300, TimeUnit.MILLISECONDS)
+                    }
                     if (message.optString("type") == "selectprofile" &&
                         message.optJSONObject("params")?.optString("profile") == "test|hf") {
                         // Some servers publish identity before the new geometry.
                         webSocket.send("""{"type":"config","value":{"profile_id":"hf"}}""")
                         scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":7100000,"start_freq":7100000,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
+                        if (connections.get() == 2 && commands.any { it.contains("\"profile\":\"test|vhf\"") }) {
+                            scheduler.schedule({ webSocket.send("""{"type":"config","value":{"start_mod":"sstv"}}""") }, 500, TimeUnit.MILLISECONDS)
+                        }
                     }
                     if (message.optString("type") == "selectprofile" &&
                         message.optJSONObject("params")?.optString("profile") == "test|vhf") {
                         webSocket.send("""{"type":"config","value":{"profile_id":"vhf"}}""")
                         // Relative-only start frequency must replace the old absolute HF value.
-                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000,"start_offset_freq":0,"samp_rate":100000}}""") }, 300, TimeUnit.MILLISECONDS)
+                        scheduler.schedule({ webSocket.send("""{"type":"config","value":{"center_freq":138000000,"start_offset_freq":0,"samp_rate":100000,"start_mod":"nfm"}}""") }, 300, TimeUnit.MILLISECONDS)
                     }
                 }
             }
@@ -193,6 +200,31 @@ class OpenWebRxSessionTest {
             Thread.sleep(100)
             main { assertEquals("Partial profile config changed RF frequency", 7_101_000L, session!!.frequencyHz) }
             await("New profile geometry was not applied") { session!!.currentBand == 1 && session!!.frequencyHz == 138_000_000L }
+            main {
+                assertEquals(DemodulationMode.NFM, session!!.mode)
+                assertTrue(session!!.bandwidthDefault)
+                assertEquals(10000, session!!.bandwidthHz)
+                session!!.setBandwidth(1000)
+                session!!.selectBand(0)
+            }
+            await("Late server mode was not applied") { session!!.currentBand == 0 && session!!.serverModeId == "sstv" }
+            main {
+                assertEquals(DemodulationMode.USB, session!!.mode)
+                assertEquals(3000, session!!.bandwidthHz)
+                assertTrue(session!!.bandwidthDefault)
+            }
+            main { session!!.tune(7_100_042) }
+            Thread.sleep(150)
+            main {
+                assertEquals("Mixed server profile geometry was applied", 0, session!!.currentBand)
+                assertEquals(7_100_042L, session!!.frequencyHz)
+            }
+            await("Server-initiated profile switch was not applied") { session!!.currentBand == 1 }
+            main {
+                assertEquals(138_000_000L, session!!.frequencyHz)
+                assertEquals(DemodulationMode.NFM, session!!.mode)
+                assertTrue(session!!.waterfallWarning.orEmpty().contains("Server changed band"))
+            }
             sockets.last().close(1011, "test cancel retry")
             await("Retry was not scheduled") { session!!.state == ReceiverConnectionState.Connecting }
             main { session!!.disconnect() }

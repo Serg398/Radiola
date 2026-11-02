@@ -323,7 +323,7 @@ internal fun ReceiverScreen(
                         if (remote) webSession.bandwidthOptions else BandwidthOptions.forMode(activeMode),
                         enabled = !remote || webSession.bandwidthAdjustable)
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
-                        webSession.active, webSession::selectBand)
+                        webSession.active, presentation::selectBand)
                     if (!remote && activeMode == DemodulationMode.WFM) StereoToggle(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
