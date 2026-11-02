@@ -22,6 +22,17 @@ class WaterfallView(
     private var bitmap = Bitmap.createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
     private val paint = Paint().apply { isFilterBitmap = false }
     private var cachedRevision = -1L
+    private var displayRange: DisplayDbRange? = null
+    private val rowLow = FloatArray(history.capacity) { -94f }
+    private val rowHigh = FloatArray(history.capacity) { -25f }
+    private var assignedRevision = 0L
+    internal fun setDisplayRange(range: DisplayDbRange?) {
+        if ((displayRange == null) != (range == null)) {
+            rowLow.fill(range?.low ?: -94f); rowHigh.fill(range?.high ?: -25f)
+            cachedRevision = -1
+        }
+        displayRange = range
+    }
     private var tuningFrequencyHz = 0L
     private var visibleSpanHz = 2_400_000
     private val sourceRect = Rect()
@@ -43,6 +54,13 @@ class WaterfallView(
     }
     fun refresh() {
         val started = System.nanoTime()
+        val newRows = minOf(history.size.toLong(), history.revision - assignedRevision).toInt()
+        for (age in 0 until newRows) {
+            val row = history.rowAtAge(age)
+            rowLow[row] = displayRange?.low ?: -94f
+            rowHigh[row] = displayRange?.high ?: -25f
+        }
+        assignedRevision = history.revision
         // Cache sufficient resolution for the zoom while retaining the complete captured band.
         val minimum = minOf(minimumRenderWidth, history.binCount)
         val wanted = (minimum.toLong() * history.latestSpanHz / visibleSpanHz).coerceIn(minimum.toLong(), history.binCount.toLong()).toInt()
@@ -68,7 +86,12 @@ class WaterfallView(
             val first = x * history.binCount / renderWidth
             val end = maxOf(first + 1, (x + 1) * history.binCount / renderWidth)
             var level = 0
-            for (bin in first until end) level = maxOf(level, history.levelAt(row, bin))
+            for (bin in first until end) {
+                val value = if (displayRange == null) history.levelAt(row, bin)
+                    else (((history.dbAt(row, bin) - rowLow[row]) / (rowHigh[row] - rowLow[row])) * 255f)
+                        .toInt().coerceIn(0, 255)
+                level = maxOf(level, value)
+            }
             pixels[x] = palette[level]
         }
         bitmap.setPixels(pixels, 0, renderWidth, 0, row, renderWidth, 1)

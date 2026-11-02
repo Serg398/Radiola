@@ -38,6 +38,7 @@ internal fun AmberSpectrum(
     visibleCenterHz: Double,
     modifier: Modifier = Modifier,
     relative: Boolean = false,
+    displayRange: DisplayDbRange? = null,
 ) {
     val traceSmoother = remember { SpectrumTraceSmoother() }
     val axisPaint = remember {
@@ -54,6 +55,8 @@ internal fun AmberSpectrum(
         val bottom = size.height
         val width = size.width - left
         val height = bottom - top
+        val low = displayRange?.low ?: if (relative) -94f else -120f
+        val high = displayRange?.high ?: if (relative) -25f else 0f
         for (step in 0..3) {
             val y = top + height * step / 3f
             drawLine(RadiolaColors.plotGrid, Offset(left, y), Offset(size.width, y), 1f)
@@ -65,7 +68,8 @@ internal fun AmberSpectrum(
         axisPaint.textSize = 11.sp.toPx()
         for (step in 0..3) {
             drawContext.canvas.nativeCanvas.drawText(
-                if (relative) "${100 - (100f * step / 3).roundToInt()}" else "${-40 * step}", 2.dp.toPx(), top + height * step / 3f + 3.dp.toPx(),
+                if (relative && displayRange == null) "${100 - (100f * step / 3).roundToInt()}"
+                else "${(high - (high - low) * step / 3).roundToInt()}", 2.dp.toPx(), top + height * step / 3f + 3.dp.toPx(),
                 axisPaint
             )
         }
@@ -89,7 +93,7 @@ internal fun AmberSpectrum(
                 for (bin in first + 1 until last) db = maxOf(db, values[bin])
                 val fraction = (first.toFloat() / values.size - viewportStart) / (viewportEnd - viewportStart)
                 val x = left + width * fraction
-                val y = bottom - (if (relative) (db + 94f) / 69f else (db + 120f) / 120f).coerceIn(0f, 1f) * height
+                val y = bottom - ((db - low) / (high - low)).coerceIn(0f, 1f) * height
                 if (index == 0) {
                     trace.moveTo(x, y)
                     fill.moveTo(x, bottom)

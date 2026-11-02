@@ -3,6 +3,7 @@ package com.example.sdr.ui.receiver
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -199,6 +201,19 @@ internal fun ReceiverScreen(
     }
     // Both sources move the RF image under the same fixed tuning cursor.
     val visibleCenterHz = if (encoderRotating) displayFrequencyHz else tunedHz.toDouble()
+    var automaticDisplay by rememberSaveable { mutableStateOf(false) }
+    var automaticLevels by remember { mutableStateOf<DisplayLevels?>(null) }
+    val autoViewport by rememberUpdatedState(visibleCenterHz to visibleSpanHz)
+    LaunchedEffect(automaticDisplay, activeSpectrum) {
+        automaticLevels = null
+        if (automaticDisplay) {
+            val controller = AutomaticDisplayLevels()
+            androidx.compose.runtime.snapshotFlow { activeSpectrum.value to autoViewport }.collect { (frame, viewport) ->
+                if (frame != null) automaticLevels = controller.update(frame, viewport.first, viewport.second,
+                    android.os.SystemClock.elapsedRealtime())
+            }
+        }
+    }
     val remoteBand = webSession.bands.getOrNull(webSession.currentBand)
     val latestViewport by rememberUpdatedState(visibleCenterHz.toLong() to visibleSpanHz)
     LaunchedEffect(remote, webSession.active, remoteBand) {
@@ -379,7 +394,8 @@ internal fun ReceiverScreen(
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
                     if (selected != "Waterfall") {
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote)
+                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
+                                displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
                             var markerWidthPx by remember { mutableStateOf(0) }
                             val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
                             val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
@@ -387,12 +403,19 @@ internal fun ReceiverScreen(
                             Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(RadiolaColors.primaryTint, RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
                                 Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
                             }
-                            Text(if (remote) "REL" else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
+                            Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
+                            Row(Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("AUTO", color = if (automaticDisplay) warm else muted, fontSize = 10.sp,
+                                modifier = Modifier.clickable { automaticDisplay = !automaticDisplay }
+                                    .background(if (automaticDisplay) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
+                                    .border(.5.dp, if (automaticDisplay) warm else edge, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp))
                             Text(
                                 "SPAN %d kHz".format(Locale.US, visibleSpanHz / 1_000),
-                                Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 4.dp),
                                 color = muted, fontSize = 11.sp
                             )
+                            }
                         }
                     }
                     if (selected != "Spectrum") {
@@ -413,6 +436,7 @@ internal fun ReceiverScreen(
                             AndroidView(
                                 factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024) },
                                 update = { view ->
+                                    view.setDisplayRange(if (automaticDisplay) automaticLevels?.waterfall else null)
                                     view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
                                     activeWaterfall.value // Subscribe to the independent waterfall snapshot.
                                     view.refresh()
