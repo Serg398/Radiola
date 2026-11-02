@@ -15,6 +15,7 @@ internal interface OnlineReceiverSession {
     val modeLabel: String get() = mode.label
     val passbandOffsetHz: Int get() = mode.offsetForBandwidth(bandwidthHz)
     val decodedText: String get() = ""
+    val sstvImage: SstvImage? get() = null
     val serverDataMode: Boolean get() = false
     val bandwidthAdjustable: Boolean get() = true
     val bandwidthOptions: BandwidthOptions

@@ -51,7 +51,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override val modeLabel get() = selectedMode?.label ?: mode.label
     override val serverDataMode get() = selectedMode?.secondary == true
     override var decodedText by mutableStateOf(""); private set
-    override fun clearDecodedText() { decodedText = "" }
+    private val sstv = OpenWebRxSstv()
+    override var sstvImage by mutableStateOf<com.example.sdr.receiver.SstvImage?>(null); private set
+    override fun clearDecodedText() { decodedText = ""; sstv.clear(); sstvImage = null }
     override val passbandOffsetHz get() = selectedMode?.let {
         (it.lowCut(bandwidthHz) ?: -bandwidthHz / 2) + bandwidthHz / 2 - it.cwTone
     } ?: mode.offsetForBandwidth(bandwidthHz)
@@ -298,6 +300,12 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                         }
                         "secondary_demod" -> {
                             val value = message.opt("value")
+                            if (value is JSONObject && value.optString("mode").equals("SSTV", ignoreCase = true)) {
+                                publish(token) {
+                                    if (selectedMode?.id == "sstv") sstv.accept(value)?.let { sstvImage = it }
+                                }
+                                return
+                            }
                             val line = formatDecoded(value)
                             publish(token) {
                                 if (serverDataMode && line.isNotEmpty()) {
@@ -488,7 +496,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         selectedMode = descriptor; mode = descriptor.basicMode
         initialModeId = descriptor.id
         bandwidthDefault = true; bandwidthHz = descriptor.defaultWidth.coerceIn(100, bandwidthLimit)
-        decodedText = ""
+        clearDecodedText()
         openedAt = SystemClock.elapsedRealtime(); lastAudioAt = 0
     }
     override fun requestServerMode(id: String) {
@@ -512,6 +520,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             error = "Frequency outside this profile"
             handler.removeCallbacks(clearWarning); handler.postDelayed(clearWarning, 3000); return
         }
+        if (hz != frequencyHz && selectedMode?.id == "sstv") clearDecodedText()
         frequencyHz = hz; error = null; sendTuning()
     }
     override fun selectBand(index: Int) {
@@ -570,7 +579,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override fun disconnect() {
         handler.removeCallbacksAndMessages(null); closeTransport()
         bands = emptyList(); knownBands.clear(); profiles = emptyList(); profile = ""
-        modeDescriptors = emptyList(); features = emptyMap(); selectedMode = null; decodedText = ""
+        modeDescriptors = emptyList(); features = emptyMap(); selectedMode = null; clearDecodedText()
         resume = null; requestedProfile = null
         centerHz = 0; spanHz = 0; frame = null; waterfallHistory = WaterfallHistory(1024)
         frames = 0; frameId = 0; retry = 0; fpsAt = SystemClock.elapsedRealtime()

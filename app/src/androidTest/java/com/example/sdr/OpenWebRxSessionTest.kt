@@ -59,13 +59,18 @@ class OpenWebRxSessionTest {
                         {"modulation":"cw","name":"CW","type":"analog","bandpass":{"low_cut":500,"high_cut":1000}},
                         {"modulation":"usb","name":"USB","type":"analog","bandpass":{"low_cut":300,"high_cut":3000}},
                         {"modulation":"dmr","name":"DMR","type":"analog","requirements":["voice"]},
-                        {"modulation":"ft8","name":"FT8","type":"digimode","requirements":["wsjt-x"],"underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}}
+                        {"modulation":"ft8","name":"FT8","type":"digimode","requirements":["wsjt-x"],"underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}},
+                        {"modulation":"sstv","name":"SSTV","type":"digimode","underlying":["usb"],"bandpass":{"low_cut":0,"high_cut":3000}}
                     ]}""")
                 } else {
                     val message = JSONObject(text)
                     if (message.optString("action") == "start") sockets.addIfAbsent(webSocket)
                     if (message.optJSONObject("params")?.optString("secondary_mod") == "ft8") {
                         webSocket.send("""{"type":"secondary_demod","value":{"message":"CQ TEST AA00","db":-12}}""")
+                    }
+                    if (message.optJSONObject("params")?.optString("secondary_mod") == "sstv") {
+                        webSocket.send("""{"type":"secondary_demod","value":{"mode":"SSTV","width":2,"height":1,"sstvMode":"Martin 1"}}""")
+                        webSocket.send("""{"type":"secondary_demod","value":{"mode":"SSTV","width":2,"height":1,"line":0,"pixels":"AAD/AP8A"}}""")
                     }
                     if (message.optString("type") == "selectprofile" &&
                         message.optJSONObject("params")?.optString("profile") == "test|hf") {
@@ -115,6 +120,15 @@ class OpenWebRxSessionTest {
                 commands.any { it.contains("\"secondary_mod\":\"ft8\"") && it.contains("\"mod\":\"usb\"") && it.contains("\"low_cut\":0") }
             }
             await("Server decoder result was not received") { session!!.decodedText.contains("CQ TEST AA00") }
+            main { session!!.requestServerMode("sstv") }
+            await("SSTV scanline did not become an image") { session!!.sstvImage?.lines == 1 }
+            main {
+                assertEquals(android.graphics.Color.RED, session!!.sstvImage!!.bitmap.getPixel(0, 0))
+                assertEquals(android.graphics.Color.GREEN, session!!.sstvImage!!.bitmap.getPixel(1, 0))
+                assertEquals("", session!!.decodedText)
+                session!!.clearDecodedText()
+                assertNull(session!!.sstvImage)
+            }
             main {
                 session!!.requestServerMode("wfm")
                 assertEquals(150000, session!!.bandwidthHz)
