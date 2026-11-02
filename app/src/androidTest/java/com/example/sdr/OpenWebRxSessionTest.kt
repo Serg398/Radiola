@@ -139,6 +139,20 @@ class OpenWebRxSessionTest {
                 }
             }
             main { session!!.tune(7_101_000) }
+            val beforeBurst = commands.size
+            repeat(100) { index ->
+                main { session!!.tune(7_101_000 + index.toLong()) }
+                Thread.sleep(5)
+            }
+            await("Final gesture frequency was not delivered") {
+                commands.drop(beforeBurst).any { it.contains("\"offset_freq\":349") }
+            }
+            val burstCommands = commands.drop(beforeBurst).count { it.contains("offset_freq") }
+            assertTrue("Gesture flooded remote DSP: $burstCommands commands", burstCommands < 35)
+            main { session!!.tune(7_101_000) }
+            await("Final frequency was not restored") {
+                commands.lastOrNull()?.contains("\"offset_freq\":250") == true
+            }
             assertEquals(1, sockets.size)
             sockets.first().close(1011, "test reconnect")
             await("Session did not reconnect") { sockets.size > 1 && session!!.state == ReceiverConnectionState.Connected }
@@ -220,6 +234,29 @@ class OpenWebRxSessionTest {
                 await("Selected profile/frequency did not recover", 40_000) {
                     runtime.session.state == ReceiverConnectionState.Connected && runtime.session.currentBand == selected &&
                         runtime.session.frequencyHz == frequency
+                }
+            }
+            val observeSeconds = InstrumentationRegistry.getArguments().getString("openwebrx_observe_seconds")
+                ?.toIntOrNull()?.coerceIn(0, 180) ?: 0
+            repeat(observeSeconds) {
+                Thread.sleep(1000)
+                main {
+                    assertEquals("Unexpected reconnect: ${runtime.session.error}",
+                        ReceiverConnectionState.Connected, runtime.session.state)
+                }
+            }
+            if (InstrumentationRegistry.getArguments().getString("openwebrx_tune_stress") == "true") {
+                var base = 0L
+                main { base = runtime.session.frequencyHz }
+                repeat(600) { index ->
+                    main { runtime.session.tune(base + ((index % 100) - 50) * 10L) }
+                    Thread.sleep(8)
+                }
+                main { runtime.session.tune(base) }
+                Thread.sleep(1500)
+                main {
+                    assertEquals("Connection lost during tuning: ${runtime.session.error}",
+                        ReceiverConnectionState.Connected, runtime.session.state)
                 }
             }
             activity.recreate()

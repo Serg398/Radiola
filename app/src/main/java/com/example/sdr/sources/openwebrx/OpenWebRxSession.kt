@@ -29,6 +29,8 @@ import com.example.sdr.sources.websdr.WebSdrBandwidth
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okio.ByteString
@@ -130,6 +132,11 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     @Volatile private var lastPacketAt = 0L
     private var openedAt = 0L
     private var fpsAt = 0L
+    private val receivedFft = AtomicInteger()
+    private val receivedAudio = AtomicInteger()
+    private val replacedFft = AtomicInteger()
+    private var diagnosticsAt = 0L
+    private var renderedFft = 0
     private data class Row(val token: Long, val bins: FloatArray, val center: Long, val span: Int, val timestampNanos: Long)
     private val pendingRow = AtomicReference<Row?>()
     private var lastSentTuning: JSONObject? = null
@@ -140,7 +147,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                 if (initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
                     val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
                     if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
-                    waterfallHistory.append(captured); frame = captured; frames++; waterfallWarning = null
+                    waterfallHistory.append(captured); frame = captured; frames++; renderedFft++; waterfallWarning = null
                     if (!needsAudio && initialized && state != ReceiverConnectionState.Connected) {
                         state = ReceiverConnectionState.Connected; error = null; retry = 0
                     }
@@ -149,7 +156,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             handler.postDelayed(this, 34)
         }
     }
-    private val tuning = LatestCommand<JSONObject>(0, SystemClock::elapsedRealtime,
+    // Keep gesture updates local; the remote DSP only needs the latest frequency.
+    private val tuning = LatestCommand<JSONObject>(34, SystemClock::elapsedRealtime,
         { task, delay -> handler.postDelayed(task, delay); Unit }, handler::removeCallbacks) {
         if (active && initialized && !changingProfile) {
             val previous = lastSentTuning
@@ -167,13 +175,21 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         override fun run() {
             if (!active) return
             val now = SystemClock.elapsedRealtime()
+            if (now - diagnosticsAt >= 10_000) {
+                val seconds = (now - diagnosticsAt).coerceAtLeast(1) / 1000.0
+                Log.i("OpenWebRx", "Stream ${url.toHttpUrlOrNull()?.host}: window=${seconds}s " +
+                    "fft=${receivedFft.getAndSet(0)} rendered=$renderedFft replaced=${replacedFft.getAndSet(0)} " +
+                    "audio=${receivedAudio.getAndSet(0)} audioAge=${now - lastAudioAt}ms " +
+                    "packetAge=${now - lastPacketAt}ms state=$state profileChange=$changingProfile")
+                renderedFft = 0; diagnosticsAt = now
+            }
             if (changingProfile && now - openedAt > 15_000) {
                 recover("Profile change timed out")
             } else if (openedAt > 0 && now - maxOf(openedAt, if (needsAudio) lastAudioAt else lastPacketAt) > 20_000) {
                 recover("Audio stream stalled")
             }
             if (now - fpsAt >= 1000) {
-                visualFps = (frames * 1000L / (now - fpsAt).coerceAtLeast(1)).toInt()
+                visualFps = (frames * 1000.0 / (now - fpsAt).coerceAtLeast(1)).roundToInt()
                 frames = 0; fpsAt = now
             }
             handler.postDelayed(this, 1000)
@@ -207,6 +223,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private fun open() {
         val token = generation
         openedAt = SystemClock.elapsedRealtime()
+        diagnosticsAt = openedAt; renderedFft = 0
+        receivedFft.set(0); receivedAudio.set(0); replacedFft.set(0)
         val request = Request.Builder().url(url).build()
         landing = client.newCall(request).also { call ->
             call.timeout().timeout(20, TimeUnit.SECONDS)
@@ -298,13 +316,16 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                     when (bytes[0].toInt()) {
                         1 -> {
                             val bins = decoder.spectrum(payload) ?: return
-                            pendingRow.set(Row(token, bins, decoder.centerHz, decoder.spanHz, SystemClock.elapsedRealtimeNanos()))
+                            receivedFft.incrementAndGet()
+                            if (pendingRow.getAndSet(Row(token, bins, decoder.centerHz, decoder.spanHz,
+                                    SystemClock.elapsedRealtimeNanos())) != null) replacedFft.incrementAndGet()
                         }
                         2, 4 -> {
                             val rate = if (bytes[0].toInt() == 4) 48000 else 12000
                             val samples = decoder.audio(payload, rate == 48000)
                             if (samples.isEmpty() || token != generation) return
                             lastAudioAt = SystemClock.elapsedRealtime()
+                            receivedAudio.incrementAndGet()
                             ownedOutput.offer(rate, samples, decoder.signalDbm)
                             ftxDecoder.offer(samples, samples.size, rate, 1)
                             if (audioSampleRate != rate) publish(token) { audioSampleRate = rate }
@@ -322,6 +343,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = publish(token) {
+                Log.i("OpenWebRx", "Socket closed: code=$code reason=$reason")
                 recover(reason.ifBlank { "OpenWebRX connection closed" })
             }
         })

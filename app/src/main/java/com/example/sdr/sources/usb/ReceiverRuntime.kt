@@ -114,7 +114,7 @@ class ReceiverRuntime(private val context: Context) {
         updateAudioWarmup()
     }
     internal fun updateAudioWarmup() {
-        val online = (context.applicationContext as? RadiolaApplication)?.webSdr?.source == ReceiverSource.WEB_SDR
+        val online = (context.applicationContext as? RadiolaApplication)?.webSdr?.source?.online == true
         if (visible > 0 && !online) session.prepareAudio() else session.releaseIdleAudio()
     }
     fun requestStart(device: UsbDevice) {
