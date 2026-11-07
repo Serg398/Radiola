@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -29,9 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -53,6 +57,7 @@ import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
+import kotlin.math.exp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -60,23 +65,23 @@ private const val SIGNAL_METER_MAXIMUM = 124f // S9 (54 dB above S0) + 70 dB.
 
 @Composable
 internal fun WebSdrSignalMeter(session: OnlineReceiverSession, squelch: ReceiverSquelch, open: Boolean,
-    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier) {
+    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier, analog: Boolean = true) {
     val signal = session.signalDbm
     SignalMeter((signal ?: -127f) + 37f, squelch, session.squelchOpen, onSquelchChange, modifier,
-        remote = true, signalAvailable = signal != null)
+        remote = true, signalAvailable = signal != null, analog = analog)
 }
 
 @Composable
 internal fun SignalMeter(
     dbfs: Float, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier,
-    remote: Boolean = false, signalAvailable: Boolean = true,
+    remote: Boolean = false, signalAvailable: Boolean = true, analog: Boolean = true,
 ) {
     val currentSquelch by rememberUpdatedState(squelch)
     val currentSignal by rememberUpdatedState(dbfs)
     val currentSignalAvailable by rememberUpdatedState(signalAvailable)
     var readoutSignal by remember { mutableStateOf(dbfs) }
-    // Keep the bar responsive while giving the numeric reading time to settle.
+    // Keep the needle responsive while giving the numeric reading time to settle.
     LaunchedEffect(Unit) {
         while (true) {
             delay(250)
@@ -85,12 +90,34 @@ internal fun SignalMeter(
             } else currentSignal
         }
     }
-    val displayedSignal = remember { Animatable(dbfs) }
-    LaunchedEffect(dbfs) {
-        displayedSignal.animateTo(dbfs, tween(
-            durationMillis = if (dbfs > displayedSignal.value) 80 else 180,
+    val digitalSignal = remember { Animatable(dbfs) }
+    LaunchedEffect(dbfs, analog) {
+        if (!analog) digitalSignal.animateTo(dbfs, tween(
+            durationMillis = if (dbfs > digitalSignal.value) 80 else 180,
             easing = LinearOutSlowInEasing
         ))
+    }
+    var displayedSignal by remember { mutableFloatStateOf(dbfs.coerceIn(-90f, 34f)) }
+    // Critically damped movement retains velocity when readings change, like a moving-coil meter.
+    // A quicker attack and slower release follow speech without snapping between samples.
+    LaunchedEffect(analog) {
+        if (!analog) return@LaunchedEffect
+        displayedSignal = currentSignal.coerceIn(-90f, 34f)
+        var velocity = 0f
+        var previousTime = android.os.SystemClock.elapsedRealtimeNanos()
+        while (true) {
+            delay(33)
+            val now = android.os.SystemClock.elapsedRealtimeNanos()
+            val dt = ((now - previousTime) / 1_000_000_000f).coerceIn(0f, .1f)
+            previousTime = now
+            val target = if (currentSignalAvailable) currentSignal.coerceIn(-90f, 34f) else -90f
+            val omega = if (target > displayedSignal) 12f else 7f
+            val error = displayedSignal - target
+            val momentum = velocity + omega * error
+            val decay = exp(-omega * dt)
+            displayedSignal = target + (error + momentum * dt) * decay
+            velocity = (velocity - omega * momentum * dt) * decay
+        }
     }
     val changeSquelch by rememberUpdatedState(onSquelchChange)
     var meterWidth by remember { mutableStateOf(1) }
@@ -103,7 +130,7 @@ internal fun SignalMeter(
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
-    val rawLevel = (displayedSignal.value + 90f).coerceAtLeast(0f)
+    val rawLevel = ((if (analog) displayedSignal else digitalSignal.value) + 90f).coerceAtLeast(0f)
     val maximum = SIGNAL_METER_MAXIMUM
     val level = rawLevel.coerceAtMost(maximum)
     fun position(value: Float): Float = value / maximum
@@ -155,6 +182,78 @@ internal fun SignalMeter(
             val left = 10.dp.toPx()
             val right = maxOf(left + 1f, size.width - 66.dp.toPx())
             val width = right - left
+            if (analog) {
+            val scaleY = size.height - 10.dp.toPx()
+            val glassLeft = left - 8.dp.toPx()
+            val glassRight = right + 12.dp.toPx()
+            val glassTop = 1.dp.toPx()
+            val glassBottom = size.height - 1.dp.toPx()
+            val glassSize = Size(glassRight - glassLeft, glassBottom - glassTop)
+            val glassCorner = CornerRadius(3.dp.toPx())
+            drawRoundRect(Brush.verticalGradient(listOf(
+                RadiolaColors.border.copy(alpha = .22f),
+                RadiolaColors.plot,
+                RadiolaColors.sidebar.copy(alpha = .6f)
+            )), Offset(glassLeft, glassTop), glassSize, glassCorner)
+            val ticks = listOf(0f to "0", 6f to "1", 18f to "3", 30f to "5", 42f to "7",
+                54f to "9", 64f to "+10", 84f to "+30", 104f to "+50", 124f to "+70")
+            drawLine(RadiolaColors.secondaryText.copy(alpha = .65f), Offset(left, scaleY),
+                Offset(right, scaleY), .65.dp.toPx())
+            labelPaint.textAlign = android.graphics.Paint.Align.CENTER
+            labelPaint.textSize = 9.sp.toPx()
+            for (value in 0..124 step 2) {
+                val fraction = position(value.toFloat())
+                val x = left + width * fraction
+                val y = scaleY
+                val major = ticks.any { it.first == value.toFloat() }
+                drawLine(if (value > 54) RadiolaColors.warning.copy(alpha = .8f) else RadiolaColors.secondaryText.copy(alpha = .7f),
+                    Offset(x, y), Offset(x, y - (if (major) 3f else 1.5f).dp.toPx()), .65.dp.toPx())
+            }
+            for ((value, label) in ticks) {
+                val fraction = position(value)
+                labelPaint.color = if (value > 54f) RadiolaColors.warning.toArgb()
+                    else RadiolaColors.secondaryText.toArgb()
+                drawContext.canvas.nativeCanvas.drawText(label, left + width * fraction,
+                    scaleY - 5.dp.toPx(), labelPaint)
+            }
+            val fraction = position(if (signalAvailable) level else 0f)
+            val needleX = left + width * fraction
+            val needleTop = glassTop
+            val needleBottom = glassBottom - 3.dp.toPx()
+            drawLine(Color.Black.copy(alpha = .15f),
+                Offset(needleX + 1.dp.toPx(), needleTop + 1.dp.toPx()),
+                Offset(needleX + 1.dp.toPx(), needleBottom + 1.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
+            val needleColor = RadiolaColors.adaptive(Color(0xFFC62828), Color(0xFFFF5950))
+            val needle = Path().apply {
+                moveTo(needleX - 1.dp.toPx(), needleTop)
+                lineTo(needleX + 1.dp.toPx(), needleTop)
+                lineTo(needleX + .65.dp.toPx(), needleBottom - 2.dp.toPx())
+                lineTo(needleX, needleBottom)
+                lineTo(needleX - .65.dp.toPx(), needleBottom - 2.dp.toPx())
+                close()
+            }
+            drawPath(needle, needleColor)
+            val sqlX = left + width * position(squelch.thresholdDbfs + 90f)
+            val sqlColor = if (!squelch.enabled) RadiolaColors.secondaryText.copy(alpha = 0.6f) else if (open) RadiolaColors.primary else RadiolaColors.text
+            val triangle = Path().apply {
+                moveTo(sqlX, size.height - 4.dp.toPx())
+                lineTo(sqlX - 2.5.dp.toPx(), size.height - .5.dp.toPx())
+                lineTo(sqlX + 2.5.dp.toPx(), size.height - .5.dp.toPx())
+                close()
+            }
+            drawPath(triangle, sqlColor)
+            // Subtle reflections and an inset rim suggest glass without obscuring the scale.
+            drawRoundRect(Brush.verticalGradient(listOf(
+                Color.White.copy(alpha = if (RadiolaColors.dark) .10f else .38f),
+                Color.White.copy(alpha = .03f), Color.Transparent
+            ), startY = glassTop, endY = glassBottom),
+                Offset(glassLeft, glassTop), glassSize, glassCorner)
+            drawRoundRect(RadiolaColors.border.copy(alpha = .8f), Offset(glassLeft, glassTop),
+                glassSize, glassCorner, style = Stroke(.65.dp.toPx()))
+            drawLine(Color.White.copy(alpha = if (RadiolaColors.dark) .12f else .65f),
+                Offset(glassLeft + 3.dp.toPx(), glassTop + 1.dp.toPx()),
+                Offset(glassRight - 3.dp.toPx(), glassTop + 1.dp.toPx()), .6.dp.toPx())
+            } else {
             val barTop = size.height - 11.dp.toPx()
             val barHeight = 5.dp.toPx()
             val labelY = 13.dp.toPx()
@@ -195,6 +294,7 @@ internal fun SignalMeter(
                 close()
             }
             drawPath(triangle, sqlColor)
+            }
             }
             val readoutX = right + 16.dp.toPx()
             labelPaint.textAlign = android.graphics.Paint.Align.LEFT

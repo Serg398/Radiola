@@ -9,6 +9,11 @@ import com.example.sdr.ui.receiver.WaterfallFrameRate
 
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
+    fun analogSignalMeter(): Boolean = preferences.getBoolean("analog_signal_meter", true)
+    fun saveAnalogSignalMeter(enabled: Boolean) {
+        preferences.edit().putBoolean("analog_signal_meter", enabled).apply()
+    }
+
     fun screenAlwaysOn(): Boolean = preferences.getBoolean("screen_always_on", true)
 
     fun saveScreenAlwaysOn(enabled: Boolean) {

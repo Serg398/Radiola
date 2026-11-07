@@ -178,6 +178,7 @@ class MainActivity : ComponentActivity() {
     private val receiverSession get() = runtime.session
     private val receiverRates by lazy { NativeSdr.receiverRates() }
     private val displaySettings by lazy { DisplaySettings(this) }
+    private var analogSignalMeter by mutableStateOf(true)
     private var screenAlwaysOn by mutableStateOf(true)
     private fun applyScreenAlwaysOn(enabled: Boolean) {
         screenAlwaysOn = enabled
@@ -286,11 +287,17 @@ class MainActivity : ComponentActivity() {
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
+        analogSignalMeter = displaySettings.analogSignalMeter()
         applyScreenAlwaysOn(displaySettings.screenAlwaysOn())
         setContent {
             RadiolaTheme {
             ReceiverScreen(
                 presentation = model.presentation,
+                analogSignalMeter = analogSignalMeter,
+                onAnalogSignalMeterChange = {
+                    analogSignalMeter = it
+                    displaySettings.saveAnalogSignalMeter(it)
+                },
                 screenAlwaysOn = screenAlwaysOn,
                 onScreenAlwaysOnChange = {
                     applyScreenAlwaysOn(it)

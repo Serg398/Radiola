@@ -46,7 +46,7 @@ private val settingsMuted get() = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
     ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
-    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"),
+    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"), SIGNAL_METER("S-meter"),
     ENCODER("Encoder"), STEP("Tuning step"), FEEDBACK("Tactile feedback"),
     DEVICE("Device"), ABOUT("About"), THEME("Theme")
 }
@@ -58,6 +58,7 @@ internal fun SettingsPanel(
     mode: DemodulationMode, stereo: Boolean, onStereoChange: (Boolean) -> Unit,
     tuningStep: TuningStep, onStepChange: (TuningStep) -> Unit,
     feedback: EncoderFeedback, onFeedbackChange: (EncoderFeedback) -> Unit,
+    analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit,
     deviceName: String, connected: Boolean, permitted: Boolean, streaming: Boolean, pending: Boolean,
     onPermission: () -> Unit, onUsbTest: () -> Unit, onIqTest: () -> Unit, onClose: () -> Unit,
@@ -93,7 +94,7 @@ internal fun SettingsPanel(
                     SettingsPage.ROOT -> {
                         val sections = listOf(
                             Triple(SettingsPage.ENCODER, "Encoder", "Tuning step and tactile feedback"),
-                            Triple(SettingsPage.DISPLAY, "Display", "Theme and backlight"),
+                            Triple(SettingsPage.DISPLAY, "Display", "Theme, backlight and S-meter"),
                             Triple(SettingsPage.ABOUT, "About", stringResource(R.string.app_name))
                         )
                         sections.forEach { (next, title, subtitle) ->
@@ -135,6 +136,11 @@ internal fun SettingsPanel(
                     SettingsPage.DISPLAY -> {
                         SettingsEntry("Theme", RadiolaColors.selected.label) { open(SettingsPage.THEME) }
                         SettingsEntry("Backlight", if (screenAlwaysOn) "Lock" else "Auto") { open(SettingsPage.BACKLIGHT) }
+                        SettingsEntry("S-meter", if (analogSignalMeter) "Analog" else "Digital") { open(SettingsPage.SIGNAL_METER) }
+                    }
+                    SettingsPage.SIGNAL_METER -> {
+                        SettingsChoice("Digital", !analogSignalMeter) { onAnalogSignalMeterChange(false) }
+                        SettingsChoice("Analog", analogSignalMeter) { onAnalogSignalMeterChange(true) }
                     }
                     SettingsPage.BACKLIGHT -> {
                         SettingsChoice("Auto", !screenAlwaysOn) { onScreenAlwaysOnChange(false) }

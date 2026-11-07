@@ -115,6 +115,7 @@ internal fun ReceiverScreen(
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
     onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
+    analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean,
     onScreenAlwaysOnChange: (Boolean) -> Unit,
     onPlaybackStart: () -> Unit = {},
@@ -339,9 +340,9 @@ internal fun ReceiverScreen(
                         verticalAlignment = Alignment.CenterVertically) {
                     if (remote) {
                         WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,
-                            Modifier.weight(1f).fillMaxHeight())
+                            Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter)
                     } else {
-                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight())
+                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter)
                     }
                     }
                 }
@@ -362,6 +363,7 @@ internal fun ReceiverScreen(
                         mode = activeMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
                         tuningStep = tuningStep, onStepChange = onTuningStepChange,
                         feedback = encoderFeedback, onFeedbackChange = onEncoderFeedbackChange,
+                        analogSignalMeter = analogSignalMeter, onAnalogSignalMeterChange = onAnalogSignalMeterChange,
                         screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange,
                         deviceName = deviceName, connected = connected, permitted = permitted,
                         streaming = streaming, pending = streamPending,
