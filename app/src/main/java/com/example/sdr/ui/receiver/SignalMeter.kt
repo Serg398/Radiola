@@ -30,11 +30,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
@@ -158,7 +161,7 @@ internal fun SignalMeter(
                 color = if (squelch.enabled) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp,
                 style = TextStyle(lineHeight = 13.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
         }
-        Spacer(Modifier.width(2.dp))
+        Spacer(Modifier.width(if (analog) 4.dp else 6.dp))
         Canvas(
             Modifier.weight(1f).fillMaxHeight().onSizeChanged { meterWidth = it.width }
                 .pointerInput(remote) { detectTapGestures(onTap = { setThreshold(it.x) }) }
@@ -242,17 +245,45 @@ internal fun SignalMeter(
                 close()
             }
             drawPath(triangle, sqlColor)
-            // Subtle reflections and an inset rim suggest glass without obscuring the scale.
-            drawRoundRect(Brush.verticalGradient(listOf(
-                Color.White.copy(alpha = if (RadiolaColors.dark) .10f else .38f),
-                Color.White.copy(alpha = .03f), Color.Transparent
-            ), startY = glassTop, endY = glassBottom),
-                Offset(glassLeft, glassTop), glassSize, glassCorner)
-            drawRoundRect(RadiolaColors.border.copy(alpha = .8f), Offset(glassLeft, glassTop),
-                glassSize, glassCorner, style = Stroke(.65.dp.toPx()))
-            drawLine(Color.White.copy(alpha = if (RadiolaColors.dark) .12f else .65f),
-                Offset(glassLeft + 3.dp.toPx(), glassTop + 1.dp.toPx()),
-                Offset(glassRight - 3.dp.toPx(), glassTop + 1.dp.toPx()), .6.dp.toPx())
+            // Curved reflections and edge shading give the cover a convex lens profile.
+            val glassOutline = Path().apply {
+                addRoundRect(RoundRect(Rect(Offset(glassLeft, glassTop), glassSize), glassCorner))
+            }
+            clipPath(glassOutline) {
+                drawRect(Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = if (RadiolaColors.dark) .18f else .48f),
+                    .16f to Color.White.copy(alpha = .04f),
+                    .5f to Color.Transparent,
+                    .83f to Color.Black.copy(alpha = .04f),
+                    1f to Color.Black.copy(alpha = if (RadiolaColors.dark) .38f else .18f),
+                    startY = glassTop, endY = glassBottom),
+                    Offset(glassLeft, glassTop), glassSize)
+                val reflection = Path().apply {
+                    moveTo(glassLeft, glassTop)
+                    lineTo(glassRight, glassTop)
+                    lineTo(glassRight, glassTop + glassSize.height * .22f)
+                    quadraticBezierTo(glassLeft + glassSize.width * .5f, glassTop + glassSize.height * .68f,
+                        glassLeft, glassTop + glassSize.height * .28f)
+                    close()
+                }
+                drawPath(reflection, Brush.verticalGradient(listOf(
+                    Color.White.copy(alpha = if (RadiolaColors.dark) .15f else .3f),
+                    Color.White.copy(alpha = .02f)), startY = glassTop, endY = glassTop + glassSize.height * .55f))
+                drawRect(Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .17f),
+                    .025f to Color.Transparent,
+                    .975f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = .17f),
+                    startX = glassLeft, endX = glassRight), Offset(glassLeft, glassTop), glassSize)
+                drawLine(Color.White.copy(alpha = if (RadiolaColors.dark) .2f else .65f),
+                    Offset(glassLeft + 4.dp.toPx(), glassTop + 1.dp.toPx()),
+                    Offset(glassRight - 4.dp.toPx(), glassTop + 1.dp.toPx()), .7.dp.toPx())
+                drawLine(Color.White.copy(alpha = if (RadiolaColors.dark) .1f else .35f),
+                    Offset(glassLeft + 6.dp.toPx(), glassBottom - 1.dp.toPx()),
+                    Offset(glassRight - 6.dp.toPx(), glassBottom - 1.dp.toPx()), .6.dp.toPx())
+            }
+            drawRoundRect(RadiolaColors.border.copy(alpha = .9f), Offset(glassLeft, glassTop),
+                glassSize, glassCorner, style = Stroke(.75.dp.toPx()))
             } else {
             val barTop = size.height - 11.dp.toPx()
             val barHeight = 5.dp.toPx()
@@ -296,7 +327,7 @@ internal fun SignalMeter(
             drawPath(triangle, sqlColor)
             }
             }
-            val readoutX = right + 16.dp.toPx()
+            val readoutX = right + 21.dp.toPx()
             labelPaint.textAlign = android.graphics.Paint.Align.LEFT
             labelPaint.color = RadiolaColors.primary.toArgb()
             labelPaint.textSize = 12.sp.toPx()

@@ -264,7 +264,7 @@ internal fun ReceiverScreen(
                         encoderRotating = false
                         step(it)
                     }, modifier = Modifier.weight(1f))
-                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SourcePlaybackControl(
                         source = source,
                         onSourceChange = {
@@ -311,7 +311,7 @@ internal fun ReceiverScreen(
                 // Leave the middle free for the server view switch in both source layouts.
                 val meterWidth = maxWidth / 2 - 96.dp
                 Row(Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ModeControl(activeMode, ftxMode, remote,
@@ -336,7 +336,7 @@ internal fun ReceiverScreen(
                         available = com.example.sdr.audio.HamNoiseSettings.model(activeMode) != 0 && !(openWebRx && webSession.serverDataMode),
                         cw = activeMode == DemodulationMode.CW)
                     Row(Modifier.width(meterWidth).fillMaxHeight(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                     if (remote) {
                         WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,

@@ -33,12 +33,14 @@ internal fun SourcePlaybackControl(
     val muted = RadiolaColors.secondaryText
     var expanded by remember { mutableStateOf(false) }
     Row(
-        Modifier.width(145.dp).height(28.dp).border(1.dp, RadiolaColors.border, shape).clip(shape),
+        Modifier.width(150.dp).height(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
         Row(
-            Modifier.width(72.dp).fillMaxHeight().background(RadiolaColors.surface)
+            Modifier.width(72.dp).fillMaxHeight().border(1.dp, RadiolaColors.border, shape)
+                .clip(shape).background(RadiolaColors.surface)
                 .semantics { contentDescription = "Choose receiver source, $source selected" }
                 .clickable { expanded = !expanded }.padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
@@ -69,9 +71,8 @@ internal fun SourcePlaybackControl(
             }
         }
         }
-        Box(Modifier.width(1.dp).fillMaxHeight().background(RadiolaColors.border))
         Box(
-            Modifier.width(72.dp).fillMaxHeight()
+            Modifier.width(72.dp).fillMaxHeight().border(1.dp, RadiolaColors.border, shape).clip(shape)
                 .background(if (enabled) warm else RadiolaColors.surface)
                 .semantics { contentDescription = if (action == "ACCESS") "Grant USB access" else action }
                 .clickable(enabled = enabled, onClick = onAction),
