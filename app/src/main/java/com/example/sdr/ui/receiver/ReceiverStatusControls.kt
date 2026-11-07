@@ -40,9 +40,9 @@ import com.example.sdr.ui.theme.RadiolaColors
 @Composable
 internal fun BatteryClockIndicator(percent: Int, charging: Boolean) {
     val textColor = RadiolaColors.secondaryText.toArgb()
-    Column(Modifier.width(60.dp).height(32.dp), horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
-        BatteryIndicator(percent, charging, Modifier.height(16.dp))
+    Column(Modifier.width(60.dp).height(28.dp), horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Center) {
+        BatteryIndicator(percent, charging, Modifier.height(14.dp))
         AndroidView(factory = { context ->
             android.widget.TextClock(context).apply {
                 format24Hour = "HH:mm"
