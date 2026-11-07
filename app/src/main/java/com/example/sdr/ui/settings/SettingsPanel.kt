@@ -102,8 +102,9 @@ internal fun SettingsPanel(
                     }
                     SettingsPage.THEME -> {
                         val themeContext = LocalContext.current
-                        SettingsChoice("Light", !RadiolaColors.dark) { RadiolaColors.select(false, themeContext) }
-                        SettingsChoice("Dark", RadiolaColors.dark) { RadiolaColors.select(true, themeContext) }
+                        RadiolaColors.Theme.entries.forEach { theme ->
+                            SettingsChoice(theme.label, RadiolaColors.selected == theme) { RadiolaColors.select(theme, themeContext) }
+                        }
                     }
                     SettingsPage.RECEIVER -> {
                         SettingsEntry("Gain controls", "RF AGC, manual gain and bias-T") { open(SettingsPage.GAIN) }
@@ -132,7 +133,7 @@ internal fun SettingsPanel(
                         Text("Volume is controlled with the phone's volume buttons.", color = settingsMuted, fontSize = 13.sp)
                     }
                     SettingsPage.DISPLAY -> {
-                        SettingsEntry("Theme", if (RadiolaColors.dark) "Dark" else "Light") { open(SettingsPage.THEME) }
+                        SettingsEntry("Theme", RadiolaColors.selected.label) { open(SettingsPage.THEME) }
                         SettingsEntry("Backlight", if (screenAlwaysOn) "Lock" else "Auto") { open(SettingsPage.BACKLIGHT) }
                     }
                     SettingsPage.BACKLIGHT -> {
