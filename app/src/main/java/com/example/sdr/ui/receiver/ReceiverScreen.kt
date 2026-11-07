@@ -263,7 +263,7 @@ internal fun ReceiverScreen(
                         encoderRotating = false
                         step(it)
                     }, modifier = Modifier.weight(1f))
-                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.height(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SourcePlaybackControl(
                         source = source,
                         onSourceChange = {
@@ -300,7 +300,7 @@ internal fun ReceiverScreen(
                         }
                         },
                     )
-                    BatteryIndicator(batteryPercent, batteryCharging, Modifier.height(28.dp))
+                    BatteryClockIndicator(batteryPercent, batteryCharging)
                 }
                 }
                 BoxWithConstraints(

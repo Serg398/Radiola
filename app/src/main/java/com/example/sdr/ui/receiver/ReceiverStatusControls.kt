@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +26,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
@@ -32,6 +36,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.theme.RadiolaColors
+
+@Composable
+internal fun BatteryClockIndicator(percent: Int, charging: Boolean) {
+    val textColor = RadiolaColors.secondaryText.toArgb()
+    Column(Modifier.width(60.dp).height(32.dp), horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
+        BatteryIndicator(percent, charging, Modifier.height(16.dp))
+        AndroidView(factory = { context ->
+            android.widget.TextClock(context).apply {
+                format24Hour = "HH:mm"
+                format12Hour = "h:mm"
+                includeFontPadding = false
+                textSize = 12f
+                fontFeatureSettings = "tnum"
+                gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+                setTextColor(textColor)
+            }
+        }, update = { it.setTextColor(textColor) }, modifier = Modifier.fillMaxWidth().height(14.dp))
+    }
+}
 
 @Composable
 internal fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifier = Modifier) {
@@ -43,7 +67,7 @@ internal fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifie
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Canvas(Modifier.width(18.dp).height(10.dp)) {
+        Canvas(Modifier.width(20.dp).height(11.dp)) {
             val bodyWidth = size.width - 2.dp.toPx()
             drawRoundRect(tint, size = Size(bodyWidth, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx()), style = Stroke(1.dp.toPx()))
             drawRect(tint, Offset(bodyWidth, size.height * 0.3f), Size(2.dp.toPx(), size.height * 0.4f))
@@ -62,7 +86,8 @@ internal fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifie
                 drawPath(bolt, RadiolaColors.primary)
             }
         }
-        Text(if (percent < 0) "—%" else "$percent%", color = tint, fontSize = 10.sp, maxLines = 1)
+        Text(if (percent < 0) "—%" else "$percent%", color = tint, fontSize = 12.sp, maxLines = 1,
+            style = TextStyle(fontFeatureSettings = "tnum", platformStyle = PlatformTextStyle(includeFontPadding = false)))
     }
 }
 
