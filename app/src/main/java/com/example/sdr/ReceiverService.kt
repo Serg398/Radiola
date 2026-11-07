@@ -53,8 +53,8 @@ class ReceiverService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, ReceiverService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val title = getString(R.string.app_name)
-        val text = "%.3f MHz  %s  %s".format(java.util.Locale.US, value.requestedHz/1_000_000.0, runtime.mode.label, value.state.name)
+        val title = "%.3f MHz · %s".format(java.util.Locale.US, value.requestedHz/1_000_000.0, runtime.mode.label)
+        val text = "${getString(R.string.app_name)} · RTL-SDR"
         val builder = Notification.Builder(this, "receiver").setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title)
             .setContentText(text)

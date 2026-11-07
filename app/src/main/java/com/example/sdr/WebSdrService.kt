@@ -51,11 +51,12 @@ class WebSdrService : Service() {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 3, Intent(this, WebSdrService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val title = runtime.selectedName.ifBlank { getString(R.string.app_name) }
+        val title = String.format(Locale.US, "%.3f MHz · %s", runtime.session.frequencyHz / 1e6, runtime.session.modeLabel)
+        val subtitle = runtime.selectedName.substringBefore(" - ").ifBlank { getString(R.string.app_name) }
         val builder = Notification.Builder(this, "websdr").setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(runtime.selectedName.ifBlank { getString(R.string.app_name) }).setContentText(text)
+            .setContentTitle(title).setContentText(subtitle)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-        return playback.decorate(builder, title, text, open, stop, runtime.session.state == ReceiverConnectionState.Connected)
+        return playback.decorate(builder, title, subtitle, open, stop, runtime.session.state == ReceiverConnectionState.Connected)
     }
     override fun onDestroy() {
         playback.release()
