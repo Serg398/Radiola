@@ -3,6 +3,7 @@ package com.example.sdr.ui.receiver
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,11 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -34,7 +35,8 @@ import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
 
 @Composable
-internal fun Sidebar(selected: String, onSelect: (String) -> Unit) {
+internal fun Sidebar(selected: String, onSelect: (String) -> Unit,
+    screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit) {
     Column(Modifier.width(108.dp).fillMaxHeight().background(RadiolaColors.sidebar)) {
         Box(Modifier.fillMaxWidth().height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
             Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = RadiolaColors.primary, fontSize = 18.sp,
@@ -59,6 +61,15 @@ internal fun Sidebar(selected: String, onSelect: (String) -> Unit) {
             }
         }
         Box(Modifier.weight(1f))
+        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(48.dp).height(48.dp)
+                .semantics { contentDescription = "Keep screen on" }
+                .toggleable(value = screenAlwaysOn, role = Role.Switch,
+                    onValueChange = onScreenAlwaysOnChange), contentAlignment = Alignment.Center) {
+                SidebarIcon(if (screenAlwaysOn) "ScreenLocked" else "ScreenAuto",
+                    if (screenAlwaysOn) RadiolaColors.primary else RadiolaColors.secondaryText)
+            }
+        }
     }
 }
 
@@ -77,6 +88,36 @@ internal fun SidebarIcon(name: String, tint: Color) {
                 }
                 drawPath(wave, tint, style = Stroke(stroke, cap = StrokeCap.Round,
                     join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            } else if (name == "ScreenLocked" || name == "ScreenAuto") {
+                drawCircle(tint, 6f * unit, point(12f, 12f), style = Stroke(1.4f * unit))
+                repeat(8) { index ->
+                    val angle = index * Math.PI / 4
+                    fun ray(radius: Float) = point(12f + kotlin.math.cos(angle).toFloat() * radius,
+                        12f + kotlin.math.sin(angle).toFloat() * radius)
+                    drawLine(tint, ray(8.5f), ray(11f), strokeWidth = 1.4f * unit, cap = StrokeCap.Round)
+                }
+                val symbolStroke = 1.1f * unit
+                if (name == "ScreenAuto") {
+                    val letter = Path().apply {
+                        moveTo(9f * unit, 15.5f * unit)
+                        lineTo(12f * unit, 8.5f * unit)
+                        lineTo(15f * unit, 15.5f * unit)
+                        moveTo(10.1f * unit, 13f * unit)
+                        lineTo(13.9f * unit, 13f * unit)
+                    }
+                    drawPath(letter, tint, style = Stroke(symbolStroke, cap = StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                } else {
+                    val shackle = Path().apply {
+                        moveTo(10f * unit, 11f * unit)
+                        lineTo(10f * unit, 9.5f * unit)
+                        cubicTo(10f * unit, 6.5f * unit, 14f * unit, 6.5f * unit, 14f * unit, 9.5f * unit)
+                        lineTo(14f * unit, 11f * unit)
+                    }
+                    drawPath(shackle, tint, style = Stroke(symbolStroke, cap = StrokeCap.Round))
+                    drawRoundRect(tint, topLeft = point(9f, 11f), size = androidx.compose.ui.geometry.Size(6f * unit, 5f * unit),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(.8f * unit), style = Stroke(symbolStroke))
+                }
             } else {
                 val gear = Path().apply {
                     // Eight rounded teeth, with the same visual bounds as the receiver icon.

@@ -115,6 +115,8 @@ internal fun ReceiverScreen(
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
     onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
+    screenAlwaysOn: Boolean,
+    onScreenAlwaysOnChange: (Boolean) -> Unit,
     onPlaybackStart: () -> Unit = {},
     batteryPercent: Int = -1,
     batteryCharging: Boolean = false,
@@ -230,7 +232,7 @@ internal fun ReceiverScreen(
                 encoderRotating = false
                 frequencyMotion.snapTo(tunedHz.toDouble())
                 selected = it
-            })
+            }, screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange)
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)

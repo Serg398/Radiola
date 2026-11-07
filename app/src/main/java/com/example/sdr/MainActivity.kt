@@ -25,6 +25,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
@@ -177,6 +178,12 @@ class MainActivity : ComponentActivity() {
     private val receiverSession get() = runtime.session
     private val receiverRates by lazy { NativeSdr.receiverRates() }
     private val displaySettings by lazy { DisplaySettings(this) }
+    private var screenAlwaysOn by mutableStateOf(true)
+    private fun applyScreenAlwaysOn(enabled: Boolean) {
+        screenAlwaysOn = enabled
+        window.setFlags(if (enabled) WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON else 0,
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val choreographer by lazy { Choreographer.getInstance() }
     private var lastStreamBytes = 0L
@@ -279,11 +286,16 @@ class MainActivity : ComponentActivity() {
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyScreenAlwaysOn(displaySettings.screenAlwaysOn())
         setContent {
             RadiolaTheme {
             ReceiverScreen(
                 presentation = model.presentation,
+                screenAlwaysOn = screenAlwaysOn,
+                onScreenAlwaysOnChange = {
+                    applyScreenAlwaysOn(it)
+                    displaySettings.saveScreenAlwaysOn(it)
+                },
                 deviceName = device?.productName ?: "RTL-SDR V4",
                 connected = device != null,
                 permitted = hasUsbPermission,

@@ -9,6 +9,12 @@ import com.example.sdr.ui.receiver.WaterfallFrameRate
 
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
+    fun screenAlwaysOn(): Boolean = preferences.getBoolean("screen_always_on", true)
+
+    fun saveScreenAlwaysOn(enabled: Boolean) {
+        preferences.edit().putBoolean("screen_always_on", enabled).apply()
+    }
+
     fun bandwidth(mode: DemodulationMode): Int? = preferences.getInt("bandwidth_${mode.name}", 0)
         .takeIf { it in mode.minBandwidthHz..mode.maxBandwidthHz }
     fun saveBandwidth(mode: DemodulationMode, hz: Int?) {
