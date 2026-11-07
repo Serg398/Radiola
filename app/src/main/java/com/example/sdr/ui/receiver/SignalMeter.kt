@@ -344,8 +344,10 @@ internal fun SignalMeter(
             labelPaint.isFakeBoldText = false
             labelPaint.color = RadiolaColors.secondaryText.toArgb()
             labelPaint.textSize = 9.sp.toPx()
-            val detail = "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
-            drawContext.canvas.nativeCanvas.drawText(detail, readoutX, size.height - 5.dp.toPx(), labelPaint)
+            if (squelch.enabled) {
+                val detail = "SQL %.0f dB".format(Locale.US, squelch.thresholdDbfs)
+                drawContext.canvas.nativeCanvas.drawText(detail, readoutX, size.height - 5.dp.toPx(), labelPaint)
+            }
         }
 
     }
