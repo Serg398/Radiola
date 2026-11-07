@@ -23,13 +23,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.ui.theme.RadiolaColors
+import com.example.sdr.ui.components.toolbarButtonSurface
 
 @Composable
 internal fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean, onChange: (Boolean) -> Unit) {
     val active = available && enabled
     Column(
         Modifier.width(60.dp).height(28.dp)
-            .background(if (active) RadiolaColors.primaryTint else RadiolaColors.surface, RoundedCornerShape(5.dp))
+            .toolbarButtonSurface(active)
             .clickable(enabled = available) { onChange(!enabled) }
             .semantics { contentDescription = "WFM stereo ${if (active) "enabled" else "disabled"}, pilot ${if (locked) "locked" else "absent"}" },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center

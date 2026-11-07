@@ -1,6 +1,7 @@
 package com.example.sdr.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,10 +40,11 @@ internal fun ToolbarValue(value: String, color: Color = RadiolaColors.primary, a
 }
 
 @Composable
-internal fun Modifier.toolbarButtonSurface(active: Boolean = false): Modifier {
+internal fun Modifier.toolbarButtonSurface(active: Boolean = false, outlined: Boolean = true): Modifier {
     val shape = RoundedCornerShape(4.dp)
-    return shadow(if (active) 0.dp else 1.5.dp, shape, clip = false)
+    return shadow(if (active) 0.dp else if (outlined) .75.dp else 1.5.dp, shape, clip = false)
         .clip(shape)
         .background(if (active) RadiolaColors.primaryTint
             else RadiolaColors.adaptive(Color(0xFFFCFDFE), Color(0xFF30353B)))
+        .then(if (outlined) Modifier.border(.65.dp, RadiolaColors.border.copy(alpha = .65f), shape) else Modifier)
 }

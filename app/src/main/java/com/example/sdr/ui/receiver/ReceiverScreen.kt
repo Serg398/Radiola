@@ -50,6 +50,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.sdr.DemodulationMode
 import com.example.sdr.RdsInformation
 import com.example.sdr.SpectrumFrame
+import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.platform.EncoderFeedback
 import com.example.sdr.receiver.BandwidthOptions
 import com.example.sdr.receiver.ReceiverConnectionState
@@ -115,6 +116,7 @@ internal fun ReceiverScreen(
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
     onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
+    signalMeterInertia: SignalMeterInertia, onSignalMeterInertiaChange: (SignalMeterInertia) -> Unit,
     analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean,
     onScreenAlwaysOnChange: (Boolean) -> Unit,
@@ -241,6 +243,13 @@ internal fun ReceiverScreen(
             Box(Modifier.fillMaxWidth().height(84.dp)) {
                 Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (remote) {
+                    var serverNameExpanded by remember(webSdrReceiverName) { mutableStateOf(false) }
+                    val fullServerName = webSdrReceiverName.ifBlank { "Select a server on MAP" }
+                    val shortServerName = remember(fullServerName) {
+                        val name = fullServerName.substringBefore(" - ").substringBefore(" \u2013 ").substringBefore(" \u2014 ").trim()
+                        name.replace(Regex("(?i)^(?:RX[- ]*)?(?:WebSDR|OpenWebRX\\+?)\\s*[-:|]?\\s*"), "")
+                            .ifBlank { name }
+                    }
                     Column(Modifier.width(180.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         val warning = online.startError ?: webSession.error ?: webSession.waterfallWarning
                         Text(when (webSession.state) {
@@ -250,10 +259,12 @@ internal fun ReceiverScreen(
                             else -> "${source.storedValue.uppercase(Locale.ROOT)}  /  OFFLINE"
                         }, color = if (webSession.state == ReceiverConnectionState.Connected) warm else muted,
                             fontSize = 8.sp, lineHeight = 10.sp, letterSpacing = 0.8.sp, maxLines = 1)
-                        Text(webSdrReceiverName.ifBlank { "Select a server on MAP" }, color = ivory,
-                            fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal,
+                        Text(if (serverNameExpanded) fullServerName else shortServerName,
+                            Modifier.clickable(enabled = webSdrReceiverName.isNotBlank()) { serverNameExpanded = !serverNameExpanded }, color = ivory,
+                            fontSize = if (serverNameExpanded) 12.sp else 16.sp,
+                            lineHeight = if (serverNameExpanded) 14.sp else 18.sp, fontWeight = FontWeight.Normal,
                             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                            maxLines = if (warning == null) 2 else 1, overflow = TextOverflow.Ellipsis)
+                            maxLines = if (serverNameExpanded && warning == null) 2 else 1, overflow = TextOverflow.Ellipsis)
                         if (warning != null) Text(warning, color = RadiolaColors.warning, fontSize = 9.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -340,9 +351,9 @@ internal fun ReceiverScreen(
                         verticalAlignment = Alignment.CenterVertically) {
                     if (remote) {
                         WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,
-                            Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter)
+                            Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter, inertia = signalMeterInertia)
                     } else {
-                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter)
+                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter, inertia = signalMeterInertia)
                     }
                     }
                 }
@@ -363,6 +374,7 @@ internal fun ReceiverScreen(
                         mode = activeMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
                         tuningStep = tuningStep, onStepChange = onTuningStepChange,
                         feedback = encoderFeedback, onFeedbackChange = onEncoderFeedbackChange,
+                        signalMeterInertia = signalMeterInertia, onSignalMeterInertiaChange = onSignalMeterInertiaChange,
                         analogSignalMeter = analogSignalMeter, onAnalogSignalMeterChange = onAnalogSignalMeterChange,
                         screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange,
                         deviceName = deviceName, connected = connected, permitted = permitted,

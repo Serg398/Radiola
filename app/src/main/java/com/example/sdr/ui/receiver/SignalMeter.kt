@@ -1,8 +1,5 @@
 package com.example.sdr.ui.receiver
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,8 +52,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.receiver.OnlineReceiverSession
 import com.example.sdr.receiver.ReceiverSquelch
+import com.example.sdr.ui.components.ToolbarCaptionStyle
+import com.example.sdr.ui.components.ToolbarValueStyle
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
@@ -68,10 +68,11 @@ private const val SIGNAL_METER_MAXIMUM = 124f // S9 (54 dB above S0) + 70 dB.
 
 @Composable
 internal fun WebSdrSignalMeter(session: OnlineReceiverSession, squelch: ReceiverSquelch, open: Boolean,
-    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier, analog: Boolean = true) {
+    onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier, analog: Boolean = true,
+    inertia: SignalMeterInertia = SignalMeterInertia.MEDIUM) {
     val signal = session.signalDbm
     SignalMeter((signal ?: -127f) + 37f, squelch, session.squelchOpen, onSquelchChange, modifier,
-        remote = true, signalAvailable = signal != null, analog = analog)
+        remote = true, signalAvailable = signal != null, analog = analog, inertia = inertia)
 }
 
 @Composable
@@ -79,32 +80,18 @@ internal fun SignalMeter(
     dbfs: Float, squelch: ReceiverSquelch, open: Boolean,
     onSquelchChange: (ReceiverSquelch) -> Unit, modifier: Modifier = Modifier,
     remote: Boolean = false, signalAvailable: Boolean = true, analog: Boolean = true,
+    inertia: SignalMeterInertia = SignalMeterInertia.MEDIUM,
 ) {
     val currentSquelch by rememberUpdatedState(squelch)
     val currentSignal by rememberUpdatedState(dbfs)
+    val currentInertia by rememberUpdatedState(inertia)
     val currentSignalAvailable by rememberUpdatedState(signalAvailable)
-    var readoutSignal by remember { mutableStateOf(dbfs) }
-    // Keep the needle responsive while giving the numeric reading time to settle.
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(250)
-            readoutSignal = if (currentSignalAvailable) {
-                readoutSignal + (currentSignal - readoutSignal) * .4f
-            } else currentSignal
-        }
-    }
-    val digitalSignal = remember { Animatable(dbfs) }
-    LaunchedEffect(dbfs, analog) {
-        if (!analog) digitalSignal.animateTo(dbfs, tween(
-            durationMillis = if (dbfs > digitalSignal.value) 80 else 180,
-            easing = LinearOutSlowInEasing
-        ))
-    }
     var displayedSignal by remember { mutableFloatStateOf(dbfs.coerceIn(-90f, 34f)) }
+    val inertiaEnabled = inertia != SignalMeterInertia.DISABLED
     // Critically damped movement retains velocity when readings change, like a moving-coil meter.
     // A quicker attack and slower release follow speech without snapping between samples.
-    LaunchedEffect(analog) {
-        if (!analog) return@LaunchedEffect
+    LaunchedEffect(inertiaEnabled) {
+        if (!inertiaEnabled) return@LaunchedEffect
         displayedSignal = currentSignal.coerceIn(-90f, 34f)
         var velocity = 0f
         var previousTime = android.os.SystemClock.elapsedRealtimeNanos()
@@ -114,7 +101,7 @@ internal fun SignalMeter(
             val dt = ((now - previousTime) / 1_000_000_000f).coerceIn(0f, .1f)
             previousTime = now
             val target = if (currentSignalAvailable) currentSignal.coerceIn(-90f, 34f) else -90f
-            val omega = if (target > displayedSignal) 12f else 7f
+            val omega = if (target > displayedSignal) currentInertia.attack else currentInertia.release
             val error = displayedSignal - target
             val momentum = velocity + omega * error
             val decay = exp(-omega * dt)
@@ -133,11 +120,12 @@ internal fun SignalMeter(
         changeSquelch(currentSquelch.copy(thresholdDbfs = db))
     }
     // Relative display only: raw dBFS is not calibrated antenna power.
-    val rawLevel = ((if (analog) displayedSignal else digitalSignal.value) + 90f).coerceAtLeast(0f)
+    val rawLevel = ((if (inertiaEnabled) displayedSignal else dbfs) + 90f).coerceAtLeast(0f)
     val maximum = SIGNAL_METER_MAXIMUM
     val level = rawLevel.coerceAtMost(maximum)
     fun position(value: Float): Float = value / maximum
-    val readingLevel = (readoutSignal + 90f).coerceIn(0f, maximum)
+    // The number and pointer share the same animated level.
+    val readingLevel = level
     val overS9 = (readingLevel - 54f).roundToInt().coerceAtLeast(0)
     val reading = if (!signalAvailable) "S0" else if (readingLevel <= 54f) "S${(readingLevel / 6f).roundToInt()}"
         else if (overS9 == 0) "S9" else "S9 +$overS9"
@@ -155,11 +143,11 @@ internal fun SignalMeter(
                 .semantics { contentDescription = "Squelch ${if (squelch.enabled) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
-            Text("SQL", color = if (squelch.enabled) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 8.sp, fontWeight = FontWeight.Normal,
-                style = TextStyle(lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
-            Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE",
+            Text("SQL", Modifier.height(10.dp), color = if (squelch.enabled) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 8.sp, fontWeight = FontWeight.Normal,
+                style = ToolbarCaptionStyle)
+            Text(if (!squelch.enabled) "OFF" else if (open) "OPEN" else "MUTE", Modifier.height(13.dp),
                 color = if (squelch.enabled) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp,
-                style = TextStyle(lineHeight = 13.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)))
+                style = ToolbarValueStyle)
         }
         Spacer(Modifier.width(if (analog) 4.dp else 6.dp))
         Canvas(
@@ -251,11 +239,11 @@ internal fun SignalMeter(
             }
             clipPath(glassOutline) {
                 drawRect(Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = if (RadiolaColors.dark) .18f else .48f),
+                    0f to Color.White.copy(alpha = if (RadiolaColors.dark) .12f else .30f),
                     .16f to Color.White.copy(alpha = .04f),
                     .5f to Color.Transparent,
                     .83f to Color.Black.copy(alpha = .04f),
-                    1f to Color.Black.copy(alpha = if (RadiolaColors.dark) .38f else .18f),
+                    1f to Color.Black.copy(alpha = if (RadiolaColors.dark) .25f else .12f),
                     startY = glassTop, endY = glassBottom),
                     Offset(glassLeft, glassTop), glassSize)
                 val reflection = Path().apply {
@@ -267,13 +255,13 @@ internal fun SignalMeter(
                     close()
                 }
                 drawPath(reflection, Brush.verticalGradient(listOf(
-                    Color.White.copy(alpha = if (RadiolaColors.dark) .15f else .3f),
+                    Color.White.copy(alpha = if (RadiolaColors.dark) .09f else .18f),
                     Color.White.copy(alpha = .02f)), startY = glassTop, endY = glassTop + glassSize.height * .55f))
                 drawRect(Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .17f),
+                    0f to Color.Black.copy(alpha = .10f),
                     .025f to Color.Transparent,
                     .975f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = .17f),
+                    1f to Color.Black.copy(alpha = .10f),
                     startX = glassLeft, endX = glassRight), Offset(glassLeft, glassTop), glassSize)
                 drawLine(Color.White.copy(alpha = if (RadiolaColors.dark) .2f else .65f),
                     Offset(glassLeft + 4.dp.toPx(), glassTop + 1.dp.toPx()),
@@ -332,14 +320,16 @@ internal fun SignalMeter(
             labelPaint.color = RadiolaColors.primary.toArgb()
             labelPaint.textSize = 12.sp.toPx()
             labelPaint.isFakeBoldText = true
+            val readoutY = if (squelch.enabled) 12.dp.toPx()
+                else (size.height - labelPaint.ascent() - labelPaint.descent()) / 2f
             if (signalAvailable && overS9 > 10) {
                 val prefix = "S9 "
-                drawContext.canvas.nativeCanvas.drawText(prefix, readoutX, 12.dp.toPx(), labelPaint)
+                drawContext.canvas.nativeCanvas.drawText(prefix, readoutX, readoutY, labelPaint)
                 val valueX = readoutX + labelPaint.measureText(prefix)
                 labelPaint.color = RadiolaColors.adaptive(Color(0xFFC62828), Color(0xFFFF7373)).toArgb()
-                drawContext.canvas.nativeCanvas.drawText(reading.removePrefix(prefix), valueX, 12.dp.toPx(), labelPaint)
+                drawContext.canvas.nativeCanvas.drawText(reading.removePrefix(prefix), valueX, readoutY, labelPaint)
             } else {
-                drawContext.canvas.nativeCanvas.drawText(reading, readoutX, 12.dp.toPx(), labelPaint)
+                drawContext.canvas.nativeCanvas.drawText(reading, readoutX, readoutY, labelPaint)
             }
             labelPaint.isFakeBoldText = false
             labelPaint.color = RadiolaColors.secondaryText.toArgb()

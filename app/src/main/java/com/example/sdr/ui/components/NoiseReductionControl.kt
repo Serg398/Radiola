@@ -27,10 +27,10 @@ internal fun NoiseReductionControl(available: Boolean, cw: Boolean) {
             .clickable(enabled = available) { expanded = true }
             .semantics { contentDescription = "Noise reduction ${if (active) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("NR", color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText,
+            Text("NR", Modifier.height(10.dp), color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText,
                 fontSize = 8.sp, style = ToolbarCaptionStyle)
-            Text(if (active) selected.name else "OFF",
-                color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp)
+            Text(if (active) selected.name else "OFF", Modifier.height(13.dp),
+                color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp, style = ToolbarValueStyle)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; HamNoiseSettings.save() },
             containerColor = RadiolaColors.surface) {

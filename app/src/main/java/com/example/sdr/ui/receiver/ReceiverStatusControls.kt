@@ -93,7 +93,7 @@ internal fun BatteryIndicator(percent: Int, charging: Boolean, modifier: Modifie
 
 @Composable
 internal fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) -> Unit) {
-    Row(Modifier.height(28.dp).toolbarButtonSurface().padding(2.dp),
+    Row(Modifier.height(28.dp).toolbarButtonSurface(outlined = false).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf("RADIO" to "Radio", "MAP" to "MAP").forEach { (label, targetPage) ->
             val chosen = active && page == targetPage

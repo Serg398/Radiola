@@ -39,7 +39,7 @@ internal fun SourcePlaybackControl(
     ) {
         Box {
         Row(
-            Modifier.width(72.dp).fillMaxHeight().border(1.dp, RadiolaColors.border, shape)
+            Modifier.width(72.dp).fillMaxHeight().border(.65.dp, RadiolaColors.border.copy(alpha = .65f), shape)
                 .clip(shape).background(RadiolaColors.surface)
                 .semantics { contentDescription = "Choose receiver source, $source selected" }
                 .clickable { expanded = !expanded }.padding(horizontal = 4.dp),
@@ -72,7 +72,7 @@ internal fun SourcePlaybackControl(
         }
         }
         Box(
-            Modifier.width(72.dp).fillMaxHeight().border(1.dp, RadiolaColors.border, shape).clip(shape)
+            Modifier.width(72.dp).fillMaxHeight().border(.65.dp, RadiolaColors.border.copy(alpha = .65f), shape).clip(shape)
                 .background(if (enabled) warm else RadiolaColors.surface)
                 .semantics { contentDescription = if (action == "ACCESS") "Grant USB access" else action }
                 .clickable(enabled = enabled, onClick = onAction),

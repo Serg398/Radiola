@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.example.sdr.platform.DisplaySettings
+import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.platform.EncoderFeedback
 import com.example.sdr.platform.EncoderHaptics
 import com.example.sdr.receiver.offsetForBandwidth
@@ -178,6 +179,7 @@ class MainActivity : ComponentActivity() {
     private val receiverSession get() = runtime.session
     private val receiverRates by lazy { NativeSdr.receiverRates() }
     private val displaySettings by lazy { DisplaySettings(this) }
+    private var signalMeterInertia by mutableStateOf(SignalMeterInertia.MEDIUM)
     private var analogSignalMeter by mutableStateOf(true)
     private var screenAlwaysOn by mutableStateOf(true)
     private fun applyScreenAlwaysOn(enabled: Boolean) {
@@ -287,12 +289,18 @@ class MainActivity : ComponentActivity() {
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
         waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
+        signalMeterInertia = displaySettings.signalMeterInertia()
         analogSignalMeter = displaySettings.analogSignalMeter()
         applyScreenAlwaysOn(displaySettings.screenAlwaysOn())
         setContent {
             RadiolaTheme {
             ReceiverScreen(
                 presentation = model.presentation,
+                signalMeterInertia = signalMeterInertia,
+                onSignalMeterInertiaChange = {
+                    signalMeterInertia = it
+                    displaySettings.saveSignalMeterInertia(it)
+                },
                 analogSignalMeter = analogSignalMeter,
                 onAnalogSignalMeterChange = {
                     analogSignalMeter = it

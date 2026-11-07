@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.DemodulationMode
 import com.example.sdr.R
+import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.platform.EncoderFeedback
 import com.example.sdr.receiver.ReceiverGain
 import com.example.sdr.receiver.ReceiverSquelch
@@ -46,7 +47,7 @@ private val settingsMuted get() = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
     ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
-    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"), SIGNAL_METER("S-meter"),
+    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"), SIGNAL_METER("S-meter"), METER_TYPE("Type"), METER_INERTIA("Inertia"),
     ENCODER("Encoder"), STEP("Tuning step"), FEEDBACK("Tactile feedback"),
     DEVICE("Device"), ABOUT("About"), THEME("Theme")
 }
@@ -58,6 +59,7 @@ internal fun SettingsPanel(
     mode: DemodulationMode, stereo: Boolean, onStereoChange: (Boolean) -> Unit,
     tuningStep: TuningStep, onStepChange: (TuningStep) -> Unit,
     feedback: EncoderFeedback, onFeedbackChange: (EncoderFeedback) -> Unit,
+    signalMeterInertia: SignalMeterInertia, onSignalMeterInertiaChange: (SignalMeterInertia) -> Unit,
     analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit,
     deviceName: String, connected: Boolean, permitted: Boolean, streaming: Boolean, pending: Boolean,
@@ -139,8 +141,17 @@ internal fun SettingsPanel(
                         SettingsEntry("S-meter", if (analogSignalMeter) "Analog" else "Digital") { open(SettingsPage.SIGNAL_METER) }
                     }
                     SettingsPage.SIGNAL_METER -> {
+                        SettingsEntry("Type", if (analogSignalMeter) "Analog" else "Digital") { open(SettingsPage.METER_TYPE) }
+                        SettingsEntry("Inertia", signalMeterInertia.label) { open(SettingsPage.METER_INERTIA) }
+                    }
+                    SettingsPage.METER_TYPE -> {
                         SettingsChoice("Digital", !analogSignalMeter) { onAnalogSignalMeterChange(false) }
                         SettingsChoice("Analog", analogSignalMeter) { onAnalogSignalMeterChange(true) }
+                    }
+                    SettingsPage.METER_INERTIA -> {
+                        SignalMeterInertia.entries.forEach { option ->
+                            SettingsChoice(option.label, option == signalMeterInertia) { onSignalMeterInertiaChange(option) }
+                        }
                     }
                     SettingsPage.BACKLIGHT -> {
                         SettingsChoice("Auto", !screenAlwaysOn) { onScreenAlwaysOnChange(false) }
