@@ -2,6 +2,7 @@ package com.example.sdr.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,11 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -28,7 +34,6 @@ import com.example.sdr.platform.EncoderFeedback
 import com.example.sdr.receiver.ReceiverGain
 import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.TuningStep
-import com.example.sdr.ui.receiver.WaterfallFrameRate
 import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
 import kotlin.math.abs
@@ -41,7 +46,7 @@ private val settingsMuted get() = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
     ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
-    AUDIO("Audio"), DISPLAY("Display"), SPECTRUM("Spectrum"), WATERFALL("Waterfall"),
+    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"),
     ENCODER("Encoder"), STEP("Tuning step"), FEEDBACK("Tactile feedback"),
     DEVICE("Device"), ABOUT("About"), THEME("Theme")
 }
@@ -51,10 +56,9 @@ internal fun SettingsPanel(
     gain: ReceiverGain, gainSteps: List<Int>, onGainChange: (ReceiverGain) -> Unit,
     squelch: ReceiverSquelch, onSquelchChange: (ReceiverSquelch) -> Unit,
     mode: DemodulationMode, stereo: Boolean, onStereoChange: (Boolean) -> Unit,
-    frameRate: WaterfallFrameRate, onFrameRateChange: (WaterfallFrameRate) -> Unit,
     tuningStep: TuningStep, onStepChange: (TuningStep) -> Unit,
     feedback: EncoderFeedback, onFeedbackChange: (EncoderFeedback) -> Unit,
-    zoom: Float, onResetZoom: () -> Unit,
+    screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit,
     deviceName: String, connected: Boolean, permitted: Boolean, streaming: Boolean, pending: Boolean,
     onPermission: () -> Unit, onUsbTest: () -> Unit, onIqTest: () -> Unit, onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -66,26 +70,31 @@ internal fun SettingsPanel(
     BackHandler { back() }
     Column(modifier.fillMaxSize().border(1.dp, settingsEdge, RoundedCornerShape(6.dp))
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp)).padding(12.dp)) {
-        Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SettingsButton(if (path.size > 1) "\u2039 Back" else "\u2039 Receiver", onClick = ::back)
-            Text(page.title, color = settingsWarm, fontSize = 22.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.weight(1f))
-            Text(if (streaming) "ON AIR" else "READY", color = settingsMuted, fontSize = 11.sp)
+        Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            val backDescription = if (path.size > 1) "Back to ${path[path.lastIndex - 1].title}" else "Back to receiver"
+            val arrowColor = settingsMuted
+            Box(Modifier.size(48.dp).semantics { contentDescription = backDescription }
+                .clickable(role = Role.Button, onClick = ::back), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(22.dp)) {
+                    val stroke = 1.8.dp.toPx()
+                    drawLine(arrowColor, Offset(size.width * .8f, size.height * .5f), Offset(size.width * .2f, size.height * .5f), stroke, StrokeCap.Round)
+                    drawLine(arrowColor, Offset(size.width * .2f, size.height * .5f), Offset(size.width * .5f, size.height * .2f), stroke, StrokeCap.Round)
+                    drawLine(arrowColor, Offset(size.width * .2f, size.height * .5f), Offset(size.width * .5f, size.height * .8f), stroke, StrokeCap.Round)
+                }
+            }
+            Text(page.title, color = settingsIvory, fontSize = 22.sp, fontWeight = FontWeight.Normal)
         }
-        if (path.size > 1) Text(path.joinToString("  /  ") { it.title }, color = settingsMuted,
-            fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         key(page) {
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 when (page) {
                     SettingsPage.ROOT -> {
                         val sections = listOf(
-                            Triple(SettingsPage.THEME, "Theme", if (RadiolaColors.dark) "Dark" else "Light"),
                             Triple(SettingsPage.ENCODER, "Encoder", "Tuning step and tactile feedback"),
-                            Triple(SettingsPage.ABOUT, "About", stringResource(R.string.app_name)),
-                            Triple(SettingsPage.DISPLAY, "Display", "Spectrum and waterfall")
+                            Triple(SettingsPage.DISPLAY, "Display", "Theme and backlight"),
+                            Triple(SettingsPage.ABOUT, "About", stringResource(R.string.app_name))
                         )
                         sections.forEach { (next, title, subtitle) ->
                             SettingsEntry(title, subtitle) { open(next) }
@@ -123,18 +132,12 @@ internal fun SettingsPanel(
                         Text("Volume is controlled with the phone's volume buttons.", color = settingsMuted, fontSize = 13.sp)
                     }
                     SettingsPage.DISPLAY -> {
-                        SettingsEntry("Spectrum", "Scale and display information") { open(SettingsPage.SPECTRUM) }
-                        SettingsEntry("Waterfall", "${frameRate.framesPerSecond} FPS") { open(SettingsPage.WATERFALL) }
+                        SettingsEntry("Theme", if (RadiolaColors.dark) "Dark" else "Light") { open(SettingsPage.THEME) }
+                        SettingsEntry("Backlight", if (screenAlwaysOn) "Lock" else "Auto") { open(SettingsPage.BACKLIGHT) }
                     }
-                    SettingsPage.SPECTRUM -> {
-                        SettingsInfo("Refresh rate", "30 FPS")
-                        SettingsInfo("Capture span", "2.4 MHz")
-                        SettingsInfo("Zoom", "%.1f\u00d7".format(Locale.US, zoom))
-                        SettingsButton("Reset zoom", onClick = onResetZoom)
-                        Text("Drag the waterfall left or right to tune. Spread two fingers horizontally to zoom both displays.", color = settingsMuted, fontSize = 13.sp)
-                    }
-                    SettingsPage.WATERFALL -> {
-                        SettingsInfo("Refresh rate", "30 FPS")
+                    SettingsPage.BACKLIGHT -> {
+                        SettingsChoice("Auto", !screenAlwaysOn) { onScreenAlwaysOnChange(false) }
+                        SettingsChoice("Lock", screenAlwaysOn) { onScreenAlwaysOnChange(true) }
                     }
                     SettingsPage.ENCODER -> {
                         SettingsEntry("Tuning step", tuningStep.label) { open(SettingsPage.STEP) }
