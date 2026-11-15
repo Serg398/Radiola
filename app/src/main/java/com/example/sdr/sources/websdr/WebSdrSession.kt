@@ -270,16 +270,18 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
         })
     }
-    private fun desiredWindow() = WebSdrWaterfallWindow.forViewport(bands[currentBand],
-        viewportCenterHz ?: frequencyHz, viewportSpanHz ?: bands[currentBand].spanHz)
+    private fun desiredWindow(previous: WebSdrWaterfallWindow? = window) = WebSdrWaterfallWindow.forViewport(bands[currentBand],
+        viewportCenterHz ?: frequencyHz, viewportSpanHz ?: bands[currentBand].spanHz, previous)
     private fun openWaterfall() {
         val epoch = ++waterGeneration; val token = generation
         water?.close(); pendingFrame.set(null)
-        val target = desiredWindow(); window = target; windowConfirmed = false
+        val target = desiredWindow(null); window = target; windowConfirmed = false
         waterOpenedAt = SystemClock.elapsedRealtime(); windowRequestedAt = waterOpenedAt; lastWaterAt = 0
         water = WebSdrWaterfallStream(client, ::socketRequest, bands[currentBand], target,
             onRow = { bins, center, span, at, coordinates ->
                 if (token == generation && epoch == waterGeneration && window == coordinates) {
+                    if (!windowConfirmed) Log.d("WebSdrControl",
+                        "water_confirm zoom=${coordinates.zoom} start=${coordinates.start} waitMs=${SystemClock.elapsedRealtime() - windowRequestedAt}")
                     windowConfirmed = true
                     lastWaterAt = SystemClock.elapsedRealtime()
                     pendingFrame.set(PendingFrame(token, epoch, bins, center, span, at))

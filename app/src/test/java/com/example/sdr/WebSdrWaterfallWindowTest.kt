@@ -31,6 +31,30 @@ class WebSdrWaterfallWindowTest {
             WebSdrWaterfallWindow.forViewport(band.copy(maxZoom = 0), band.centerHz, 100))
     }
 
+    @Test fun tuningInsideCapturedCoverageDoesNotMoveNetworkWindow() {
+        val span = 18_000
+        val initial = WebSdrWaterfallWindow.forViewport(band, band.centerHz, span)
+        for (offset in -1_000L..1_000L step 100) {
+            assertEquals(initial, WebSdrWaterfallWindow.forViewport(band, band.centerHz + offset, span, initial))
+        }
+        val shifted = WebSdrWaterfallWindow.forViewport(band, band.centerHz + 5_000, span, initial)
+        assertNotEquals(initial, shifted)
+        assertEquals(initial.zoom, shifted.zoom)
+        assertEquals(initial.width, shifted.width)
+    }
+
+    @Test fun zoomChangesStillRequestMatchingResolution() {
+        val initial = WebSdrWaterfallWindow.forViewport(band, band.centerHz, 80_000)
+        val zoomed = WebSdrWaterfallWindow.forViewport(band, band.centerHz, 18_000, initial)
+        assertTrue(zoomed.zoom > initial.zoom)
+        assertEquals(WebSdrWaterfallWindow.forViewport(band, band.centerHz, 18_000), zoomed)
+    }
+
+    @Test fun edgeWindowCanBeReusedWithoutArtificialOuterMargin() {
+        val initial = WebSdrWaterfallWindow.forViewport(band, band.lowHz, 18_000)
+        assertEquals(initial, WebSdrWaterfallWindow.forViewport(band, band.lowHz + 1_000, 18_000, initial))
+    }
+
     @Test fun legacyServerStillReturnsNative1024BinRows() {
         val decoder = WebSdrWaterfallDecoder()
         var rows = 0
