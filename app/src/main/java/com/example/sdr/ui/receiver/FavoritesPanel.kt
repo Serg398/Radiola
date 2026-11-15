@@ -3,6 +3,11 @@ package com.example.sdr.ui.receiver
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +16,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,20 +32,50 @@ import java.util.Locale
 @Composable
 internal fun FavoriteEditor(value: FavoriteStation, existing: Boolean, onSave: (FavoriteStation) -> Unit,
     onDelete: () -> Unit, onClose: () -> Unit) {
-    var name by remember(value.id) { mutableStateOf(value.name) }
+    val defaultName = remember(value.frequencyHz) {
+        val frequency = String.format(Locale.US, "%.6f", value.frequencyHz / 1e6)
+        val whole = frequency.substringBefore('.')
+        val fraction = frequency.substringAfter('.').trimEnd('0').padEnd(3, '0')
+        "$whole.$fraction MHz"
+    }
+    var name by remember(value.id) { mutableStateOf(if (existing && value.name != defaultName) value.name else "") }
     var deleting by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onClose, containerColor = C.surface,
-        title = { Text(if (existing) "Edit favorite" else "Add favorite", color = C.text) },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stationDetails(value), color = C.secondaryText, fontSize = 12.sp)
-            OutlinedTextField(name, { name = it.take(100) }, label = { Text("Name") }, singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = C.text, unfocusedTextColor = C.text,
-                    cursorColor = C.primary, focusedBorderColor = C.primary, unfocusedBorderColor = C.border,
-                    focusedLabelColor = C.primary, unfocusedLabelColor = C.secondaryText))
-            if (existing) TextButton(onClick = { deleting = true }) { Text("Delete", color = C.warning) }
-        } },
-        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onSave(value.copy(name = name)); onClose() }) { Text("Save", color = C.primary) } },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancel", color = C.secondaryText) } })
+    fun save() { onSave(value.copy(name = name.trim().ifBlank { defaultName })); onClose() }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.width(260.dp).background(C.surface, RoundedCornerShape(12.dp))
+            .border(.65.dp, C.border, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(defaultName, color = C.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Name", color = C.secondaryText, fontSize = 11.sp)
+                BasicTextField(name, { name = it.take(100) }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(vertical = 4.dp),
+                    textStyle = TextStyle(color = C.text, fontSize = 16.sp),
+                    cursorBrush = SolidColor(C.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { save() }),
+                    decorationBox = { input ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (name.isEmpty()) Text(defaultName, color = C.secondaryText.copy(alpha = .5f), fontSize = 16.sp)
+                            input()
+                        }
+                    })
+                Box(Modifier.fillMaxWidth().height(.65.dp).background(C.border))
+            }
+            Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (existing) Text("Delete", color = C.secondaryText, fontSize = 12.sp,
+                    modifier = Modifier.clickable { deleting = true }.padding(vertical = 8.dp))
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onClose, modifier = Modifier.height(34.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Text("Cancel", color = C.secondaryText, fontSize = 12.sp)
+                }
+                TextButton(onClick = { save() }, modifier = Modifier.height(34.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Text("Save", color = C.primary, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+
     if (deleting) AlertDialog(onDismissRequest = { deleting = false }, containerColor = C.surface,
         title = { Text("Delete favorite?", color = C.text) }, text = { Text(value.name, color = C.secondaryText) },
         confirmButton = { TextButton(onClick = { onDelete(); onClose() }) { Text("Delete", color = C.warning) } },

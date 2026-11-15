@@ -5,6 +5,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -25,6 +29,17 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.layout.LastBaseline
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -47,7 +62,7 @@ import java.util.Locale
 internal fun FrequencyControl(
     tunedHz: Long, activeInput: String, editingFrequency: Boolean,
     changeInput: (String) -> Unit, applyInput: () -> Unit,
-    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
+    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, onRemoveFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
     BoxWithConstraints(modifier) {
@@ -63,15 +78,15 @@ internal fun FrequencyControl(
         val frequencyText = frequencyLabel(56f)
         val frequencyStyle = TextStyle(fontSize = 56.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
         val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
-        val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 12.sp)).size.width
-        val snapWidth = if (editingFrequency) 0.dp else 76.dp
+        val unitsWidth = with(LocalDensity.current) { 34.dp.toPx() }
+        val snapWidth = if (editingFrequency) 0.dp else 44.dp
         val gaps = if (editingFrequency) 6.dp else 12.dp
         val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
         val frequencyFontSize = (56f * .94f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
         Row(
-            Modifier.align(Alignment.Center).offset(y = 3.dp),
+            Modifier.align(Alignment.CenterEnd).offset(y = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             if (editingFrequency) {
                 BasicTextField(
@@ -129,13 +144,11 @@ internal fun FrequencyControl(
                     letterSpacing = (frequencyFontSize.value / 80f).sp, maxLines = 1
                 )
             }
-            Text("MHz", Modifier.alignByBaseline(), color = RadiolaColors.secondaryText, fontSize = 12.sp, maxLines = 1, softWrap = false)
+            Column(Modifier.width(34.dp).alignBy(LastBaseline), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (!editingFrequency) FavoriteStar(favorite, favoriteEnabled, tunedHz, onFavorite, onRemoveFavorite)
+                Text("MHz", color = RadiolaColors.secondaryText, fontSize = 12.sp, maxLines = 1, softWrap = false)
+            }
             if (!editingFrequency) {
-                Text(if (favorite) "\u2605" else "\u2606",
-                    Modifier.width(26.dp).height(40.dp).semantics { contentDescription = "Save current station" }
-                        .clickable(enabled = favoriteEnabled, onClick = onFavorite).padding(top = 7.dp),
-                    color = if (favorite) RadiolaColors.primary else RadiolaColors.secondaryText,
-                    fontSize = 23.sp, textAlign = TextAlign.Center)
                 val snapDeltaHz = ((tunedHz + 500L) / 1_000L) * 1_000L - tunedHz
                 val canSnap = snapDeltaHz != 0L
                 Text(
@@ -152,6 +165,61 @@ internal fun FrequencyControl(
                     textAlign = TextAlign.Center, maxLines = 1, softWrap = false,
                 )
             }
+        }
+    }
+}
+
+/** A real 1.5-second hold; release before the deadline remains a normal tap. */
+@Composable
+private fun FavoriteStar(favorite: Boolean, enabled: Boolean, frequencyHz: Long,
+    onClick: () -> Unit, onRemove: () -> Unit) {
+    val click by rememberUpdatedState(onClick)
+    val remove by rememberUpdatedState(onRemove)
+    val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val tint = if (favorite || pressed) RadiolaColors.primary else RadiolaColors.secondaryText
+    Box(Modifier.width(34.dp).height(27.dp)
+        .semantics {
+            role = Role.Button
+            contentDescription = if (favorite) "Edit favorite; hold 1.5 seconds to delete" else "Add favorite"
+            if (enabled) onClick { click(); true }
+            if (enabled && favorite) onLongClick("Delete favorite") { remove(); true }
+        }
+        .pointerInput(favorite, enabled, frequencyHz) {
+            if (!enabled) return@pointerInput
+            var held = false
+            detectTapGestures(
+                onPress = {
+                    held = false
+                    pressed = true
+                    try {
+                        val released = withTimeoutOrNull(1_500) { tryAwaitRelease() }
+                        if (released == null) {
+                            held = true
+                            if (favorite) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                remove()
+                            }
+                            tryAwaitRelease()
+                        }
+                    } finally { pressed = false }
+                },
+                onTap = { if (!held) click() },
+            )
+        }, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.width(21.dp).height(21.dp)) {
+            val star = Path().apply {
+                repeat(10) { i ->
+                    val angle = i * Math.PI / 5 - Math.PI / 2
+                    val radius = size.minDimension * if (i % 2 == 0) .46f else .21f
+                    val x = center.x + kotlin.math.cos(angle).toFloat() * radius
+                    val y = center.y + kotlin.math.sin(angle).toFloat() * radius
+                    if (i == 0) moveTo(x, y) else lineTo(x, y)
+                }
+                close()
+            }
+            if (favorite) drawPath(star, tint)
+            else drawPath(star, tint.copy(alpha = if (enabled) 1f else .4f), style = Stroke(1.3.dp.toPx(), join = StrokeJoin.Round))
         }
     }
 }
