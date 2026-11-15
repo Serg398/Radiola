@@ -19,6 +19,18 @@ internal class WebSdrWaterfallStream(
     private val rows = arrayOfNulls<IntArray>(initialWindow.width / 1024)
     private val fresh = BooleanArray(rows.size)
     private var closed = false
+    private val received = IntArray(rows.size)
+    private val matching = IntArray(rows.size)
+    private val overwritten = IntArray(rows.size)
+    private var joined = 0
+    private var waitingSince = 0L
+    private var maximumWaitNs = 0L
+    fun takeDiagnostics(): String = synchronized(lock) {
+        val value = "tiles=${received.joinToString("/")} matched=${matching.joinToString("/")} " +
+            "overwritten=${overwritten.joinToString("/")} joined=$joined joinMaxMs=${maximumWaitNs / 1_000_000}"
+        received.fill(0); matching.fill(0); overwritten.fill(0); joined = 0; maximumWaitNs = 0
+        value
+    }
     @Volatile var confirmedAtNanos = 0L
         private set
 
@@ -37,10 +49,17 @@ internal class WebSdrWaterfallStream(
                             // Retain predictor state even while an old window is being discarded.
                             val levels = decoder.decode(bytes.toByteArray()) ?: return
                             synchronized(lock) {
+                                received[tile]++
                                 if (closed || !decoder.positionKnown || decoder.zoom != target.zoom ||
                                     decoder.start != tileStart(target, tile)) return
+                                matching[tile]++
+                                val now = System.nanoTime()
+                                if (fresh.none { it }) waitingSince = now
+                                if (fresh[tile]) overwritten[tile]++
                                 rows[tile] = levels; fresh[tile] = true
                                 if (!fresh.all { it }) return
+                                joined++
+                                maximumWaitNs = maxOf(maximumWaitNs, now - waitingSince)
                                 fresh.fill(false)
                                 val window = target
                                 val span = (band.spanHz.toDouble() * window.width / 1024 / (1L shl window.zoom)).toInt().coerceAtLeast(1)
@@ -60,7 +79,7 @@ internal class WebSdrWaterfallStream(
     fun update(window: WebSdrWaterfallWindow): Boolean = synchronized(lock) {
         if (closed || window.width != target.width) return false
         if (window == target) return true
-        target = window; fresh.fill(false)
+        target = window; fresh.fill(false); waitingSince = 0
         sockets.forEachIndexed { tile, socket -> socket.send(command(window, tile)) }
         true
     }

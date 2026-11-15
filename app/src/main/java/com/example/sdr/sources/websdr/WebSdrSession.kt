@@ -15,6 +15,7 @@ import com.example.sdr.audio.WebSdrAudioOutput
 import com.example.sdr.decoders.cw.CwDecodeWorker
 import com.example.sdr.decoders.ftx.FtxDecodeWorker
 import com.example.sdr.decoders.ftx.FtxMode
+import com.example.sdr.receiver.SpectrumFrameQueue
 import com.example.sdr.receiver.LatestCommand
 import com.example.sdr.receiver.OnlineReceiverSession
 import com.example.sdr.receiver.ReceiverAudioMetrics
@@ -23,10 +24,11 @@ import com.example.sdr.receiver.ReceiverConnectionState
 import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.WaterfallHistory
 import java.io.IOException
+import kotlin.math.roundToInt
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.example.sdr.telemetry.RenderTimings
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okio.ByteString
@@ -114,19 +116,34 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
     private var audioAttempt = 0
     private var waterAttempt = 0
     private var lastMetricsAt = 0L
+    private var renderedFrames = 0
+    private var lastCacheNs = 0L
+    private var lastCacheCount = 0L
     private data class PendingFrame(val session: Long, val water: Long, val bins: FloatArray,
         val center: Long, val span: Int, val at: Long)
-    private val pendingFrame = AtomicReference<PendingFrame?>()
+    private val pendingFrames = SpectrumFrameQueue<PendingFrame>()
     private val frameScheduled = AtomicBoolean(false)
+    @Volatile private var nextRenderAt = 0L
+    private fun scheduleRender() {
+        if (frameScheduled.compareAndSet(false, true)) {
+            handler.postDelayed(render, (nextRenderAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+        }
+    }
+    private fun clearPendingFrames() {
+        pendingFrames.clear(); handler.removeCallbacks(render); frameScheduled.set(false); nextRenderAt = 0
+    }
     private val render = object : Runnable {
         override fun run() {
+            val row = pendingFrames.poll(SystemClock.elapsedRealtime())
+            if (row != null && active && row.session == generation && row.water == waterGeneration) {
+                val captured = SpectrumFrame(row.bins, row.center, ++frameGeneration, row.at, row.session, row.span)
+                if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
+                waterfallHistory.append(captured); frame = captured
+                waterfallWarning = null; waterAttempt = 0; framesInWindow++; renderedFrames++
+            }
+            nextRenderAt = SystemClock.elapsedRealtime() + 34
             frameScheduled.set(false)
-            val row = pendingFrame.getAndSet(null) ?: return
-            if (!active || row.session != generation || row.water != waterGeneration) return
-            val captured = SpectrumFrame(row.bins, row.center, ++frameGeneration, row.at, row.session, row.span)
-            if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
-            waterfallHistory.append(captured); frame = captured
-            waterfallWarning = null; waterAttempt = 0; framesInWindow++
+            if (pendingFrames.isNotEmpty()) scheduleRender()
         }
     }
     // Coalesce calls within a UI turn without imposing a tuning delay.
@@ -274,7 +291,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         viewportCenterHz ?: frequencyHz, viewportSpanHz ?: bands[currentBand].spanHz, previous)
     private fun openWaterfall() {
         val epoch = ++waterGeneration; val token = generation
-        water?.close(); pendingFrame.set(null)
+        water?.close(); clearPendingFrames()
         val target = desiredWindow(null); window = target; windowConfirmed = false
         waterOpenedAt = SystemClock.elapsedRealtime(); windowRequestedAt = waterOpenedAt; lastWaterAt = 0
         water = WebSdrWaterfallStream(client, ::socketRequest, bands[currentBand], target,
@@ -284,8 +301,8 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
                         "water_confirm zoom=${coordinates.zoom} start=${coordinates.start} waitMs=${SystemClock.elapsedRealtime() - windowRequestedAt}")
                     windowConfirmed = true
                     lastWaterAt = SystemClock.elapsedRealtime()
-                    pendingFrame.set(PendingFrame(token, epoch, bins, center, span, at))
-                    if (frameScheduled.compareAndSet(false, true)) handler.postDelayed(render, 34)
+                    pendingFrames.offer(PendingFrame(token, epoch, bins, center, span, at), SystemClock.elapsedRealtime())
+                    scheduleRender()
                 }
             }, onFailure = { message -> publish(token) { if (epoch == waterGeneration) recoverWater(message) } })
         Log.d("WebSdrControl", "water_open generation=$epoch zoom=${target.zoom} start=${target.start}")
@@ -295,7 +312,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         // Let a requested window return data before superseding it. Otherwise a slower
         // server can stay permanently behind a continuous drag and never publish a row.
         if (water != null && !windowConfirmed) { viewport.offer(target); return }
-        pendingFrame.set(null)
+        clearPendingFrames()
         window = target; windowConfirmed = false
         if (water?.update(target) == true) {
             windowRequestedAt = SystemClock.elapsedRealtime()
@@ -372,7 +389,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         audioOpenedAt = 0
     }
     private fun recoverWater(message: String) {
-        ++waterGeneration; water?.close(); water = null; pendingFrame.set(null); viewport.clear()
+        ++waterGeneration; water?.close(); water = null; clearPendingFrames(); viewport.clear()
         waterfallWarning = "$message; retrying"; waterOpenedAt = 0
         handler.removeCallbacks(retryWater); handler.postDelayed(retryWater, backoff(waterAttempt++))
     }
@@ -390,9 +407,14 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
             if (waterOpenedAt > 0 && ((windowRequestedAt > lastWaterAt && now - windowRequestedAt > 2500) ||
                 now - maxOf(waterOpenedAt, lastWaterAt) > 10_000)) recoverWater("Waterfall stream stalled")
             val elapsed = now - fpsAt
-            if (elapsed >= 1000) { visualFps = (framesInWindow * 1000L / elapsed.coerceAtLeast(1)).toInt(); framesInWindow = 0; fpsAt = now }
+            if (elapsed >= 1000) { visualFps = (framesInWindow * 1000.0 / elapsed.coerceAtLeast(1)).roundToInt(); framesInWindow = 0; fpsAt = now }
             if (now - lastMetricsAt >= 5000) {
-                Log.d("WebSdrMetrics", "visual_fps=$visualFps audio=$audioMetrics water_retry=$waterAttempt")
+                val cache = RenderTimings.cache
+                val cacheMs = (cache.totalNs - lastCacheNs) / (cache.count - lastCacheCount).coerceAtLeast(1) / 1_000_000.0
+                lastCacheNs = cache.totalNs; lastCacheCount = cache.count
+                Log.i("WebSdrMetrics", "visual_fps=$visualFps ${water?.takeDiagnostics()} rendered=$renderedFrames " +
+                    "dropped=${pendingFrames.takeDropped()} cacheMeanMs=$cacheMs audio=$audioMetrics water_retry=$waterAttempt")
+                renderedFrames = 0
                 lastMetricsAt = now
             }
             handler.postDelayed(this, 1000)
@@ -406,7 +428,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         sound?.cancel(); sound = null; water?.close(); water = null; window = null
         output?.close(); output = null; audioPlaying = false
         audioOpenedAt = 0; waterOpenedAt = 0; lastAudioAt = 0; lastWaterAt = 0
-        pendingFrame.set(null); handler.removeCallbacks(render); frameScheduled.set(false)
+        clearPendingFrames()
         cwDecoder.configure(false, frequencyHz)
         ftxDecoder.configure(null, frequencyHz)
     }
