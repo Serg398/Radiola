@@ -16,6 +16,7 @@ import com.example.sdr.decoders.cw.CwDecodeWorker
 import com.example.sdr.decoders.ftx.FtxDecodeWorker
 import com.example.sdr.decoders.ftx.FtxMode
 import com.example.sdr.receiver.BandwidthOptions
+import com.example.sdr.receiver.SpectrumFrameQueue
 import com.example.sdr.receiver.LatestCommand
 import com.example.sdr.receiver.OnlineReceiverSession
 import com.example.sdr.receiver.ReceiverAudioMetrics
@@ -28,7 +29,7 @@ import com.example.sdr.receiver.offsetForBandwidth
 import com.example.sdr.sources.websdr.WebSdrBandwidth
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import okhttp3.*
@@ -144,20 +145,34 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var retry = 0
     @Volatile private var lastAudioAt = 0L
     @Volatile private var lastPacketAt = 0L
+    @Volatile private var lastFftAt = 0L
+    private var fftExpectedAt = 0L
     private var openedAt = 0L
     private var fpsAt = 0L
     private val receivedFft = AtomicInteger()
     private val receivedAudio = AtomicInteger()
-    private val replacedFft = AtomicInteger()
     private var diagnosticsAt = 0L
     private var renderedFft = 0
     private data class Row(val token: Long, val bins: FloatArray, val center: Long, val span: Int, val timestampNanos: Long)
-    private val pendingRow = AtomicReference<Row?>()
+    private val pendingRows = SpectrumFrameQueue<Row>()
+    private val renderScheduled = AtomicBoolean(false)
+    @Volatile private var nextRenderAt = 0L
+    private fun scheduleRender() {
+        if (renderScheduled.compareAndSet(false, true)) {
+            handler.postDelayed(render, (nextRenderAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+        }
+    }
+    private fun clearPendingFrames() {
+        pendingRows.clear()
+        handler.removeCallbacks(render)
+        renderScheduled.set(false)
+        nextRenderAt = 0
+    }
     private var lastSentTuning: JSONObject? = null
     private val render = object : Runnable {
         override fun run() {
-            if (!active) return
-            pendingRow.getAndSet(null)?.let { row ->
+            if (!active) { renderScheduled.set(false); return }
+            pendingRows.poll(SystemClock.elapsedRealtime())?.let { row ->
                 if (initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
                     val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
                     if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
@@ -167,7 +182,9 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                     }
                 }
             }
-            handler.postDelayed(this, 34)
+            nextRenderAt = SystemClock.elapsedRealtime() + 34
+            renderScheduled.set(false)
+            if (pendingRows.isNotEmpty()) scheduleRender()
         }
     }
     // Keep gesture updates local; the remote DSP only needs the latest frequency.
@@ -192,15 +209,20 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             if (now - diagnosticsAt >= 10_000) {
                 val seconds = (now - diagnosticsAt).coerceAtLeast(1) / 1000.0
                 Log.i("OpenWebRx", "Stream ${url.toHttpUrlOrNull()?.host}: window=${seconds}s " +
-                    "fft=${receivedFft.getAndSet(0)} rendered=$renderedFft replaced=${replacedFft.getAndSet(0)} " +
+                    "fft=${receivedFft.getAndSet(0)} rendered=$renderedFft dropped=${pendingRows.takeDropped()} " +
                     "audio=${receivedAudio.getAndSet(0)} audioAge=${now - lastAudioAt}ms " +
-                    "packetAge=${now - lastPacketAt}ms state=$state profileChange=$changingProfile")
+                    "fftAge=${if (lastFftAt > 0) now - lastFftAt else -1}ms packetAge=${now - lastPacketAt}ms state=$state profileChange=$changingProfile")
                 renderedFft = 0; diagnosticsAt = now
             }
             if (changingProfile && now - openedAt > 15_000) {
                 recover("Profile change timed out")
             } else if (openedAt > 0 && now - maxOf(openedAt, if (needsAudio) lastAudioAt else lastPacketAt) > 20_000) {
                 recover("Audio stream stalled")
+            }
+            if (initialized && !changingProfile && fftExpectedAt > 0 &&
+                now - maxOf(fftExpectedAt, lastFftAt) > 10_000 && spectrumWarning == null) {
+                spectrumWarning = "Spectrum stream stalled"
+                Log.w("OpenWebRx", "FFT stalled while transport remains active; keeping audio connected")
             }
             if (now - fpsAt >= 1000) {
                 visualFps = (frames * 1000.0 / (now - fpsAt).coerceAtLeast(1)).roundToInt()
@@ -227,7 +249,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         }
         focusHeld = true; this.url = url
         state = ReceiverConnectionState.Connecting
-        open(); handler.post(render); handler.post(health)
+        open(); handler.post(health)
     }
 
     private fun publish(token: Long, action: () -> Unit) {
@@ -238,7 +260,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         val token = generation
         openedAt = SystemClock.elapsedRealtime()
         diagnosticsAt = openedAt; renderedFft = 0
-        receivedFft.set(0); receivedAudio.set(0); replacedFft.set(0)
+        receivedFft.set(0); receivedAudio.set(0); pendingRows.takeDropped()
         val request = Request.Builder().url(url).build()
         landing = client.newCall(request).also { call ->
             call.timeout().timeout(20, TimeUnit.SECONDS)
@@ -355,8 +377,10 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                         1 -> {
                             val bins = decoder.spectrum(payload) ?: return
                             receivedFft.incrementAndGet()
-                            if (pendingRow.getAndSet(Row(token, bins, decoder.centerHz, decoder.spanHz,
-                                    SystemClock.elapsedRealtimeNanos())) != null) replacedFft.incrementAndGet()
+                            lastFftAt = SystemClock.elapsedRealtime()
+                            pendingRows.offer(Row(token, bins, decoder.centerHz, decoder.spanHz,
+                                SystemClock.elapsedRealtimeNanos()), lastFftAt)
+                            scheduleRender()
                         }
                         2, 4 -> {
                             val rate = if (bytes[0].toInt() == 4) 48000 else 12000
@@ -449,7 +473,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             if (!restoreTuning) frequencyHz = config.optLong("start_freq", centerHz + config.optLong("start_offset_freq", 0)).coerceIn(low, high)
             knownBands[profile] = ReceiverBand(0, "Current", centerHz, spanHz, frequencyHz, 0)
             rebuildBands()
-            frame = null; pendingRow.set(null); waterfallHistory = WaterfallHistory(1024)
+            frame = null; clearPendingFrames(); waterfallHistory = WaterfallHistory(1024)
+            fftExpectedAt = SystemClock.elapsedRealtime()
             changingProfile = false; initialized = true; requestedProfile = null
             sendTuning()
             tuning.flush()
@@ -596,7 +621,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override fun setWaterfallViewport(centerHz: Long, spanHz: Int) = Unit
 
     private fun closeTransport() {
-        generation++; tuning.clear(); pendingRow.set(null)
+        generation++; tuning.clear(); clearPendingFrames()
         lastSentTuning = null
         profilesFresh = false; restoreSent = false; serverConfig = JSONObject()
         appliedStartMode = null
@@ -604,7 +629,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         configScheduled = false; profileRequestedAt = 0
         landing?.cancel(); landing = null
         socket?.cancel(); socket = null; output?.close(); output = null
-        initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0
+        initialized = false; changingProfile = false; openedAt = 0; lastAudioAt = 0; lastPacketAt = 0; lastFftAt = 0; fftExpectedAt = 0
         signalDbm = null; visualFps = 0
         cwDecoder.configure(false, frequencyHz); ftxDecoder.configure(null, frequencyHz)
     }
