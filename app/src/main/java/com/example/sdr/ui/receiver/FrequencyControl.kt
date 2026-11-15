@@ -169,7 +169,7 @@ internal fun FrequencyControl(
     }
 }
 
-/** A real 1.5-second hold; release before the deadline remains a normal tap. */
+/** A real one-second hold; release before the deadline remains a normal tap. */
 @Composable
 private fun FavoriteStar(favorite: Boolean, enabled: Boolean, frequencyHz: Long,
     onClick: () -> Unit, onRemove: () -> Unit) {
@@ -181,7 +181,7 @@ private fun FavoriteStar(favorite: Boolean, enabled: Boolean, frequencyHz: Long,
     Box(Modifier.width(34.dp).height(27.dp)
         .semantics {
             role = Role.Button
-            contentDescription = if (favorite) "Edit favorite; hold 1.5 seconds to delete" else "Add favorite"
+            contentDescription = if (favorite) "Edit favorite; hold 1 second to delete" else "Add favorite"
             if (enabled) onClick { click(); true }
             if (enabled && favorite) onLongClick("Delete favorite") { remove(); true }
         }
@@ -193,7 +193,7 @@ private fun FavoriteStar(favorite: Boolean, enabled: Boolean, frequencyHz: Long,
                     held = false
                     pressed = true
                     try {
-                        val released = withTimeoutOrNull(1_500) { tryAwaitRelease() }
+                        val released = withTimeoutOrNull(1_000) { tryAwaitRelease() }
                         if (released == null) {
                             held = true
                             if (favorite) {

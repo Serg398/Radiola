@@ -3,7 +3,7 @@
 The sidebar opens Favorites between Receiver and Settings without stopping reception.
 The star above MHz adds the current station; a filled star edits a matching saved station.
 The compact editor shows the frequency in its header and a Name label above the field, with the frequency as a muted placeholder. Saving an empty name uses that frequency; typing starts with an empty field.
-Holding a filled star for 1.5 seconds deletes the matching station with haptic feedback; a shorter hold opens the editor.
+Holding a filled star for one second deletes the matching station with haptic feedback; a shorter hold opens the editor.
 The table supports source filters, rename and confirmed deletion through a row action menu.
 Columns: Name, Frequency, Mode, BW, Source, Server / Band. Name, Frequency and Mode headers toggle ascending/descending sorting.
 The header stays fixed during vertical scrolling; narrow screens share horizontal scrolling for header and rows.
