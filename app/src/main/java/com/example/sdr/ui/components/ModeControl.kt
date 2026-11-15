@@ -2,6 +2,8 @@ package com.example.sdr.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -45,11 +47,10 @@ internal fun ModeControl(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
             modifier = Modifier.heightIn(max = 340.dp), containerColor = RadiolaColors.surface) {
             @Composable
-            fun Entry(label: String, enabled: Boolean = true, action: () -> Unit) {
-                val active = label == selected
+            fun Entry(label: String, active: Boolean, enabled: Boolean = true, action: () -> Unit) {
                 Box(Modifier.width(40.dp).height(30.dp)
                     .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
-                    .clickable(enabled = enabled) { expanded = false; action() },
+                    .selectable(selected = active, enabled = enabled, role = Role.RadioButton) { expanded = false; action() },
                     contentAlignment = Alignment.Center) {
                     val color = if (active) RadiolaColors.onActiveMode else RadiolaColors.text
                     Text(label, color = color.copy(alpha = if (enabled) 1f else .4f), fontSize = 11.sp)
@@ -67,13 +68,13 @@ internal fun ModeControl(
             Header("LOCAL", if (remote) "DECODERS / SERVER AUDIO" else "MODULATION")
             if (!remote) {
                 Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    modes.forEach { (label, value) -> Entry(label) { onMode(value) } }
+                    modes.forEach { (label, value) -> Entry(label, active = ftxMode == null && mode == value) { onMode(value) } }
                 }
                 Text("DECODERS", color = RadiolaColors.secondaryText, fontSize = 9.sp,
                     modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 3.dp))
             }
             Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                FtxMode.entries.forEach { value -> Entry(value.name, ftxEnabled) { onFtx(value) } }
+                FtxMode.entries.forEach { value -> Entry(value.name, active = ftxMode == value, enabled = ftxEnabled) { onFtx(value) } }
             }
             if (remote) {
                 HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = RadiolaColors.border)
@@ -91,7 +92,7 @@ internal fun ModeControl(
                                 val active = ftxMode == null && option.id == serverModeId
                                 Box(Modifier.width(82.dp).height(36.dp)
                                     .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
-                                    .clickable { expanded = false; onServerMode(option.id) }, contentAlignment = Alignment.Center) {
+                                    .selectable(selected = active, role = Role.RadioButton) { expanded = false; onServerMode(option.id) }, contentAlignment = Alignment.Center) {
                                     Text(option.label, color = if (active) RadiolaColors.onActiveMode else RadiolaColors.text,
                                         fontSize = 11.sp, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -102,7 +103,7 @@ internal fun ModeControl(
                 }
             } else if (remote) Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                modes.forEach { (label, value) -> Entry(label) { onMode(value) } }
+                modes.forEach { (label, value) -> Entry(label, active = ftxMode == null && mode == value) { onMode(value) } }
             }
         }
     }
