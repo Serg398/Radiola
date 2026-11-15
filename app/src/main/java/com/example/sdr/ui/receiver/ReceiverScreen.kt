@@ -284,7 +284,7 @@ internal fun ReceiverScreen(
                         encoderBrakeRequest++
                         encoderRotating = false
                         step(it)
-                    }, favorite = matchingFavorite != null, favoriteEnabled = favoriteSnapshot != null,
+                    }, tuningStep = tuningStep, favorite = matchingFavorite != null, favoriteEnabled = favoriteSnapshot != null,
                     onFavorite = { favoriteEditor = matchingFavorite ?: favoriteSnapshot },
                     onRemoveFavorite = { matchingFavorite?.let { presentation.favorites.delete(it.id) } }, modifier = Modifier.weight(1f))
                 Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

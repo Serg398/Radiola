@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sdr.receiver.TuningStep
 import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
 
@@ -62,7 +63,7 @@ import java.util.Locale
 internal fun FrequencyControl(
     tunedHz: Long, activeInput: String, editingFrequency: Boolean,
     changeInput: (String) -> Unit, applyInput: () -> Unit,
-    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, onRemoveFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
+    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, tuningStep: TuningStep = TuningStep.AUTO, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, onRemoveFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
     BoxWithConstraints(modifier) {
@@ -79,7 +80,10 @@ internal fun FrequencyControl(
         val frequencyStyle = TextStyle(fontSize = 56.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
         val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
         val unitsWidth = with(LocalDensity.current) { 34.dp.toPx() }
-        val snapWidth = if (editingFrequency) 0.dp else 44.dp
+        val roundingHz = tuningStep.fixedHz ?: 1_000L
+        val snapLabel = "\u2248${tuningStep.shortLabel(roundingHz)}"
+        val snapLabelWidth = textMeasurer.measure(snapLabel, TextStyle(fontSize = 15.sp), softWrap = false).size.width
+        val snapWidth = if (editingFrequency) 0.dp else maxOf(44.dp, with(LocalDensity.current) { snapLabelWidth.toDp() } + 4.dp)
         val gaps = if (editingFrequency) 6.dp else 12.dp
         val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
         val frequencyFontSize = (56f * .94f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
@@ -149,12 +153,12 @@ internal fun FrequencyControl(
                 Text("MHz", color = RadiolaColors.secondaryText, fontSize = 12.sp, maxLines = 1, softWrap = false)
             }
             if (!editingFrequency) {
-                val snapDeltaHz = ((tunedHz + 500L) / 1_000L) * 1_000L - tunedHz
+                val snapDeltaHz = ((tunedHz + roundingHz / 2) / roundingHz) * roundingHz - tunedHz
                 val canSnap = snapDeltaHz != 0L
                 Text(
-                    "≈1k",
-                    Modifier.alignByBaseline().width(44.dp)
-                        .semantics { contentDescription = "Round frequency to nearest kilohertz" }
+                    snapLabel,
+                    Modifier.alignByBaseline().width(snapWidth)
+                        .semantics { contentDescription = "Round frequency to nearest ${tuningStep.shortLabel(roundingHz)}" }
                         .clickable(enabled = canSnap) {
                             step(snapDeltaHz)
                         }
