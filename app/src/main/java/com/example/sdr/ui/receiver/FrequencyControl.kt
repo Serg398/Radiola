@@ -47,7 +47,7 @@ import java.util.Locale
 internal fun FrequencyControl(
     tunedHz: Long, activeInput: String, editingFrequency: Boolean,
     changeInput: (String) -> Unit, applyInput: () -> Unit,
-    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, modifier: Modifier = Modifier,
+    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
     BoxWithConstraints(modifier) {
@@ -64,7 +64,7 @@ internal fun FrequencyControl(
         val frequencyStyle = TextStyle(fontSize = 56.sp, fontWeight = FontWeight.Light, letterSpacing = 0.5.sp)
         val frequencyWidth = textMeasurer.measure(frequencyText, frequencyStyle, softWrap = false).size.width
         val unitsWidth = textMeasurer.measure("MHz", TextStyle(fontSize = 12.sp)).size.width
-        val snapWidth = if (editingFrequency) 0.dp else 44.dp
+        val snapWidth = if (editingFrequency) 0.dp else 76.dp
         val gaps = if (editingFrequency) 6.dp else 12.dp
         val availableWidth = with(LocalDensity.current) { maxWidth.toPx() - snapWidth.toPx() - gaps.toPx() } - unitsWidth
         val frequencyFontSize = (56f * .94f * (availableWidth / maxOf(1, frequencyWidth)).coerceIn(0.5f, 1f)).sp
@@ -131,11 +131,16 @@ internal fun FrequencyControl(
             }
             Text("MHz", Modifier.alignByBaseline(), color = RadiolaColors.secondaryText, fontSize = 12.sp, maxLines = 1, softWrap = false)
             if (!editingFrequency) {
+                Text(if (favorite) "\u2605" else "\u2606",
+                    Modifier.width(26.dp).height(40.dp).semantics { contentDescription = "Save current station" }
+                        .clickable(enabled = favoriteEnabled, onClick = onFavorite).padding(top = 7.dp),
+                    color = if (favorite) RadiolaColors.primary else RadiolaColors.secondaryText,
+                    fontSize = 23.sp, textAlign = TextAlign.Center)
                 val snapDeltaHz = ((tunedHz + 500L) / 1_000L) * 1_000L - tunedHz
                 val canSnap = snapDeltaHz != 0L
                 Text(
                     "≈1k",
-                    Modifier.alignByBaseline().width(snapWidth)
+                    Modifier.alignByBaseline().width(44.dp)
                         .semantics { contentDescription = "Round frequency to nearest kilohertz" }
                         .clickable(enabled = canSnap) {
                             step(snapDeltaHz)

@@ -29,6 +29,7 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     private val settings = DisplaySettings(application)
     internal val presentation by lazy {
         ReceiverPresentation(online, runtime, viewModelScope,
+            favorites = com.example.sdr.favorites.FavoritesRepository(application),
             local = { LocalReceiverState(frequencyHz, demodulationMode,
                 receiverSnapshot.state == ReceiverState.Running, runtime.bandwidth(demodulationMode)) },
             usbStep = ::stepFrequency, usbMode = ::changeDemodulationMode,

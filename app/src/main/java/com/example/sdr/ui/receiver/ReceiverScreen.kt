@@ -135,6 +135,14 @@ internal fun ReceiverScreen(
     onEncoderTick: () -> Unit = {}
 ) {
     var selected by remember { mutableStateOf("Receiver") }
+    var favoriteEditor by remember { mutableStateOf<com.example.sdr.favorites.FavoriteStation?>(null) }
+    val favoriteSnapshot = presentation.favoriteSnapshot(bandwidthDefault)
+    val matchingFavorite = favoriteSnapshot?.let { snapshot -> presentation.favorites.stations.firstOrNull { it.sameSettings(snapshot) } }
+    favoriteEditor?.let { value ->
+        FavoriteEditor(value, presentation.favorites.stations.any { it.id == value.id },
+            onSave = presentation.favorites::save,
+            onDelete = { presentation.favorites.delete(value.id) }, onClose = { favoriteEditor = null })
+    }
     val context = LocalContext.current
     val online = presentation.online
     val uiState = presentation.state
@@ -157,9 +165,9 @@ internal fun ReceiverScreen(
             ?.let { webSession.tune((it * 1_000_000).toLong()) }
         else onTune()
     }
-    val step: (Long) -> Unit = presentation::step
+    val step: (Long) -> Unit = { presentation.cancelFavorite(); presentation.step(it) }
     var ftxMode by presentation::ftxMode
-    val changeMode: (DemodulationMode) -> Unit = presentation::changeMode
+    val changeMode: (DemodulationMode) -> Unit = { presentation.cancelFavorite(); presentation.changeMode(it) }
     val changeBandwidth: (Int?) -> Unit = presentation::changeBandwidth
     var editingFrequency by remember { mutableStateOf(false) }
     LaunchedEffect(tunedHz, editingFrequency) {
@@ -232,8 +240,10 @@ internal fun ReceiverScreen(
     val passbandOffsetHz = (if (remote) webSession.passbandOffsetHz else activeMode.offsetForBandwidth(activeBandwidth)).toLong()
     Row(Modifier.fillMaxSize().background(backdrop)) {
         Sidebar(selected, onSelect = {
+                encoderBrakeRequest++
                 encoderRotating = false
                 frequencyMotion.snapTo(tunedHz.toDouble())
+                presentation.cancelFavorite()
                 selected = it
             }, screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange)
         Column(
@@ -274,12 +284,14 @@ internal fun ReceiverScreen(
                         encoderBrakeRequest++
                         encoderRotating = false
                         step(it)
-                    }, modifier = Modifier.weight(1f))
+                    }, favorite = matchingFavorite != null, favoriteEnabled = favoriteSnapshot != null,
+                    onFavorite = { favoriteEditor = matchingFavorite ?: favoriteSnapshot }, modifier = Modifier.weight(1f))
                 Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SourcePlaybackControl(
                         source = source,
                         onSourceChange = {
                             if (it != source) {
+                                presentation.cancelFavorite()
                                 ftxMode = null
                                 webSession.disconnect()
                                 if (streaming || starting) onStopStream()
@@ -382,6 +394,8 @@ internal fun ReceiverScreen(
                         onPermission = onRequestPermission, onUsbTest = onCheckConnection, onIqTest = onCaptureIq,
                         onClose = { selected = "Receiver" }
                     )
+                } else if (selected == "Favorites") {
+                    FavoritesPanel(presentation, onEdit = { favoriteEditor = it }, onClose = { selected = "Receiver" }, usbConnected = connected)
                 } else if (remote && webSdrPage == "MAP") {
                     mapState.SaveableStateProvider("server-map-$source") {
                     androidx.compose.runtime.key(source) {
@@ -411,15 +425,17 @@ internal fun ReceiverScreen(
                         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                             AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
                                 displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
-                            var markerWidthPx by remember { mutableStateOf(0) }
-                            val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
-                            val markerCenter = 31.dp + (maxWidth - 31.dp) * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
-                            val markerOffset = (markerCenter - markerWidth / 2).coerceIn(31.dp, maxOf(31.dp, maxWidth - markerWidth))
-                            Box(Modifier.align(Alignment.TopStart).offset(x = markerOffset).onSizeChanged { markerWidthPx = it.width }.padding(top = 4.dp).background(RadiolaColors.primaryTint, RoundedCornerShape(12.dp)).border(1.dp, warm, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 2.dp)) {
-                                Text(formatFrequency(tunedHz), color = ivory, fontSize = 11.sp)
-                            }
+                            var spectrumControlsWidth by remember { mutableStateOf(0) }
+                            FavoriteFrequencyMarkers(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
+                                Modifier.fillMaxSize().padding(start = 31.dp),
+                                endInset = with(LocalDensity.current) { spectrumControlsWidth.toDp() } + 8.dp,
+                                onSelect = { station ->
+                                    encoderBrakeRequest++
+                                    encoderRotating = false
+                                    presentation.activateFavorite(station) { selected = "Receiver" }
+                                })
                             Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
-                            Row(Modifier.align(Alignment.TopEnd).padding(end = 7.dp, top = 2.dp),
+                            Row(Modifier.align(Alignment.TopEnd).onSizeChanged { spectrumControlsWidth = it.width }.padding(end = 7.dp, top = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("AUTO", color = if (automaticDisplay) warm else muted, fontSize = 10.sp,
                                 modifier = Modifier.clickable { automaticDisplay = !automaticDisplay }

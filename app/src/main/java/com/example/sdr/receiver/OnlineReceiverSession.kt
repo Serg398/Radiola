@@ -10,6 +10,8 @@ import com.example.sdr.receiver.WaterfallHistory
 
 /** Controls shared by native clients of the two independent online protocols. */
 internal interface OnlineReceiverSession {
+    val bandIds: List<String> get() = bands.map { it.name }
+    val tuningReady: Boolean get() = state == ReceiverConnectionState.Connected
     val serverModes: List<ReceiverModeOption>? get() = null
     val serverModeId: String? get() = null
     val modeLabel: String get() = mode.label

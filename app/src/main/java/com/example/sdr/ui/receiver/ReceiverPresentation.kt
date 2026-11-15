@@ -22,12 +22,82 @@ internal data class ReceiverUiState(val source: ReceiverSource, val frequencyHz:
 
 /** ViewModel-owned commands and decoder presentation; sessions remain owned by the application. */
 internal class ReceiverPresentation(
-    val online: WebSdrRuntime, private val usb: ReceiverRuntime, scope: CoroutineScope,
+    val online: WebSdrRuntime, private val usb: ReceiverRuntime, private val scope: CoroutineScope,
+    val favorites: com.example.sdr.favorites.FavoritesRepository,
     private val local: () -> LocalReceiverState,
     private val usbStep: (Long) -> Unit, private val usbMode: (DemodulationMode) -> Unit,
     private val usbBandwidth: (Int?) -> Unit,
     initialFtx: FtxMode? = null, private val onFtxChange: (FtxMode?) -> Unit = {},
 ) {
+    var favoriteError by mutableStateOf<String?>(null); private set
+    var applyingFavorite by mutableStateOf<String?>(null); private set
+    private var favoriteJob: kotlinx.coroutines.Job? = null
+
+    fun favoriteSnapshot(defaultBandwidth: Boolean): com.example.sdr.favorites.FavoriteStation? {
+        val current = state
+        val session = online.session
+        if (current.source.online && !session.tuningReady) return null
+        val band = if (current.source.online) session.bands.getOrNull(session.currentBand) else null
+        return com.example.sdr.favorites.FavoriteStation(
+            name = "%.3f MHz".format(java.util.Locale.US, current.frequencyHz / 1e6),
+            frequencyHz = current.frequencyHz, mode = current.mode,
+            bandwidthHz = if (if (current.source.online) session.bandwidthDefault else defaultBandwidth) null else current.bandwidthHz,
+            source = current.source,
+            serverUrl = if (!current.source.online) null else if (current.source == ReceiverSource.OPEN_WEB_RX) online.openWebRxReceiver?.url else online.receiverUrl,
+            serverName = if (current.source.online) online.selectedName else "",
+            bandId = if (current.source.online) session.bandIds.getOrNull(session.currentBand) else null,
+            bandName = band?.name.orEmpty(), serverMode = if (current.source.online && ftxMode == null) session.serverModeId else null,
+            ftx = ftxMode)
+    }
+    fun cancelFavorite() { favoriteJob?.cancel(); applyingFavorite = null }
+    fun activateFavorite(value: com.example.sdr.favorites.FavoriteStation, onReady: () -> Unit) {
+        cancelFavorite(); favoriteError = null
+        favoriteJob = scope.launch {
+            applyingFavorite = value.id
+            try {
+                kotlinx.coroutines.withTimeout(25_000) {
+                    if (online.source != value.source) {
+                        usb.stop(); online.selectSource(value.source)
+                    }
+                    if (value.source.online) {
+                        val url = requireNotNull(value.serverUrl) { "No server saved" }
+                        online.select(com.example.sdr.sources.websdr.WebSdrReceiver(url, value.serverName, "", 0f, 0f, null, emptyList()))
+                        online.connect()
+                        val session = online.session
+                        while (!session.tuningReady || session.bands.isEmpty()) {
+                            check(session.state != ReceiverConnectionState.Error) { session.error ?: "Connection failed" }
+                            check(online.startError == null) { online.startError.orEmpty() }
+                            delay(50)
+                        }
+                        val index = value.bandId?.let { session.bandIds.indexOf(it) } ?: -1
+                        check(index >= 0) { "Saved band is no longer available" }
+                        if (index != session.currentBand) {
+                            session.selectBand(index)
+                            while (!session.tuningReady || session.currentBand != index) delay(50)
+                        }
+                        check(session.bands[index].contains(value.frequencyHz)) { "Frequency outside saved band" }
+                        if (value.serverMode != null) {
+                            check(session.serverModes?.any { it.id == value.serverMode } == true) { "Saved mode is unavailable" }
+                            selectServerMode(value.serverMode)
+                        } else changeMode(value.mode)
+                        session.tune(value.frequencyHz)
+                        online.selectPage("Radio")
+                    } else {
+                        online.disconnect()
+                        changeMode(value.mode)
+                        usbStep(value.frequencyHz - local().frequencyHz)
+                    }
+                    if (value.ftx != null) selectFtx(value.ftx)
+                    changeBandwidth(value.bandwidthHz)
+                    onReady()
+                }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                favoriteError = "Server did not apply the saved band. Try again."
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) { favoriteError = e.message ?: "Cannot open station"
+            } finally { applyingFavorite = null }
+        }
+    }
     private var selectedFtx by mutableStateOf(initialFtx)
     var ftxMode: FtxMode?
         get() = selectedFtx

@@ -42,7 +42,7 @@ internal fun Sidebar(selected: String, onSelect: (String) -> Unit,
             Text(stringResource(R.string.app_name).uppercase(Locale.ROOT), color = RadiolaColors.primary, fontSize = 18.sp,
                 fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
         }
-        listOf("Receiver", "Settings").forEach { name ->
+        listOf("Receiver", "Favorites", "Settings").forEach { name ->
             val active = selected == name
             Box(
                 Modifier.fillMaxWidth().height(36.dp)
@@ -88,6 +88,18 @@ internal fun SidebarIcon(name: String, tint: Color) {
                 }
                 drawPath(wave, tint, style = Stroke(stroke, cap = StrokeCap.Round,
                     join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            } else if (name == "Favorites") {
+                val star = Path().apply {
+                    repeat(10) { i ->
+                        val a = i * Math.PI / 5 - Math.PI / 2
+                        val r = if (i % 2 == 0) 10f else 4.5f
+                        val x = (12 + kotlin.math.cos(a).toFloat() * r) * unit
+                        val y = (12 + kotlin.math.sin(a).toFloat() * r) * unit
+                        if (i == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+                    close()
+                }
+                drawPath(star, tint, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
             } else if (name == "ScreenLocked" || name == "ScreenAuto") {
                 drawCircle(tint, 6f * unit, point(12f, 12f), style = Stroke(1.4f * unit))
                 repeat(8) { index ->

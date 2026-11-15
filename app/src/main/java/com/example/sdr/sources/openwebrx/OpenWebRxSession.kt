@@ -110,6 +110,8 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var url = ""
     private var centerHz = 0L
     private var spanHz = 0
+    override val bandIds get() = profiles.map { it.first }
+    override val tuningReady get() = active && initialized && !changingProfile
     private var profile = ""
     private var profiles = emptyList<Pair<String, String>>()
     private val knownBands = mutableMapOf<String, ReceiverBand>()
