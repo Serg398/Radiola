@@ -55,6 +55,51 @@ class WebSdrWaterfallWindowTest {
         assertEquals(initial, WebSdrWaterfallWindow.forViewport(band, band.lowHz + 1_000, 18_000, initial))
     }
 
+    @Test fun gradualPanMovesWindowInSmallStepsWithoutLosingCoverageOrResolution() {
+        val span = 18_000
+        val initial = WebSdrWaterfallWindow.forViewport(band, band.centerHz, span)
+        var previous = initial
+        var changes = 0
+        val unitsPerHz = (1024L shl band.maxZoom).toDouble() / band.spanHz
+        for (offset in 100L..20_000L step 100) {
+            val next = WebSdrWaterfallWindow.forViewport(band, band.centerHz + offset, span, previous)
+            assertEquals(initial.zoom, next.zoom)
+            assertEquals(initial.width, next.width)
+            if (next != previous) {
+                changes++
+                val shiftHz = (next.start - previous.start) / unitsPerHz
+                assertTrue("Gradual movement must not recenter in large steps: $shiftHz", shiftHz in 0.0..span / 8.0)
+            }
+            val low = band.lowHz + next.start / unitsPerHz
+            val capturedSpan = band.spanHz.toDouble() * next.width / 1024 / (1L shl next.zoom)
+            assertTrue(low <= band.centerHz + offset - span / 2)
+            assertTrue(low + capturedSpan >= band.centerHz + offset + span / 2)
+            previous = next
+        }
+        assertTrue(changes > 0)
+    }
+
+    @Test fun largeJumpDoesNotChaseFrequencyOneSmallStepAtATime() {
+        val initial = WebSdrWaterfallWindow.forViewport(band, band.centerHz, 18_000)
+        val jumped = WebSdrWaterfallWindow.forViewport(band, band.centerHz + 80_000, 18_000, initial)
+        assertEquals(WebSdrWaterfallWindow.forViewport(band, band.centerHz + 80_000, 18_000), jumped)
+    }
+
+    @Test fun gradualPanToLowerFrequenciesAlsoUsesSmallSteps() {
+        val span = 18_000
+        var previous = WebSdrWaterfallWindow.forViewport(band, band.centerHz, span)
+        val unitsPerHz = (1024L shl band.maxZoom).toDouble() / band.spanHz
+        for (offset in 100L..20_000L step 100) {
+            val next = WebSdrWaterfallWindow.forViewport(band, band.centerHz - offset, span, previous)
+            if (next != previous) assertTrue((previous.start - next.start) / unitsPerHz in 0.0..span / 8.0)
+            val low = band.lowHz + next.start / unitsPerHz
+            val capturedSpan = band.spanHz.toDouble() * next.width / 1024 / (1L shl next.zoom)
+            assertTrue(low <= band.centerHz - offset - span / 2)
+            assertTrue(low + capturedSpan >= band.centerHz - offset + span / 2)
+            previous = next
+        }
+    }
+
     @Test fun legacyServerStillReturnsNative1024BinRows() {
         val decoder = WebSdrWaterfallDecoder()
         var rows = 0

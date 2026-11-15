@@ -15,9 +15,11 @@ internal class WebSdrWaterfallStream(
 ) {
     private val lock = Any()
     private var target = initialWindow
+    private var confirmedWindow: WebSdrWaterfallWindow? = null
     private val sockets = mutableListOf<WebSocket>()
     private val rows = arrayOfNulls<IntArray>(initialWindow.width / 1024)
     private val fresh = BooleanArray(rows.size)
+    private val rowWindows = arrayOfNulls<WebSdrWaterfallWindow>(rows.size)
     private var closed = false
     private val received = IntArray(rows.size)
     private val matching = IntArray(rows.size)
@@ -50,18 +52,25 @@ internal class WebSdrWaterfallStream(
                             val levels = decoder.decode(bytes.toByteArray()) ?: return
                             synchronized(lock) {
                                 received[tile]++
-                                if (closed || !decoder.positionKnown || decoder.zoom != target.zoom ||
-                                    decoder.start != tileStart(target, tile)) return
+                                if (closed || !decoder.positionKnown) return
+                                fun matches(window: WebSdrWaterfallWindow) = decoder.zoom == window.zoom &&
+                                    decoder.start == tileStart(window, tile)
+                                val coordinates = when {
+                                    matches(target) -> target
+                                    confirmedWindow?.let { matches(it) } == true -> confirmedWindow!!
+                                    else -> return
+                                }
                                 matching[tile]++
                                 val now = System.nanoTime()
                                 if (fresh.none { it }) waitingSince = now
                                 if (fresh[tile]) overwritten[tile]++
-                                rows[tile] = levels; fresh[tile] = true
-                                if (!fresh.all { it }) return
+                                rows[tile] = levels; fresh[tile] = true; rowWindows[tile] = coordinates
+                                if (!fresh.all { it } || rowWindows.any { it != coordinates }) return
                                 joined++
                                 maximumWaitNs = maxOf(maximumWaitNs, now - waitingSince)
                                 fresh.fill(false)
-                                val window = target
+                                val window = coordinates
+                                if (window == target) confirmedWindow = window
                                 val span = (band.spanHz.toDouble() * window.width / 1024 / (1L shl window.zoom)).toInt().coerceAtLeast(1)
                                 val center = (band.lowHz + window.start.toDouble() / (1024L shl band.maxZoom) * band.spanHz + span / 2).toLong()
                                 val bins = FloatArray(window.width) { x -> -94f + rows[x / 1024]!![x % 1024] * (69f / 255) }
@@ -79,7 +88,7 @@ internal class WebSdrWaterfallStream(
     fun update(window: WebSdrWaterfallWindow): Boolean = synchronized(lock) {
         if (closed || window.width != target.width) return false
         if (window == target) return true
-        target = window; fresh.fill(false); waitingSince = 0
+        target = window; fresh.fill(false); rowWindows.fill(null); waitingSince = 0
         sockets.forEachIndexed { tile, socket -> socket.send(command(window, tile)) }
         true
     }

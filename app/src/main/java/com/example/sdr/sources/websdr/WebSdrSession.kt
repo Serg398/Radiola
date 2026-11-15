@@ -296,10 +296,12 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         waterOpenedAt = SystemClock.elapsedRealtime(); windowRequestedAt = waterOpenedAt; lastWaterAt = 0
         water = WebSdrWaterfallStream(client, ::socketRequest, bands[currentBand], target,
             onRow = { bins, center, span, at, coordinates ->
-                if (token == generation && epoch == waterGeneration && window == coordinates) {
-                    if (!windowConfirmed) Log.d("WebSdrControl",
-                        "water_confirm zoom=${coordinates.zoom} start=${coordinates.start} waitMs=${SystemClock.elapsedRealtime() - windowRequestedAt}")
-                    windowConfirmed = true
+                if (token == generation && epoch == waterGeneration) {
+                    if (window == coordinates) {
+                        if (!windowConfirmed) Log.d("WebSdrControl",
+                            "water_confirm zoom=${coordinates.zoom} start=${coordinates.start} waitMs=${SystemClock.elapsedRealtime() - windowRequestedAt}")
+                        windowConfirmed = true
+                    }
                     lastWaterAt = SystemClock.elapsedRealtime()
                     pendingFrames.offer(PendingFrame(token, epoch, bins, center, span, at), SystemClock.elapsedRealtime())
                     scheduleRender()
@@ -312,7 +314,6 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         // Let a requested window return data before superseding it. Otherwise a slower
         // server can stay permanently behind a continuous drag and never publish a row.
         if (water != null && !windowConfirmed) { viewport.offer(target); return }
-        clearPendingFrames()
         window = target; windowConfirmed = false
         if (water?.update(target) == true) {
             windowRequestedAt = SystemClock.elapsedRealtime()
@@ -404,7 +405,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
             val now = SystemClock.elapsedRealtime()
             if (audioOpenedAt > 0 && now - maxOf(audioOpenedAt, lastAudioAt) > 10_000) recoverAudio("Audio stream stalled")
             // Network watchdogs use elapsedRealtime throughout, including device suspend time.
-            if (waterOpenedAt > 0 && ((windowRequestedAt > lastWaterAt && now - windowRequestedAt > 2500) ||
+            if (waterOpenedAt > 0 && ((!windowConfirmed && now - windowRequestedAt > 2500) ||
                 now - maxOf(waterOpenedAt, lastWaterAt) > 10_000)) recoverWater("Waterfall stream stalled")
             val elapsed = now - fpsAt
             if (elapsed >= 1000) { visualFps = (framesInWindow * 1000.0 / elapsed.coerceAtLeast(1)).roundToInt(); framesInWindow = 0; fpsAt = now }

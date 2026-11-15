@@ -29,6 +29,24 @@ internal data class WebSdrWaterfallWindow(val width: Int, val zoom: Int, val sta
             val extent = 1024L shl band.maxZoom
             val start = (((centerHz - band.lowHz).toDouble() / band.spanHz * extent - window / 2)
                 .toLong().coerceIn(0L, (extent - window).coerceAtLeast(0)) shr (band.maxZoom - zoom) shl (band.maxZoom - zoom)).toInt()
+            if (previous != null && previous.width == width && previous.zoom == zoom) {
+                val alignment = 1L shl (band.maxZoom - zoom)
+                val step = maxOf(alignment, (spanHz.toDouble() / 8 / band.spanHz * extent / alignment).toLong() * alignment)
+                val direction = start.compareTo(previous.start)
+                val smallStart = (previous.start + direction * step)
+                    .coerceIn(0L, (extent - window).coerceAtLeast(0))
+                val smallLow = band.lowHz + smallStart.toDouble() / extent * band.spanHz
+                val smallHigh = smallLow + band.spanHz.toDouble() * window / extent
+                val viewLow = maxOf(band.lowHz.toDouble(), centerHz - spanHz / 2.0)
+                val viewHigh = minOf(band.highHz.toDouble(), centerHz + spanHz / 2.0)
+                val margin = minOf(((smallHigh - smallLow) - spanHz).coerceAtLeast(0.0) / 4, spanHz * .1)
+                val safeLow = if (smallLow <= band.lowHz) smallLow else smallLow + margin
+                val safeHigh = if (smallHigh >= band.highHz) smallHigh else smallHigh - margin
+                // During a gradual pan expose smaller strips of new RF history instead of
+                // recentering by a large fraction of the viewport. Large jumps still catch up at once.
+                if (smallStart != previous.start.toLong() && viewLow >= safeLow && viewHigh <= safeHigh)
+                    return WebSdrWaterfallWindow(width, zoom, smallStart.toInt())
+            }
             return WebSdrWaterfallWindow(width, zoom, start)
         }
     }
