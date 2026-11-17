@@ -518,22 +518,42 @@ internal fun ReceiverScreen(
                 }
 
             }
-            if (presentation.faxSelected) com.example.sdr.ui.decoders.FaxInformationPanel(
+            val cardKind = when {
+                presentation.faxSelected -> "fax"
+                openWebRx && webSession.serverDataMode -> "server"
+                activeMode == DemodulationMode.CW || ftxMode != null -> "local"
+                else -> null
+            }
+            // Keep the outgoing card composed until its exit animation has finished.
+            var lastCard by remember { mutableStateOf(Triple(cardKind, activeMode, ftxMode)) }
+            val card = if (cardKind != null) Triple(cardKind, activeMode, ftxMode) else lastCard
+            androidx.compose.runtime.SideEffect { if (cardKind != null) lastCard = card }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = cardKind != null,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = androidx.compose.animation.core.tween(220), expandFrom = Alignment.Bottom) +
+                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = androidx.compose.animation.core.tween(180), shrinkTowards = Alignment.Bottom) +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
+            ) {
+            if (card.first == "fax") com.example.sdr.ui.decoders.FaxInformationPanel(
                 presentation.faxInformation, presentation.faxDecoder, onExpand = { faxExpanded = true })
-            else if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
+            else if (card.first == "server") ServerDecodedInformationPanel(
                 webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
                 sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
                 adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)
-            else if (activeMode == DemodulationMode.CW || ftxMode != null) ModulationInformationPanel(
-                activeMode, rdsInformation, tunedHz, receiving,
+            else ModulationInformationPanel(
+                card.second, rdsInformation, tunedHz, receiving,
                 wfmStereoEnabled && wfmStereoLocked, signalDbfs,
                 cwInformation, presentation::clearCw,
                 presentation.cwEnabled,
                 presentation::enableCw,
                 cwBackend = presentation.cwBackend, onCwBackendChange = presentation::selectCwBackend,
-                ftxMode = ftxMode, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
+                ftxMode = card.third, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
                 source = source, serverUrl = webSdrReceiverUrl,
             ) {}
+            }
                 }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = faxExpanded && presentation.faxSelected,
