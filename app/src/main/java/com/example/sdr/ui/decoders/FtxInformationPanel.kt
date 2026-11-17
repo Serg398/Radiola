@@ -105,44 +105,34 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
         enteringRows = 0
     }
     val scrollbarColor = RadiolaColors.secondaryText.copy(alpha = .45f)
-    Row(Modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
-        .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
-        .padding(start = 10.dp, end = 8.dp, top = 3.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.width(80.dp).padding(top = 5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(mode.name, color = RadiolaColors.primary, fontSize = 18.sp)
+    DecoderCardFrame(modifier = Modifier.fillMaxSize(), sidebar = {
+        DecoderSidebar(mode.name) {
             Text("USB / 3 kHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
-            Text("${rows.size} messages", color = RadiolaColors.secondaryText, fontSize = 9.sp)
+            Text("${rows.size} messages", color = RadiolaColors.secondaryText, fontSize = 10.sp)
             Spacer(Modifier.height(2.dp))
             Text(if (remote) "SERVER" else "PHONE", color = RadiolaColors.secondaryText,
-                fontSize = 8.sp, letterSpacing = .5.sp)
+                fontSize = 9.sp, letterSpacing = .5.sp)
             if (origin != null) {
                 Text(coordinateLabel(origin.lat, latitude = true), color = RadiolaColors.text,
-                    fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+                    fontSize = 10.sp, lineHeight = 13.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
                 Text(coordinateLabel(origin.lon, latitude = false), color = RadiolaColors.text,
-                    fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+                    fontSize = 10.sp, lineHeight = 13.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
             } else {
                 Text(if (remote) "Unavailable" else locationStatus,
-                    color = RadiolaColors.secondaryText, fontSize = 8.sp, maxLines = 2,
+                    color = RadiolaColors.secondaryText, fontSize = 10.sp, maxLines = 2,
                     modifier = Modifier.clickable(enabled = !remote) { requestLocation() })
             }
         }
-        Box(Modifier.width(1.dp).fillMaxHeight().padding(top = 5.dp, bottom = 4.dp).background(RadiolaColors.border))
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(info.error ?: if (info.decoding) "DECODING" else "LISTENING",
-                    color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
-                    style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)))
-                Spacer(Modifier.weight(1f))
-                Text("CLEAR", color = RadiolaColors.secondaryText, fontSize = 11.sp, lineHeight = 13.sp,
-                    style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)),
-                    modifier = Modifier.clickable { clear() }
-                        .padding(horizontal = 8.dp))
+    }) {
+            DecoderToolbar {
+                Text((info.error ?: if (info.decoding) "DECODING" else "LISTENING").uppercase(java.util.Locale.ROOT),
+                    color = RadiolaColors.secondaryText, style = DecoderToolbarText,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).alignByBaseline())
+                DecoderAction("CLEAR", onClick = clear)
             }
-            HorizontalDivider(color = RadiolaColors.border.copy(alpha = .6f), thickness = .5.dp)
+            DecoderDivider()
             if (info.lines.isEmpty()) Text("Waiting for a complete transmission...", color = RadiolaColors.secondaryText,
-                fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                fontSize = 11.sp)
             else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val viewportHeight = maxHeight
             LazyColumn(Modifier.fillMaxSize().drawWithContent {
@@ -171,8 +161,7 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
                 if (enteringRows > 0) item(key = "arrival-runway") { Spacer(Modifier.height(viewportHeight)) }
             }
             }
-        }
-    }
+            }
 }
 
 @Composable

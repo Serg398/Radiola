@@ -34,8 +34,7 @@ internal fun CwTranscriptView(text: String, modifier: Modifier = Modifier) {
     val dragged by state.interactionSource.collectIsDraggedAsState()
     var follow by remember { mutableStateOf(true) }
     val transcript = remember { CwTranscript() }
-    BoxWithConstraints(modifier.background(RadiolaColors.primaryTint.copy(alpha = .12f), RoundedCornerShape(4.dp))
-        .padding(horizontal = 6.dp, vertical = 4.dp)) {
+    BoxWithConstraints(modifier.padding(horizontal = 6.dp)) {
         val columns = floor(with(density) { maxWidth.toPx() } / characterPx).toInt().coerceAtLeast(1)
         val lines = remember(text, columns) { transcript.update(text, columns) }
         val visibleRows = floor(maxHeight / rowHeight).toInt().coerceAtLeast(1)

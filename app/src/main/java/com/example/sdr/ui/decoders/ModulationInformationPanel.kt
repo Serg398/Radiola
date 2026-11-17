@@ -44,7 +44,7 @@ internal fun ModulationInformationPanel(
     serverUrl: String? = null,
     otherModes: @Composable () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(if (ftxMode != null || mode == DemodulationMode.CW) 160.dp else 136.dp)) {
+    Box(Modifier.fillMaxWidth().height(160.dp)) {
     if (ftxMode != null) FtxInformationRoute(ftxMode, ftx, onFtxClear, source, serverUrl)
     else when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)
@@ -63,56 +63,29 @@ private fun WfmInformationPanel(
     signalDbfs: Float,
 ) {
     val rds = information.takeIf { streaming && it.frequencyHz == frequencyHz } ?: RdsInformation()
-    val warm = RadiolaColors.primary
-    val muted = RadiolaColors.secondaryText
-    val ivory = RadiolaColors.text
-    val textColor = RadiolaColors.text
-    val textStyle = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
-    val shape = RoundedCornerShape(6.dp)
     val metadata = buildList {
         if (rds.pi != null && rds.programmeType.isNotBlank()) add(rds.programmeType)
         if (rds.trafficAnnouncement) add("TA")
         else if (rds.trafficProgramme) add("TP")
     }.joinToString("  /  ")
-    Box(
-        Modifier.fillMaxSize()
-            .border(1.dp, RadiolaColors.border, shape).background(RadiolaColors.surface, shape)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-    ) {
-        Box(Modifier.offset(x = 92.dp).width(1.dp).fillMaxHeight()
-            .padding(vertical = 4.dp).background(RadiolaColors.border))
-        // Shared rows align the first text baseline even with different font sizes.
-        // Their fixed heights keep new text and line wrapping from moving other rows.
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(28.dp)) {
-                Text("WFM", Modifier.width(80.dp).alignByBaseline(),
-                    color = warm, fontSize = 18.sp, lineHeight = 24.sp,
-                    fontWeight = FontWeight.Medium, letterSpacing = .6.sp, style = textStyle)
-                Spacer(Modifier.width(25.dp))
-                Text(rds.station, Modifier.weight(1f).alignByBaseline(),
-                    color = ivory, fontSize = 20.sp, lineHeight = 24.sp,
-                    fontWeight = FontWeight.Medium, style = textStyle,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Row(Modifier.fillMaxWidth().height(20.dp)) {
-                Text(if (streaming) if (stereo) "STEREO" else "MONO" else "",
-                    Modifier.width(80.dp).alignByBaseline(),
-                    color = textColor, fontSize = 10.sp, lineHeight = 14.sp,
-                    letterSpacing = .6.sp, style = textStyle)
-                Spacer(Modifier.width(25.dp))
-                Text(metadata, Modifier.weight(1f).alignByBaseline(),
-                    color = muted, fontSize = 11.sp, lineHeight = 14.sp, style = textStyle,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                Text(if (streaming) "%.0f dBFS".format(Locale.US, signalDbfs) else "",
-                    Modifier.width(80.dp).alignByBaseline(),
-                    color = muted, fontSize = 10.sp, lineHeight = 14.sp, style = textStyle)
-                Spacer(Modifier.width(25.dp))
-                Text(rds.text, Modifier.weight(1f).alignByBaseline(),
-                    color = textColor, fontSize = 14.sp, lineHeight = 17.sp, style = textStyle,
-                    maxLines = 4, overflow = TextOverflow.Ellipsis)
-            }
+    DecoderCardFrame(sidebar = {
+        DecoderSidebar("WFM") {
+            Text(if (streaming) if (stereo) "STEREO" else "MONO" else "",
+                color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            Text(if (streaming) "%.0f dBFS".format(Locale.US, signalDbfs) else "",
+                color = RadiolaColors.secondaryText, fontSize = 10.sp)
         }
+    }) {
+        DecoderToolbar {
+            Text(rds.station.uppercase(java.util.Locale.ROOT), Modifier.weight(1f).alignByBaseline(), color = RadiolaColors.secondaryText,
+                style = DecoderToolbarText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DecoderDivider()
+        if (metadata.isNotBlank()) Text(metadata, color = RadiolaColors.secondaryText, fontSize = 10.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(rds.text, Modifier.fillMaxWidth().weight(1f).padding(horizontal = 6.dp),
+            color = RadiolaColors.text, fontSize = 13.sp, lineHeight = 20.sp,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            overflow = TextOverflow.Ellipsis)
     }
 }

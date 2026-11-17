@@ -22,9 +22,14 @@ This is separate from server-side SSTV/FAX decoding.
 - The image grows from the top at a fixed width-based scale, on the card's
   background with a thin border. Drag to review long images; it does not shrink
   or recenter as new rows arrive.
-- Tap the image for fullscreen viewing, pinch to zoom and drag to move.
+- When the viewport fills, it follows new rows automatically. Dragging toward
+  earlier rows pauses following; scrolling back to the bottom resumes it.
+- The expand button at the image's top right opens an animated viewer within the spectrum/waterfall/card
+  area. Sidebar, tuning controls and encoder remain visible. Pinch to zoom and
+  drag to move; CLOSE or Android Back returns to the receiver.
 - SAVE exports the currently published image as PNG through Android's document
-  picker. No storage permission or automatic external upload is required.
+  picker from the small card. The expanded viewer has no SAVE button. No storage
+  permission or automatic external upload is required.
 
 ## Runtime
 

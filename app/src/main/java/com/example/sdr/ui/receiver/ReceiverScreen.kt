@@ -155,6 +155,7 @@ internal fun ReceiverScreen(
     val mapState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val remote = source == ReceiverSource.WEB_SDR || openWebRx
     val tunedHz = uiState.frequencyHz
+    var faxExpanded by remember(tunedHz, source, selected) { mutableStateOf(false) }
     val activeMode = uiState.mode
     val activeBandwidth = uiState.bandwidthHz
     var remoteInput by remember { mutableStateOf("") }
@@ -518,7 +519,7 @@ internal fun ReceiverScreen(
 
             }
             if (presentation.faxSelected) com.example.sdr.ui.decoders.FaxInformationPanel(
-                presentation.faxInformation, presentation.faxDecoder)
+                presentation.faxInformation, presentation.faxDecoder, onExpand = { faxExpanded = true })
             else if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
                 webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
                 sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
@@ -533,6 +534,21 @@ internal fun ReceiverScreen(
                 ftxMode = ftxMode, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
                 source = source, serverUrl = webSdrReceiverUrl,
             ) {}
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = faxExpanded && presentation.faxSelected,
+                    modifier = Modifier.fillMaxSize().padding(end = 78.dp),
+                    enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) +
+                        androidx.compose.animation.scaleIn(
+                            initialScale = .96f,
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f),
+                            animationSpec = androidx.compose.animation.core.tween(220)),
+                    exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)) +
+                        androidx.compose.animation.scaleOut(targetScale = .98f,
+                            animationSpec = androidx.compose.animation.core.tween(160)),
+                ) {
+                    com.example.sdr.ui.decoders.FaxImageViewer(presentation.faxInformation,
+                        onClose = { faxExpanded = false })
                 }
                 VerticalEncoder(
                     brakeRequest = encoderBrakeRequest,

@@ -32,20 +32,23 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
     sstv: Boolean = false, image: SstvImage? = null,
     adsb: Boolean = false, aircraft: List<AircraftReport> = emptyList()) {
     var expanded by remember(sstv) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().height(160.dp)
-        .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
-        .border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = RadiolaColors.primary, fontSize = 16.sp)
-            Spacer(Modifier.width(12.dp))
-            Text(if (adsb) "SERVER FEED · 1090 MHz · INDEPENDENT OF TUNING" else "SERVER",
-                color = RadiolaColors.secondaryText, fontSize = 9.sp)
-            if (adsb) Text("  ${aircraft.size}", color = RadiolaColors.primary, fontSize = 11.sp)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onClear, contentPadding = PaddingValues(0.dp)) {
-                Text("CLEAR", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+    DecoderCardFrame(modifier = Modifier.fillMaxWidth().height(160.dp), sidebar = {
+        DecoderSidebar(label) {
+            Text("SERVER", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            if (adsb) {
+                Text("1090 MHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+                Text("${aircraft.size} aircraft", color = RadiolaColors.secondaryText, fontSize = 10.sp)
             }
         }
+    }) {
+            DecoderToolbar {
+                Text(if (adsb) "LIVE FEED / INDEPENDENT OF TUNING" else if (sstv) "IMAGE" else "DECODED DATA",
+                    color = RadiolaColors.secondaryText, style = DecoderToolbarText,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).alignByBaseline())
+                DecoderAction("CLEAR", onClick = onClear)
+            }
+            DecoderDivider()
         if (sstv) {
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -63,7 +66,7 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
         } else if (adsb) AircraftInformationPanel(aircraft, Modifier.fillMaxWidth().weight(1f))
         else Text(text, Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
                 color = RadiolaColors.text, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-    }
+        }
     if (expanded && image != null) Dialog(onDismissRequest = { expanded = false },
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).padding(12.dp)) {
