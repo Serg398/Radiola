@@ -59,12 +59,12 @@ internal fun SourcePlaybackControl(
             shape = RoundedCornerShape(6.dp),
             modifier = Modifier.width(160.dp).border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp)),
         ) {
-            listOf("USB", "KiwiSDR", "WebSDR", "OpenWebRX").forEach { label ->
-                val available = label == "USB" || label == "WebSDR" || label == "OpenWebRX"
+            ReceiverSource.entries.forEach { option ->
+                val label = option.storedValue
                 Row(Modifier.fillMaxWidth().height(36.dp)
-                    .clickable(enabled = available) { onSourceChange(ReceiverSource.fromStored(label)); expanded = false }
+                    .clickable { onSourceChange(option); expanded = false }
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, color = if (source.storedValue == label) warm else if (available) RadiolaColors.text else muted,
+                    Text(label, color = if (source == option) warm else RadiolaColors.text,
                         fontSize = 13.sp, modifier = Modifier.weight(1f))
                     if (source.storedValue == label) Text("✓", color = warm, fontSize = 13.sp)
                 }
