@@ -327,8 +327,7 @@ internal fun ReceiverScreen(
                         }
                         },
                     )
-                    BatteryClockIndicator(batteryPercent, batteryCharging)
-                    BacklightControl(screenAlwaysOn, onScreenAlwaysOnChange)
+                    BatteryBacklightStatus(batteryPercent, batteryCharging, screenAlwaysOn, onScreenAlwaysOnChange)
                 }
                 }
                 BoxWithConstraints(

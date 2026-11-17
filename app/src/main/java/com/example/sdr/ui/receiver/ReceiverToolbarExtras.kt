@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.ui.theme.RadiolaColors
+import com.example.sdr.ui.components.ToolbarCaptionStyle
+import com.example.sdr.ui.components.ToolbarValueStyle
 import com.example.sdr.ui.components.toolbarButtonSurface
 
 @Composable
@@ -35,8 +37,9 @@ internal fun StereoToggle(available: Boolean, enabled: Boolean, locked: Boolean,
             .semantics { contentDescription = "WFM stereo ${if (active) "enabled" else "disabled"}, pilot ${if (locked) "locked" else "absent"}" },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
-        Text(if (active) "STEREO" else "MONO", color = if (active) RadiolaColors.primary else if (available) RadiolaColors.text else RadiolaColors.secondaryText.copy(alpha = 0.5f), fontSize = 10.sp)
+        Text(if (active) "STEREO" else "MONO", modifier = Modifier.height(13.dp), style = ToolbarValueStyle, color = if (active) RadiolaColors.primary else if (available) RadiolaColors.text else RadiolaColors.secondaryText.copy(alpha = 0.5f), fontSize = 10.sp)
         Text(if (!available) "WFM" else if (!enabled) "FORCED" else if (locked) "LOCK" else "AUTO",
+            modifier = Modifier.height(10.dp), style = ToolbarCaptionStyle,
             color = if (active && locked) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 8.sp)
     }
 }

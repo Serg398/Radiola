@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -43,7 +43,7 @@ import com.example.sdr.ui.theme.RadiolaColors
 @Composable
 internal fun BatteryClockIndicator(percent: Int, charging: Boolean) {
     val textColor = RadiolaColors.secondaryText.toArgb()
-    Column(Modifier.width(54.dp).height(28.dp), horizontalAlignment = Alignment.Start,
+    Column(Modifier.width(IntrinsicSize.Max).height(28.dp), horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Center) {
         BatteryIndicator(percent, charging, Modifier.height(14.dp))
         AndroidView(factory = { context ->
@@ -56,7 +56,7 @@ internal fun BatteryClockIndicator(percent: Int, charging: Boolean) {
                 gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
                 setTextColor(textColor)
             }
-        }, update = { it.setTextColor(textColor) }, modifier = Modifier.fillMaxWidth().height(14.dp))
+        }, update = { it.setTextColor(textColor) }, modifier = Modifier.width(36.dp).height(14.dp))
     }
 }
 
@@ -113,11 +113,22 @@ internal fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) 
 
 @Composable
 internal fun BacklightControl(alwaysOn: Boolean, onChange: (Boolean) -> Unit) {
-    Box(Modifier.width(28.dp).height(28.dp).offset(x = (-8).dp)
+    Box(Modifier.width(28.dp).height(28.dp)
         .semantics { contentDescription = if (alwaysOn) "Screen: keep on" else "Screen: auto" }
         .toggleable(value = alwaysOn, role = Role.Switch, onValueChange = onChange),
         contentAlignment = Alignment.Center) {
         SidebarIcon(if (alwaysOn) "ScreenLocked" else "ScreenAuto",
             if (alwaysOn) RadiolaColors.primary else RadiolaColors.secondaryText)
+    }
+}
+
+@Composable
+internal fun BatteryBacklightStatus(percent: Int, charging: Boolean,
+    alwaysOn: Boolean, onBacklightChange: (Boolean) -> Unit) {
+    Row(Modifier.height(28.dp).padding(end = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        BatteryClockIndicator(percent, charging)
+        BacklightControl(alwaysOn, onBacklightChange)
     }
 }
