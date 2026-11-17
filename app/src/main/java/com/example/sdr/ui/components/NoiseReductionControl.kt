@@ -3,7 +3,6 @@ package com.example.sdr.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +21,8 @@ internal fun NoiseReductionControl(available: Boolean, cw: Boolean) {
     val config = HamNoiseSettings.config
     val selected = HamNoiseSettings.level
     val active = available && config.enabled
-    Box {
+    val menuAnchor = rememberCompactMenuAnchor()
+    Box(menuAnchor.modifier) {
         Column(Modifier.width(48.dp).height(28.dp).toolbarButtonSurface()
             .clickable(enabled = available) { expanded = true }
             .semantics { contentDescription = "Noise reduction ${if (active) "on" else "off"}" },
@@ -33,15 +33,13 @@ internal fun NoiseReductionControl(available: Boolean, cw: Boolean) {
                 color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp, style = ToolbarValueStyle)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; HamNoiseSettings.save() },
-            containerColor = RadiolaColors.surface) {
+            modifier = Modifier.width(120.dp).heightIn(max = menuAnchor.maxHeight), containerColor = RadiolaColors.surface) {
             Text(if (cw) "NR / CW" else "NR / VOICE", color = RadiolaColors.secondaryText, fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             NoiseReductionLevel.entries.forEach { level ->
-                DropdownMenuItem(modifier = Modifier.width(160.dp), text = {
-                    Text(level.name, color = if (selected == level) RadiolaColors.primary else RadiolaColors.text,
-                        fontSize = 12.sp)
-                }, trailingIcon = { if (selected == level) Text("✓", color = RadiolaColors.primary) },
-                    onClick = { HamNoiseSettings.selectLevel(level); expanded = false })
+                CompactMenuEntry(level.name, selected == level) {
+                    HamNoiseSettings.selectLevel(level); expanded = false
+                }
             }
         }
     }

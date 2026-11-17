@@ -9,7 +9,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -42,27 +41,34 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
     var input by remember(mode) { mutableStateOf(TextFieldValue("")) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    Box {
+    val menuAnchor = rememberCompactMenuAnchor()
+    Box(menuAnchor.modifier) {
         Column(Modifier.width(68.dp).height(28.dp)
             .toolbarButtonSurface().clickable(enabled = enabled) { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("BW", Modifier.height(10.dp), color = muted, fontSize = 8.sp, style = ToolbarCaptionStyle)
             ToolbarValue(bandwidthLabel(hz))
         }
-        DropdownMenu(expanded, { expanded = false }, containerColor = surface) {
-            DropdownMenuItem(text = { Text("Default (${bandwidthLabel(options.defaultHz)})", color = if (isDefault) warm else muted) },
-                onClick = { onChange(null); expanded = false })
-            options.presets.forEach { value ->
-                DropdownMenuItem(text = { Text(bandwidthLabel(value), color = if (!isDefault && hz == value) warm else muted) },
-                    onClick = { onChange(value); expanded = false })
+        DropdownMenu(expanded, { expanded = false },
+            modifier = Modifier.heightIn(max = menuAnchor.maxHeight), containerColor = surface) {
+            Column(Modifier.width(164.dp)) {
+                CompactMenuEntry("Default / ${bandwidthLabel(options.defaultHz)}", isDefault) {
+                    expanded = false; onChange(null)
+                }
+                options.presets.forEach { value ->
+                    CompactMenuEntry(bandwidthLabel(value), !isDefault && hz == value) {
+                        expanded = false; onChange(value)
+                    }
+                }
+                CompactMenuEntry("Custom...") {
+                    val text = (hz / 1000.0).toString()
+                    input = TextFieldValue(text, selection = TextRange(0, text.length))
+                    expanded = false; custom = true
+                }
             }
-            DropdownMenuItem(text = { Text("Custom...", color = warm) }, onClick = {
-                val text = (hz / 1000.0).toString()
-                input = TextFieldValue(text, selection = TextRange(0, text.length))
-                expanded = false; custom = true
-            })
         }
     }
+
     if (custom) {
         LaunchedEffect(Unit) { focus.requestFocus() }
         val value = input.text.replace(',', '.').toDoubleOrNull()?.times(1000)
