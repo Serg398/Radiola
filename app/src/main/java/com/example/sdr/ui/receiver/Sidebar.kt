@@ -4,12 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -47,8 +45,7 @@ import com.example.sdr.ui.theme.RadiolaColors
 import java.util.Locale
 
 @Composable
-internal fun Sidebar(selected: String, onSelect: (String) -> Unit,
-    screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit) {
+internal fun Sidebar(selected: String, onSelect: (String) -> Unit) {
     var collapsed by rememberSaveable { mutableStateOf(false) }
     val sidebarWidth by animateDpAsState(if (collapsed) 40.dp else 116.dp,
         animationSpec = tween(220), label = "Sidebar width")
@@ -71,11 +68,11 @@ internal fun Sidebar(selected: String, onSelect: (String) -> Unit,
             )
         }) {
         val labelAlpha = ((sidebarWidth.value - 40f) / 76f).coerceIn(0f, 1f)
-        Box(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).requiredWidth(116.dp).height(46.dp).padding(start = 10.dp),
-            contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).requiredWidth(116.dp)
+            .height(46.dp).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
             Text(stringResource(R.string.app_name).uppercase(Locale.ROOT),
-                modifier = Modifier.alpha(labelAlpha), color = RadiolaColors.primary, fontSize = 16.sp,
-                fontWeight = FontWeight.Light, letterSpacing = 0.sp, maxLines = 1)
+                modifier = Modifier.alpha(labelAlpha), color = RadiolaColors.primary, fontSize = 18.sp,
+                fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
         }
         listOf("Receiver", "Favorites", "Settings").forEach { name ->
             val active = selected == name
@@ -96,16 +93,7 @@ internal fun Sidebar(selected: String, onSelect: (String) -> Unit,
                 }
             }
         }
-        Box(Modifier.weight(1f))
-        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.CenterStart) {
-            Box(Modifier.width(40.dp).height(48.dp)
-                .semantics { contentDescription = "Keep screen on" }
-                .toggleable(value = screenAlwaysOn, role = Role.Switch,
-                    onValueChange = onScreenAlwaysOnChange), contentAlignment = Alignment.Center) {
-                SidebarIcon(if (screenAlwaysOn) "ScreenLocked" else "ScreenAuto",
-                    if (screenAlwaysOn) RadiolaColors.primary else RadiolaColors.secondaryText)
-            }
-        }
+
     }
 }
 

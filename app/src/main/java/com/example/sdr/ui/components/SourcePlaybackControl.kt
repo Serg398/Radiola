@@ -33,8 +33,8 @@ internal fun SourcePlaybackControl(
     val muted = RadiolaColors.secondaryText
     var expanded by remember { mutableStateOf(false) }
     Row(
-        Modifier.width(150.dp).height(28.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.width(148.dp).height(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {

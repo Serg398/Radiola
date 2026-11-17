@@ -2,6 +2,8 @@ package com.example.sdr.ui.receiver
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -40,7 +43,7 @@ import com.example.sdr.ui.theme.RadiolaColors
 @Composable
 internal fun BatteryClockIndicator(percent: Int, charging: Boolean) {
     val textColor = RadiolaColors.secondaryText.toArgb()
-    Column(Modifier.width(60.dp).height(28.dp), horizontalAlignment = Alignment.Start,
+    Column(Modifier.width(54.dp).height(28.dp), horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Center) {
         BatteryIndicator(percent, charging, Modifier.height(14.dp))
         AndroidView(factory = { context ->
@@ -105,5 +108,16 @@ internal fun ServerViewToggle(page: String, active: Boolean, onSelect: (String) 
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)))
             }
         }
+    }
+}
+
+@Composable
+internal fun BacklightControl(alwaysOn: Boolean, onChange: (Boolean) -> Unit) {
+    Box(Modifier.width(28.dp).height(28.dp).offset(x = (-8).dp)
+        .semantics { contentDescription = if (alwaysOn) "Screen: keep on" else "Screen: auto" }
+        .toggleable(value = alwaysOn, role = Role.Switch, onValueChange = onChange),
+        contentAlignment = Alignment.Center) {
+        SidebarIcon(if (alwaysOn) "ScreenLocked" else "ScreenAuto",
+            if (alwaysOn) RadiolaColors.primary else RadiolaColors.secondaryText)
     }
 }

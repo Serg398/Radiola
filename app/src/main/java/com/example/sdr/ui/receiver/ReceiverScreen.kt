@@ -246,7 +246,7 @@ internal fun ReceiverScreen(
                 frequencyMotion.snapTo(tunedHz.toDouble())
                 presentation.cancelFavorite()
                 selected = it
-            }, screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange)
+            })
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -288,7 +288,7 @@ internal fun ReceiverScreen(
                     }, tuningStep = tuningStep, favorite = matchingFavorite != null, favoriteEnabled = favoriteSnapshot != null,
                     onFavorite = { favoriteEditor = matchingFavorite ?: favoriteSnapshot },
                     onRemoveFavorite = { matchingFavorite?.let { presentation.favorites.delete(it.id) } }, modifier = Modifier.weight(1f))
-                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     SourcePlaybackControl(
                         source = source,
                         onSourceChange = {
@@ -328,6 +328,7 @@ internal fun ReceiverScreen(
                         },
                     )
                     BatteryClockIndicator(batteryPercent, batteryCharging)
+                    BacklightControl(screenAlwaysOn, onScreenAlwaysOnChange)
                 }
                 }
                 BoxWithConstraints(
