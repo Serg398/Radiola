@@ -28,13 +28,15 @@ internal fun ModeControl(
     serverModeId: String? = null,
     serverModeLabel: String? = null,
     onServerMode: (String) -> Unit = {},
+    faxMode: Boolean = false,
+    onFax: () -> Unit = {},
 ) {
     var expanded by remember(remote, serverModes != null) { mutableStateOf(false) }
     val modes = listOf("AM" to DemodulationMode.AM) +
         (if (remote) emptyList() else listOf("WFM" to DemodulationMode.WFM)) +
         listOf("FM" to DemodulationMode.NFM, "USB" to DemodulationMode.USB,
             "LSB" to DemodulationMode.LSB, "CW" to DemodulationMode.CW)
-    val selected = ftxMode?.name ?: if (serverModes != null) serverModeLabel.orEmpty()
+    val selected = if (faxMode) "FAX" else ftxMode?.name ?: if (serverModes != null) serverModeLabel.orEmpty()
         else modes.firstOrNull { it.second == mode }?.first.orEmpty()
     Box {
         Column(Modifier.width(72.dp).height(28.dp)
@@ -68,13 +70,14 @@ internal fun ModeControl(
             Header("LOCAL", if (remote) "DECODERS / SERVER AUDIO" else "MODULATION")
             if (!remote) {
                 Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    modes.forEach { (label, value) -> Entry(label, active = ftxMode == null && mode == value) { onMode(value) } }
+                    modes.forEach { (label, value) -> Entry(label, active = !faxMode && ftxMode == null && mode == value) { onMode(value) } }
                 }
                 Text("DECODERS", color = RadiolaColors.secondaryText, fontSize = 9.sp,
                     modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 3.dp))
             }
             Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 FtxMode.entries.forEach { value -> Entry(value.name, active = ftxMode == value, enabled = ftxEnabled) { onFtx(value) } }
+                Entry("FAX", active = faxMode, enabled = ftxEnabled, action = onFax)
             }
             if (remote) {
                 HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = RadiolaColors.border)
@@ -89,7 +92,7 @@ internal fun ModeControl(
                     options.chunked(5).forEach { row ->
                         Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             row.forEach { option ->
-                                val active = ftxMode == null && option.id == serverModeId
+                                val active = !faxMode && ftxMode == null && option.id == serverModeId
                                 Box(Modifier.width(82.dp).height(36.dp)
                                     .background(if (active) RadiolaColors.activeMode else Color.Transparent, RoundedCornerShape(4.dp))
                                     .selectable(selected = active, role = Role.RadioButton) { expanded = false; onServerMode(option.id) }, contentAlignment = Alignment.Center) {
@@ -103,7 +106,7 @@ internal fun ModeControl(
                 }
             } else if (remote) Row(Modifier.padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                modes.forEach { (label, value) -> Entry(label, active = ftxMode == null && mode == value) { onMode(value) } }
+                modes.forEach { (label, value) -> Entry(label, active = !faxMode && ftxMode == null && mode == value) { onMode(value) } }
             }
         }
     }

@@ -17,6 +17,10 @@ internal class WebSdrRuntime(private val context: Context) {
     private val webSdrSession = WebSdrSession(context.applicationContext)
     private val openWebRxSession = OpenWebRxSession(context.applicationContext)
     val session: OnlineReceiverSession get() = if (source == ReceiverSource.OPEN_WEB_RX) openWebRxSession else webSdrSession
+    fun configureFax(active: Boolean, hz: Long) {
+        webSdrSession.faxDecoder.configure(active && source == ReceiverSource.WEB_SDR, hz)
+        openWebRxSession.faxDecoder.configure(active && source == ReceiverSource.OPEN_WEB_RX, hz)
+    }
     var source by mutableStateOf(ReceiverSource.fromStored(preferences.getString("source", "USB")))
         private set
     var receiverUrl by mutableStateOf(preferences.getString("server_url", null))

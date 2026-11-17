@@ -104,6 +104,11 @@ internal class ReceiverPresentation(
         set(value) { selectedFtx = value; onFtxChange(value) }
     var ftxInformation by mutableStateOf(FtxInformation()); private set
     var cwInformation by mutableStateOf(CwInformation()); private set
+    var faxMode by mutableStateOf(false)
+    val faxSelected get() = faxMode && state.mode == DemodulationMode.USB &&
+        !(online.source.online && online.session.serverDataMode)
+    var faxInformation by mutableStateOf(com.example.sdr.decoders.fax.FaxInformation()); private set
+    val faxDecoder get() = if (online.source.online) online.session.faxDecoder else usb.session.faxDecoder
     val state: ReceiverUiState get() {
         val source = online.source
         val local = local()
@@ -120,15 +125,20 @@ internal class ReceiverPresentation(
 
     init {
         scope.launch {
-            snapshotFlow { state to ftxMode }.collectLatest { (current, protocol) ->
+            snapshotFlow { Triple(state, ftxMode, faxMode) }.collectLatest { (current, protocol, fax) ->
                 val enabled = current.receiving && current.mode == DemodulationMode.USB
+                val faxActive = enabled && fax && !(current.source.online && online.session.serverDataMode)
+                usb.session.faxDecoder.configure(faxActive && !current.source.online, current.frequencyHz)
+                online.configureFax(faxActive && current.source.online, current.frequencyHz)
                 usb.session.ftxDecoder.configure(if (!current.source.online && enabled) protocol else null, current.frequencyHz)
                 online.session.configureFtx(if (current.source.online && enabled) protocol else null, current.frequencyHz)
                 cwInformation = CwInformation(); ftxInformation = FtxInformation()
-                if (current.receiving && (current.mode == DemodulationMode.CW || protocol != null)) {
+                faxInformation = faxDecoder.snapshot()
+                if (fax || current.receiving && (current.mode == DemodulationMode.CW || protocol != null)) {
                     while (true) {
                         if (current.mode == DemodulationMode.CW) cwInformation = if (current.source.online) online.session.cwInformation() else usb.session.cwDecoder.snapshot()
                         if (protocol != null) ftxInformation = if (current.source.online) online.session.ftxInformation() else usb.session.ftxDecoder.snapshot()
+                        if (fax) faxInformation = faxDecoder.snapshot()
                         delay(if (current.mode == DemodulationMode.CW) 100 else 200)
                     }
                 }
@@ -139,6 +149,7 @@ internal class ReceiverPresentation(
         if (online.source.online) online.session.tune(online.session.frequencyHz + delta) else usbStep(delta)
     }
     fun changeMode(value: DemodulationMode) {
+        faxMode = false
         ftxMode = null
         if (online.source.online) online.session.requestMode(value) else usbMode(value)
     }
@@ -148,8 +159,10 @@ internal class ReceiverPresentation(
     fun selectFtx(value: FtxMode) {
         changeMode(DemodulationMode.USB); changeBandwidth(3000); ftxMode = value
     }
-    fun selectServerMode(id: String) { ftxMode = null; online.session.requestServerMode(id) }
+    fun selectFax() { changeMode(DemodulationMode.USB); changeBandwidth(3000); faxMode = true }
+    fun selectServerMode(id: String) { faxMode = false; ftxMode = null; online.session.requestServerMode(id) }
     fun selectBand(index: Int) {
+        faxMode = false
         val session = online.session
         if (online.source == ReceiverSource.OPEN_WEB_RX && session.active &&
             index in session.bands.indices && index != session.currentBand) ftxMode = null

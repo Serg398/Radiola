@@ -32,7 +32,7 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
     sstv: Boolean = false, image: SstvImage? = null,
     adsb: Boolean = false, aircraft: List<AircraftReport> = emptyList()) {
     var expanded by remember(sstv) { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().height(144.dp)
+    Column(Modifier.fillMaxWidth().height(160.dp)
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
         .border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {

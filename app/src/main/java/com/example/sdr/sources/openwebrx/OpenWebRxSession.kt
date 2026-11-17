@@ -74,6 +74,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     override val cwDecodingEnabled get() = cwDecoder.decodingEnabled
     override fun clearCw() = cwDecoder.clear()
     override fun enableCw(value: Boolean) = cwDecoder.requestDecoding(value)
+    override val faxDecoder = com.example.sdr.decoders.fax.FaxDecodeWorker()
     private val cwDecoder = CwDecodeWorker(context)
     private val ftxDecoder = FtxDecodeWorker()
     override var state by mutableStateOf(ReceiverConnectionState.Idle); private set
@@ -290,8 +291,11 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
             squelchSetting = { squelchSetting },
             onSquelchOpen = { value -> if (squelchOpen != value) publish(token) { squelchOpen = value } },
             noiseModel = { if (serverDataMode) 0 else com.example.sdr.audio.HamNoiseSettings.model(mode) },
-            needsPlayedPcm = { cwDecoder.acceptsAudio() },
-            onPlayedPcm = { rate, samples -> if (token == generation) cwDecoder.offer(samples, samples.size, rate, 1) })
+            needsPlayedPcm = { cwDecoder.acceptsAudio() || faxDecoder.acceptsAudio() },
+            onPlayedPcm = { rate, samples -> if (token == generation) {
+                cwDecoder.offer(samples, samples.size, rate, 1)
+                faxDecoder.offer(samples, samples.size, rate, 1)
+            } })
         output = ownedOutput
         socket = client.newWebSocket(request, object : WebSocketListener() {
             val decoder = OpenWebRxStreamDecoder()

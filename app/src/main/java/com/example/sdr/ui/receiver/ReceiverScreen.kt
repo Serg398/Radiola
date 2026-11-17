@@ -294,6 +294,7 @@ internal fun ReceiverScreen(
                             if (it != source) {
                                 presentation.cancelFavorite()
                                 ftxMode = null
+                                presentation.faxMode = false
                                 webSession.disconnect()
                                 if (streaming || starting) onStopStream()
                                 encoderBrakeRequest++
@@ -344,7 +345,8 @@ internal fun ReceiverScreen(
                         serverModeId = webSession.serverModeId,
                         serverModeLabel = webSession.modeLabel,
                         onServerMode = presentation::selectServerMode,
-                        onMode = changeMode, onFtx = presentation::selectFtx)
+                        onMode = changeMode, onFtx = presentation::selectFtx,
+                        faxMode = presentation.faxSelected, onFax = presentation::selectFax)
                     BandwidthControl(activeMode, activeBandwidth,
                         if (remote) webSession.bandwidthDefault else bandwidthDefault, changeBandwidth,
                         if (remote) webSession.bandwidthOptions else BandwidthOptions.forMode(activeMode),
@@ -515,7 +517,9 @@ internal fun ReceiverScreen(
                 }
 
             }
-            if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
+            if (presentation.faxSelected) com.example.sdr.ui.decoders.FaxInformationPanel(
+                presentation.faxInformation, presentation.faxDecoder)
+            else if (openWebRx && webSession.serverDataMode) ServerDecodedInformationPanel(
                 webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
                 sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
                 adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)

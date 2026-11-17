@@ -19,14 +19,18 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     private val executor = Executors.newSingleThreadExecutor()
     private var connection: UsbDeviceConnection? = null
     @Volatile private var requestedDevice: UsbDevice? = null
+    internal val faxDecoder = com.example.sdr.decoders.fax.FaxDecodeWorker()
     internal val cwDecoder = CwDecodeWorker(context)
     internal val ftxDecoder = FtxDecodeWorker()
     @Volatile private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
     private val audio = AudioOutput(onSamples = { samples, count -> ftxDecoder.offer(samples, count, 48000, 2) },
         noiseModel = { com.example.sdr.audio.HamNoiseSettings.model(cwMode) },
-        needsPlayedPcm = cwDecoder::acceptsAudio,
-        onPlayedPcm = { samples -> cwDecoder.offer(samples, samples.size, 48000, 2) }) {
+        needsPlayedPcm = { cwDecoder.acceptsAudio() || faxDecoder.acceptsAudio() },
+        onPlayedPcm = { samples ->
+            cwDecoder.offer(samples, samples.size, 48000, 2)
+            faxDecoder.offer(samples, samples.size, 48000, 2)
+        }) {
         message -> onAudioError(message, controller.snapshot().sessionId)
     }
     private var audioWarmupEnabled = false
@@ -81,7 +85,7 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
             audioWarmupEnabled = enabled
             if (enabled) audio.start() else if (connection == null) audio.stop()
         }
-        override fun close() { try { audio.stop() } finally { cwDecoder.close(); ftxDecoder.close(); executor.shutdown() } }
+        override fun close() { try { audio.stop() } finally { cwDecoder.close(); ftxDecoder.close(); faxDecoder.close(); executor.shutdown() } }
     }) { value ->
         if (value.state != lastLoggedState) {
             Log.d("ReceiverControl", "state=${value.state} session=${value.sessionId} version=${value.version}")

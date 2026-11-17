@@ -44,7 +44,7 @@ internal fun ModulationInformationPanel(
     serverUrl: String? = null,
     otherModes: @Composable () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(if (ftxMode != null || mode == DemodulationMode.CW) 144.dp else 120.dp)) {
+    Box(Modifier.fillMaxWidth().height(if (ftxMode != null || mode == DemodulationMode.CW) 160.dp else 136.dp)) {
     if (ftxMode != null) FtxInformationRoute(ftxMode, ftx, onFtxClear, source, serverUrl)
     else when (mode) {
         DemodulationMode.WFM -> WfmInformationPanel(information, frequencyHz, streaming, stereo, signalDbfs)

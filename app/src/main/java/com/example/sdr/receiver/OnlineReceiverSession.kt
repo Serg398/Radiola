@@ -42,6 +42,7 @@ internal interface OnlineReceiverSession {
     val active: Boolean
     val audioMetrics: ReceiverAudioMetrics
     val bandwidthLimit: Int
+    val faxDecoder: com.example.sdr.decoders.fax.FaxDecodeWorker
     fun configureFtx(mode: FtxMode?, frequency: Long)
     fun ftxInformation(): FtxInformation
     fun clearFtx()
