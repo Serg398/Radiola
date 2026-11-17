@@ -40,11 +40,12 @@ internal fun ToolbarValue(value: String, color: Color = RadiolaColors.primary, a
 }
 
 @Composable
-internal fun Modifier.toolbarButtonSurface(active: Boolean = false, outlined: Boolean = true): Modifier {
+internal fun Modifier.toolbarButtonSurface(active: Boolean = false, outlined: Boolean = true, menuOpen: Boolean = false): Modifier {
     val shape = RoundedCornerShape(4.dp)
-    return shadow(if (active) 0.dp else if (outlined) .75.dp else 1.5.dp, shape, clip = false)
+    return shadow(if (active || menuOpen) 0.dp else if (outlined) .75.dp else 1.5.dp, shape, clip = false)
         .clip(shape)
-        .background(if (active) RadiolaColors.primaryTint
+        .background(if (active || menuOpen) RadiolaColors.primaryTint
             else RadiolaColors.adaptive(Color(0xFFFCFDFE), Color(0xFF30353B)))
-        .then(if (outlined) Modifier.border(.65.dp, RadiolaColors.border.copy(alpha = .65f), shape) else Modifier)
+        .then(if (outlined) Modifier.border(.65.dp, if (menuOpen) RadiolaColors.primary.copy(alpha = .8f)
+            else RadiolaColors.border.copy(alpha = .65f), shape) else Modifier)
 }

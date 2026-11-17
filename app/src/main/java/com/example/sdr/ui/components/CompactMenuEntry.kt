@@ -11,6 +11,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +37,9 @@ internal fun CompactMenuEntry(label: String, selected: Boolean = false,
     }
 }
 
+// Matches the gap between the receiver toolbar and the plot panel.
+internal val ToolbarMenuOffset = DpOffset(0.dp, 4.dp)
+
 internal data class CompactMenuAnchor(val modifier: Modifier, val maxHeight: Dp)
 
 /** Leave room below the anchor so DropdownMenu never has to move above it. */
@@ -47,6 +51,6 @@ internal fun rememberCompactMenuAnchor(): CompactMenuAnchor {
     return CompactMenuAnchor(Modifier.onGloballyPositioned { coordinates ->
         val below = with(density) { (windowHeight - coordinates.boundsInWindow().bottom).toDp() }
         // Material menus reserve a 48 dp margin at the window edge, plus 16 dp content padding.
-        maxHeight = (below - 64.dp).coerceIn(30.dp, 300.dp)
+        maxHeight = (below - 64.dp - ToolbarMenuOffset.y).coerceIn(30.dp, 300.dp)
     }, maxHeight)
 }

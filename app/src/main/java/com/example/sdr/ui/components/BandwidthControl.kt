@@ -44,12 +44,12 @@ fun BandwidthControl(mode: DemodulationMode, hz: Int, isDefault: Boolean, onChan
     val menuAnchor = rememberCompactMenuAnchor()
     Box(menuAnchor.modifier) {
         Column(Modifier.width(68.dp).height(28.dp)
-            .toolbarButtonSurface().clickable(enabled = enabled) { expanded = true },
+            .toolbarButtonSurface(menuOpen = expanded).clickable(enabled = enabled) { expanded = true },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("BW", Modifier.height(10.dp), color = muted, fontSize = 8.sp, style = ToolbarCaptionStyle)
             ToolbarValue(bandwidthLabel(hz))
         }
-        DropdownMenu(expanded, { expanded = false },
+        DropdownMenu(offset = ToolbarMenuOffset, expanded = expanded, onDismissRequest = { expanded = false },
             modifier = Modifier.heightIn(max = menuAnchor.maxHeight), containerColor = surface) {
             Column(Modifier.width(164.dp)) {
                 CompactMenuEntry("Default / ${bandwidthLabel(options.defaultHz)}", isDefault) {

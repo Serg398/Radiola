@@ -25,7 +25,7 @@ internal fun WebSdrBandControl(
     Box(menuAnchor.modifier) {
         Column(
             Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
-                .toolbarButtonSurface()
+                .toolbarButtonSurface(menuOpen = expanded)
                 .clickable(enabled = active && bands.isNotEmpty()) { expanded = true }
                 .padding(horizontal = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -35,7 +35,7 @@ internal fun WebSdrBandControl(
             ToolbarValue(bands.getOrNull(selected)?.name?.ifBlank { "—" } ?: "—",
                 color = if (active) warm else ivory.copy(alpha = 0.5f))
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
+        DropdownMenu(offset = ToolbarMenuOffset, expanded = expanded, onDismissRequest = { expanded = false },
             modifier = Modifier.width(218.dp).heightIn(max = menuAnchor.maxHeight), containerColor = surface) {
             bands.forEachIndexed { index, band ->
                 CompactMenuEntry(band.name.ifBlank { "Band ${index + 1}" }, index == selected,

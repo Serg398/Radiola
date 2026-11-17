@@ -38,16 +38,17 @@ internal fun ModeControl(
             "LSB" to DemodulationMode.LSB, "CW" to DemodulationMode.CW)
     val selected = if (faxMode) "FAX" else ftxMode?.name ?: if (serverModes != null) serverModeLabel.orEmpty()
         else modes.firstOrNull { it.second == mode }?.first.orEmpty()
-    Box {
+    val menuAnchor = rememberCompactMenuAnchor()
+    Box(menuAnchor.modifier) {
         Column(Modifier.width(72.dp).height(28.dp)
-            .toolbarButtonSurface()
+            .toolbarButtonSurface(menuOpen = expanded)
             .clickable { expanded = true }, horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Text("MODE", Modifier.height(10.dp), color = RadiolaColors.secondaryText, fontSize = 8.sp, style = ToolbarCaptionStyle)
             ToolbarValue(selected)
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-            modifier = Modifier.heightIn(max = 340.dp), containerColor = RadiolaColors.surface) {
+        DropdownMenu(offset = ToolbarMenuOffset, expanded = expanded, onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = menuAnchor.maxHeight), containerColor = RadiolaColors.surface) {
             @Composable
             fun Entry(label: String, active: Boolean, enabled: Boolean = true, action: () -> Unit) {
                 Box(Modifier.width(40.dp).height(30.dp)

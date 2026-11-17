@@ -23,7 +23,7 @@ internal fun NoiseReductionControl(available: Boolean, cw: Boolean) {
     val active = available && config.enabled
     val menuAnchor = rememberCompactMenuAnchor()
     Box(menuAnchor.modifier) {
-        Column(Modifier.width(48.dp).height(28.dp).toolbarButtonSurface()
+        Column(Modifier.width(48.dp).height(28.dp).toolbarButtonSurface(menuOpen = expanded)
             .clickable(enabled = available) { expanded = true }
             .semantics { contentDescription = "Noise reduction ${if (active) "on" else "off"}" },
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -32,7 +32,7 @@ internal fun NoiseReductionControl(available: Boolean, cw: Boolean) {
             Text(if (active) selected.name else "OFF", Modifier.height(13.dp),
                 color = if (active) RadiolaColors.primary else RadiolaColors.secondaryText, fontSize = 11.sp, style = ToolbarValueStyle)
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; HamNoiseSettings.save() },
+        DropdownMenu(offset = ToolbarMenuOffset, expanded = expanded, onDismissRequest = { expanded = false; HamNoiseSettings.save() },
             modifier = Modifier.width(120.dp).heightIn(max = menuAnchor.maxHeight), containerColor = RadiolaColors.surface) {
             Text(if (cw) "NR / CW" else "NR / VOICE", color = RadiolaColors.secondaryText, fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
