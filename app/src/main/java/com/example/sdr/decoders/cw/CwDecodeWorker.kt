@@ -45,6 +45,7 @@ internal class CwDecodeWorker(context: android.content.Context? = null) {
         if (active && thread == null) {
             thread = Thread({
                 var decoder = CwDecoder(); var deep: DeepCwDecoder? = null; var epoch = -1L
+                var former: CwFormerDecoder? = null
                 var failed = false
                 try {
                     while (!closed) {
@@ -53,12 +54,19 @@ internal class CwDecodeWorker(context: android.content.Context? = null) {
                         if (epoch != block.generation) {
                             if (enabled && backend == CwBackend.DEEPCW) deep?.reset()
                             else { deep?.close(); deep = null }
+                            if (enabled && backend == CwBackend.CWFORMER) former?.reset()
+                            else { former?.close(); former = null }
                             decoder = CwDecoder(); epoch = block.generation; failed = false
                         }
                         if (!enabled || block.samples.isEmpty()) continue
                         try {
                             val started = System.nanoTime()
-                            val result = if (backend == CwBackend.DEEPCW) {
+                            val result = if (backend == CwBackend.CWFORMER) {
+                                if (failed) continue
+                                if (former == null) former = CwFormerDecoder(checkNotNull(appContext) { "CWformer requires Android context" })
+                                former!!.process(block.samples, block.rate, block.channels)
+                                former!!.information()
+                            } else if (backend == CwBackend.DEEPCW) {
                                 if (failed) continue
                                 if (deep == null) deep = DeepCwDecoder(checkNotNull(appContext) { "DeepCW requires Android context" })
                                 deep!!.process(block.samples, block.rate, block.channels)
@@ -70,13 +78,14 @@ internal class CwDecodeWorker(context: android.content.Context? = null) {
                             lastProcessMs = (System.nanoTime() - started) / 1_000_000
                         } catch (error: Exception) {
                             deep?.close(); deep = null; failed = true
+                            former?.close(); former = null
                             synchronized(this) {
-                                if (epoch == generation) information = CwInformation(status = "DeepCW unavailable: ${error.message}")
+                                if (epoch == generation) information = CwInformation(status = "${backend.label} unavailable: ${error.message}")
                             }
                         }
                     }
                 } catch (_: InterruptedException) { /* close */ }
-                finally { deep?.close() }
+                finally { deep?.close(); former?.close() }
             }, "CwDecoder").apply { isDaemon = true; start() }
         }
     }

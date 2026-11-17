@@ -1,0 +1,13 @@
+CWformer v0.2.0 by parsimo2010
+https://github.com/parsimo2010/CWformer
+Release: https://github.com/parsimo2010/CWformer/releases/tag/v0.2.0
+License: MIT (see LICENSE).
+
+model.onnx is the unmodified cwformer_streaming_int8.onnx from cwformer-onnx.zip.
+SHA-256: 3f45231d4064fab08d96f0e328833128339fb0df1f8e2a883e1ca3cc3c124b4c
+mel_config.json is from the same archive. mel_basis.f32 and mel_window.f32
+contain the original exported NumPy tables converted losslessly to raw
+little-endian float32, without NumPy headers.
+
+Streaming preprocessing and state handling are adapted from the release's
+inference_onnx.py. Android adapter: Radiola contributors.
