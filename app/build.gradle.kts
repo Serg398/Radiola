@@ -1,9 +1,29 @@
 import groovy.json.JsonSlurper
 import java.util.Locale
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val releaseVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val signingProperties = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun signingValue(name: String): String? =
+    providers.environmentVariable("RADIOLA_${name}").orNull
+        ?: signingProperties.getProperty(name)
+val signingNames = listOf("STORE_FILE", "STORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+val releaseSigningAvailable = signingNames.all { !signingValue(it).isNullOrBlank() }
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast {
+        check(releaseSigningAvailable) {
+            "Release signing is required. Configure keystore.properties or RADIOLA_* environment variables; see docs/RELEASING.md."
+        }
+    }
 }
 
 android {
@@ -18,11 +38,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.sdr"
+        applicationId = "com.serg398.radiola"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = releaseVersion.getProperty("versionCode").toInt().also { require(it > 0) }
+        versionName = releaseVersion.getProperty("versionName").also {
+            require(it.matches(Regex("\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?")))
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
@@ -31,8 +53,28 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningAvailable) create("release") {
+            storeFile = rootProject.file(signingValue("STORE_FILE")!!)
+            storePassword = signingValue("STORE_PASSWORD")
+            keyAlias = signingValue("KEY_ALIAS")
+            keyPassword = signingValue("KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "Радиола Dev")
+        }
+        getByName("release") {
+            if (releaseSigningAvailable) signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
     buildFeatures {
         compose = true
+        resValues = true
     }
 }
 
@@ -133,5 +175,7 @@ val generateDspProfiles = tasks.register("generateDspProfiles") {
 }
 androidComponents.onVariants { variant -> variant.sources.kotlin?.addStaticSourceDirectory(dspOutput.get().dir("kotlin").asFile.absolutePath) }
 tasks.configureEach {
+    if (name == "preReleaseBuild" || name == "validateSigningRelease" ||
+        name == "packageRelease" || name == "signReleaseBundle") dependsOn(verifyReleaseSigning)
     if (name.contains("Kotlin") || name == "preBuild" || name.startsWith("configureCMake") || name.startsWith("buildCMake")) dependsOn(generateDspProfiles)
 }

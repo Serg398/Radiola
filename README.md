@@ -1,6 +1,6 @@
-# Радиола ? SDR для Android
+# Радиола — SDR для Android
 
-Приложение SDR приёмника для Android с RTL-SDR Blog V4 по USB OTG и онлайн-приёмом WebSDR.
+Приложение SDR-приёмника для Android с RTL-SDR Blog V4 по USB OTG и онлайн-приёмом WebSDR и OpenWebRX.
 Интерфейс написан на Kotlin и Jetpack Compose, драйвер и обработка сигнала — на C++ через Android NDK.
 
 ![Интерфейс приёмника](docs/images/receiver.png)
@@ -22,7 +22,10 @@
 - Независимое восстановление звука и водопада, отменяемые повторные подключения, постоянные соединения при изменении окна.
 - Декодер Морзе для USB и WebSDR с автоопределением скорости и тона. На шумном эфире возможны ошибки.
 
-KiwiSDR, OpenWebRX и запись из пользовательского интерфейса пока не реализованы.
+Также доступны избранные станции, локальный радиофакс WEFAX, нейросетевые
+CW-декодеры DeepCW и CWformer и шумоподавление HamNoise.
+
+KiwiSDR и запись аудио из пользовательского интерфейса пока не реализованы.
 В WebSDR демодуляция выполняется сервером; WFM-стерео и исходный IQ этим клиентом не поддерживаются.
 Подробности протокола и проверок — в [docs/WEBSDR_PROTOCOL.md](docs/WEBSDR_PROTOCOL.md).
 
@@ -53,10 +56,20 @@ APK появится в `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Структура
 
-- `app/src/main/java/com/example/sdr` — интерфейс, сессия приёмника, настройки и вывод звука.
-- `app/src/main/cpp` — JNI, демодуляторы WFM/AM и AUDIO AGC.
+- `app/src/main/java/com/example/sdr` — интерфейс, USB/онлайн-сессии, декодеры, настройки и вывод звука.
+- `app/src/main/cpp` — JNI, демодуляторы, фильтры, AGC, RDS и обработка звука.
 - `app/src/main/cpp/third_party` — исходники RTL-SDR Blog и libusb.
-- `app/src/test/cpp` — тесты AM демодуляции и AUDIO AGC на синтетических сигналах.
+- `app/src/test` — JVM-тесты и нативные DSP-тесты.
+- `app/src/androidTest` — тесты на Android-устройстве.
+- `version.properties` — версия приложения и код выпуска.
+
+Подробнее: [архитектура](docs/ARCHITECTURE.md), [выпуск и подпись](docs/RELEASING.md),
+[изменения](CHANGELOG.md), [избранное](docs/FAVORITES.md), [радиофакс](docs/FAX.md),
+[DeepCW](docs/DEEPCW.md), [CWformer](docs/CWFORMER.md), [HamNoise](docs/HAMNOISE.md).
+
+Каталоги `build/`, `app/build/`, `app/.cxx/`, `.gradle/` и `.kotlin/` создаются
+инструментами сборки и не хранятся в Git. APK и отчёты проверенных выпусков
+архивируются отдельно от рабочих каталогов сборки.
 
 ## Встроенные библиотеки
 
