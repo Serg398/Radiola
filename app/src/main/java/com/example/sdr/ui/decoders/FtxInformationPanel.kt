@@ -107,19 +107,19 @@ private fun FtxInformationPanel(mode: FtxMode, info: FtxInformation, rows: List<
     val scrollbarColor = RadiolaColors.secondaryText.copy(alpha = .45f)
     DecoderCardFrame(modifier = Modifier.fillMaxSize(), sidebar = {
         DecoderSidebar(mode.name) {
-            Text("USB / 3 kHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
-            Text("${rows.size} messages", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            Text("USB / 3 kHz", color = RadiolaColors.secondaryText)
+            Text("${rows.size} messages", color = RadiolaColors.secondaryText)
             Spacer(Modifier.height(2.dp))
             Text(if (remote) "SERVER" else "PHONE", color = RadiolaColors.secondaryText,
-                fontSize = 9.sp, letterSpacing = .5.sp)
+                fontSize = 11.sp, letterSpacing = .5.sp)
             if (origin != null) {
                 Text(coordinateLabel(origin.lat, latitude = true), color = RadiolaColors.text,
-                    fontSize = 10.sp, lineHeight = 13.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+                    lineHeight = 16.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
                 Text(coordinateLabel(origin.lon, latitude = false), color = RadiolaColors.text,
-                    fontSize = 10.sp, lineHeight = 13.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
+                    lineHeight = 16.sp, maxLines = 1, fontFamily = FontFamily.Monospace)
             } else {
                 Text(if (remote) "Unavailable" else locationStatus,
-                    color = RadiolaColors.secondaryText, fontSize = 10.sp, maxLines = 2,
+                    color = RadiolaColors.secondaryText, maxLines = 2,
                     modifier = Modifier.clickable(enabled = !remote) { requestLocation() })
             }
         }

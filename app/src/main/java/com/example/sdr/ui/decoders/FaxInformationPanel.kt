@@ -67,9 +67,10 @@ internal fun FaxInformationPanel(info: FaxInformation, decoder: FaxDecodeWorker,
     }
     DecoderCardFrame(modifier = Modifier.fillMaxWidth().height(160.dp), sidebar = {
         DecoderSidebar("FAX") {
-            Text("USB / 3 kHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            Text("USB / 3 kHz", color = RadiolaColors.secondaryText)
             Box {
-                Text("${info.lpm} / ${info.ioc} \u25be", color = RadiolaColors.secondaryText, fontSize = 10.sp,
+                Text("${info.lpm} / ${info.ioc} \u25be", color = RadiolaColors.text,
+                    fontSize = 13.sp, lineHeight = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     modifier = Modifier.clickable { formatMenu = true })
                 DropdownMenu(formatMenu, { formatMenu = false }) {
                     for (ioc in listOf(576, 288)) for (lpm in listOf(120, 60, 90, 240)) {
@@ -78,7 +79,7 @@ internal fun FaxInformationPanel(info: FaxInformation, decoder: FaxDecodeWorker,
                     }
                 }
             }
-            Text("${info.lines} lines", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            Text("${info.lines} lines", color = RadiolaColors.secondaryText)
         }
     }) {
             DecoderToolbar {

@@ -29,7 +29,7 @@ internal fun DecoderToolbar(content: @Composable RowScope.() -> Unit) {
 
 @Composable
 internal fun DecoderDivider() {
-    HorizontalDivider(modifier = Modifier.padding(bottom = 4.dp),
+    HorizontalDivider(modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         color = RadiolaColors.border.copy(alpha = .6f), thickness = .5.dp)
 }
 

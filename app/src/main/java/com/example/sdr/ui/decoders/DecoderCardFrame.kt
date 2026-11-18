@@ -18,7 +18,7 @@ internal fun DecoderCardFrame(
 ) {
     Row(modifier.border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
-        .padding(start = 10.dp, end = 8.dp, top = 3.dp, bottom = 4.dp),
+        .padding(start = 10.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         sidebar()
         Box(Modifier.width(1.dp).fillMaxHeight().padding(top = 5.dp, bottom = 4.dp)

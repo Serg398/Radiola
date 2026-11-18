@@ -34,10 +34,10 @@ internal fun ServerDecodedInformationPanel(label: String, text: String, onClear:
     var expanded by remember(sstv) { mutableStateOf(false) }
     DecoderCardFrame(modifier = Modifier.fillMaxWidth().height(160.dp), sidebar = {
         DecoderSidebar(label) {
-            Text("SERVER", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+            Text("SERVER", color = RadiolaColors.secondaryText)
             if (adsb) {
-                Text("1090 MHz", color = RadiolaColors.secondaryText, fontSize = 10.sp)
-                Text("${aircraft.size} aircraft", color = RadiolaColors.secondaryText, fontSize = 10.sp)
+                Text("1090 MHz", color = RadiolaColors.secondaryText)
+                Text("${aircraft.size} aircraft", color = RadiolaColors.secondaryText)
             }
         }
     }) {

@@ -71,9 +71,9 @@ private fun WfmInformationPanel(
     DecoderCardFrame(sidebar = {
         DecoderSidebar("WFM") {
             Text(if (streaming) if (stereo) "STEREO" else "MONO" else "",
-                color = RadiolaColors.secondaryText, fontSize = 10.sp)
+                color = RadiolaColors.secondaryText)
             Text(if (streaming) "%.0f dBFS".format(Locale.US, signalDbfs) else "",
-                color = RadiolaColors.secondaryText, fontSize = 10.sp)
+                color = RadiolaColors.secondaryText)
         }
     }) {
         DecoderToolbar {

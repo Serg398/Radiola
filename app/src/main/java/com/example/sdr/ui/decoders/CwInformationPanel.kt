@@ -29,7 +29,8 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
     DecoderCardFrame(modifier = Modifier.fillMaxSize(), sidebar = {
         DecoderSidebar("CW") {
             Box {
-                Text(backend.label + " \u25be", color = muted, fontSize = 10.sp,
+                Text(backend.label + " \u25be", color = RadiolaColors.text,
+                    fontSize = 13.sp, lineHeight = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     modifier = Modifier.clickable { menu = true })
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     CwBackend.entries.forEach { value ->
@@ -37,9 +38,9 @@ internal fun CwInformationPanel(info: CwInformation, clear: () -> Unit,
                     }
                 }
             }
-            if (backend == CwBackend.CLASSIC) Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted, fontSize = 10.sp)
+            if (backend == CwBackend.CLASSIC) Text(if (info.wpm > 0) "${info.wpm} WPM" else "AUTO WPM", color = muted)
             if (backend == CwBackend.CLASSIC) Text(if (info.toneHz > 0) "${info.toneHz} Hz" else "AUTO TONE",
-                color = if (info.tonePresent) warm else muted, fontSize = 10.sp)
+                color = if (info.tonePresent) warm else muted)
         }
     }) {
             DecoderToolbar {
