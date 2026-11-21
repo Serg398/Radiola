@@ -64,13 +64,13 @@ class IqDecimator {
         int count_ = 0;
     };
 public:
-    void reset() { half_.reset(); fifth_.reset(); }
+    void reset() { half_.reset(); post_.reset(); }
     bool push(float i, float q, float& oi, float& oq) {
         float hi, hq;
         return half_.push(i, q, DspProfiles::halfBand, hi, hq) &&
-            fifth_.push(hi, hq, DspProfiles::decimateFive, oi, oq);
+            post_.push(hi, hq, DspProfiles::postDecimationFilter, oi, oq);
     }
 private:
     Stage<DspProfiles::halfBand.size(), 2, 2> half_;
-    Stage<DspProfiles::decimateFive.size(), 5> fifth_;
+    Stage<DspProfiles::postDecimationFilter.size(), DspProfiles::iqRate / (2 * DspProfiles::channelRate)> post_;
 };

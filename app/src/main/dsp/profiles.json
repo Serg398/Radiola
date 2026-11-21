@@ -1,12 +1,12 @@
 {
   "rates": {
-    "iqHz": 2400000,
+    "iqHz": 2880000,
     "channelHz": 240000,
     "audioHz": 48000
   },
   "antiAlias": {
     "halfBandTaps": 63,
-    "postTaps": 201,
+    "postTaps": 241,
     "cutoffHz": 120000,
     "passbandHz": 100000,
     "stopbandHz": 140000,

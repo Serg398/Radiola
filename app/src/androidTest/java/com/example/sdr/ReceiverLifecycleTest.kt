@@ -66,7 +66,7 @@ class ReceiverLifecycleTest {
                     val waterfall = model.waterfallState.value!!
                     assertSame(spectrum, waterfall)
                     assertTrue(spectrum.timestampNanos > 0 && spectrum.sessionId > 0)
-                    assertEquals(2400000, spectrum.spanHz)
+                    assertEquals(2880000, spectrum.spanHz)
                 }
                 clickText("Settings")
                 Thread.sleep(1000)

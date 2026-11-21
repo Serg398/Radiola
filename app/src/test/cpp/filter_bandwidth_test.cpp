@@ -15,7 +15,7 @@ int main() {
         double edge;
         if (profile.id == 0) {
             edge = gain(DspProfiles::halfBand, profile.filterCutoffHz, DspProfiles::iqRate) +
-                gain(DspProfiles::decimateFive, profile.filterCutoffHz, DspProfiles::iqRate / 2);
+                gain(DspProfiles::postDecimationFilter, profile.filterCutoffHz, DspProfiles::iqRate / 2);
         } else if (profile.id == 1) {
             edge = gain(DspFilters::amChannel(), profile.filterCutoffHz, DspProfiles::channelRate);
         } else if (profile.id == 2) {
