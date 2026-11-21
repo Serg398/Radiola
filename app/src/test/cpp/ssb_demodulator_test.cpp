@@ -10,10 +10,10 @@ Result tone(int mode, int carrierOffset, int audioHz) {
     std::vector<uint8_t> iq(32768);
     std::vector<int16_t> pcm;
     int16_t output[2048];
-    for (size_t start = 0; start < 2400000; start += iq.size()/2) {
-        const size_t samples = std::min<size_t>(iq.size()/2, 2400000-start);
+    for (size_t start = 0; start < DspProfiles::iqRate; start += iq.size()/2) {
+        const size_t samples = std::min<size_t>(iq.size()/2, DspProfiles::iqRate-start);
         for (size_t i = 0; i < samples; ++i) {
-            const double phase = 2*pi*(250000+carrierOffset)*(start+i)/2400000.0;
+            const double phase = 2*pi*(250000+carrierOffset)*(start+i)/double(DspProfiles::iqRate);
             iq[2*i] = static_cast<uint8_t>(std::round(127.5+40*std::cos(phase)));
             iq[2*i+1] = static_cast<uint8_t>(std::round(127.5+40*std::sin(phase)));
         }

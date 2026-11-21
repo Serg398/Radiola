@@ -10,9 +10,9 @@
 #include <vector>
 
 int main() {
-    std::vector<uint8_t> iq(4800000);
+    std::vector<uint8_t> iq(2 * DspProfiles::iqRate);
     for (size_t n = 0; n < iq.size()/2; ++n) {
-        const double phase = -15 * std::cos(6.283185307179586*1000*n/2400000);
+        const double phase = -15 * std::cos(6.283185307179586*1000*n/DspProfiles::iqRate);
         iq[2*n] = uint8_t(127.5 + 60*std::cos(phase));
         iq[2*n+1] = uint8_t(127.5 + 60*std::sin(phase));
     }

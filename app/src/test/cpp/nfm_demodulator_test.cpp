@@ -4,9 +4,9 @@
 
 int main() {
     constexpr double pi = 3.14159265358979323846;
-    std::vector<uint8_t> iq(4800000);
+    std::vector<uint8_t> iq(2 * DspProfiles::iqRate);
     for (size_t i = 0; i < iq.size() / 2; ++i) {
-        const double t = i / 2400000.0;
+        const double t = i / double(DspProfiles::iqRate);
         const double phase = 2 * pi * 250000 * t - 2.5 * std::cos(2 * pi * 1000 * t);
         iq[2*i] = static_cast<uint8_t>(std::round(127.5 + 60 * std::cos(phase)));
         iq[2*i+1] = static_cast<uint8_t>(std::round(127.5 + 60 * std::sin(phase)));

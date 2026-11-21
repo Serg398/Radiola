@@ -17,9 +17,9 @@ static double response(int width, int rate, int taps, int hz) {
     return 10*std::log10(power / (rate / 10 - 1));
 }
 static double am(int width, int tone) {
-    std::vector<uint8_t> iq(2400000);
+    std::vector<uint8_t> iq(DspProfiles::iqRate);
     for (size_t n = 0; n < iq.size()/2; ++n) {
-        const double amplitude = 40 * (1 + .3 * std::sin(6.283185307179586*tone*n/2400000));
+        const double amplitude = 40 * (1 + .3 * std::sin(6.283185307179586*tone*n/DspProfiles::iqRate));
         iq[2*n] = uint8_t(std::lround(127.5 + amplitude)); iq[2*n+1] = 128;
     }
     AmDemodulator demod; demod.reset(); demod.setBandwidth(width);

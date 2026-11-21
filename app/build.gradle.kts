@@ -69,7 +69,7 @@ val generateDspProfiles = tasks.register("generateDspProfiles") {
         val aa = config["antiAlias"] as Map<String, Number>
         @Suppress("UNCHECKED_CAST")
         val modes = (config["modes"] as List<Map<String, Any>>).sortedBy { (it["id"] as Number).toInt() }
-        require(rates.getValue("iqHz").toInt() == 10 * rates.getValue("channelHz").toInt())
+        require(rates.getValue("iqHz").toInt() == 12 * rates.getValue("channelHz").toInt())
         require(rates.getValue("channelHz").toInt() == 5 * rates.getValue("audioHz").toInt())
         require(aa.getValue("halfBandTaps").toInt() % 4 == 3)
         require(modes.map { (it["id"] as Number).toInt() } == modes.indices.toList())
@@ -128,7 +128,7 @@ val generateDspProfiles = tasks.register("generateDspProfiles") {
             values.chunked(4).joinToString(",\n") { row -> "    " + row.joinToString(", ") { String.format(Locale.ROOT, "%.10ef", it) } } + "\n}};\n"
         cpp.resolve("dsp_profiles.h").writeText(rateText + "\n" +
             array("halfBand", coefficients(aa.getValue("halfBandTaps").toInt(), 0.25, true)) +
-            array("decimateFive", coefficients(aa.getValue("postTaps").toInt(), aa.getValue("cutoffHz").toDouble() / (rates.getValue("iqHz").toDouble() / 2), false)) + "}\n")
+            array("postDecimationFilter", coefficients(aa.getValue("postTaps").toInt(), aa.getValue("cutoffHz").toDouble() / (rates.getValue("iqHz").toDouble() / 2), false)) + "}\n")
     }
 }
 androidComponents.onVariants { variant -> variant.sources.kotlin?.addStaticSourceDirectory(dspOutput.get().dir("kotlin").asFile.absolutePath) }

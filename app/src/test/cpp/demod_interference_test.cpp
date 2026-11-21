@@ -12,7 +12,7 @@ static std::vector<uint8_t> signal(int mode, bool blocker) {
     constexpr double pi = 3.141592653589793;
     std::vector<uint8_t> iq(samples * 2);
     for (int n = 0; n < samples; ++n) {
-        const double t = double(n) / 2400000;
+        const double t = double(n) / DspProfiles::iqRate;
         double phase = 0, amplitude = 8, bp = 2*pi*244000*t, ba = blocker ? 80 : 0;
         if (mode == 0 || mode == 2) {
             const double deviation = mode == 0 ? 30000 : 2500;

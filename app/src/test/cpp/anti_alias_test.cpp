@@ -15,7 +15,7 @@ static double gain(int hz) {
             if (++outputs > 1000) { energy += double(i)*i + double(q)*q; ++measured; }
         }
     }
-    assert(outputs == 12000);
+    assert(outputs == 120000 / (DspProfiles::iqRate / DspProfiles::channelRate));
     return 10 * std::log10(energy / measured);
 }
 int main() {
@@ -45,10 +45,10 @@ int main() {
             if (!filter.push(n == 0 ? 1.f : 0.f, n == 0 ? .5f : 0.f, i, q)) continue;
             const int halfIndex = (n - 1) / 2;
             double reference = 0;
-            for (size_t k = 0; k < DspProfiles::decimateFive.size(); ++k) {
+            for (size_t k = 0; k < DspProfiles::postDecimationFilter.size(); ++k) {
                 const int index = 2 * (halfIndex - int(k)) + 1;
                 if (index >= 0 && index < int(DspProfiles::halfBand.size()))
-                    reference += double(DspProfiles::decimateFive[k]) * DspProfiles::halfBand[index];
+                    reference += double(DspProfiles::postDecimationFilter[k]) * DspProfiles::halfBand[index];
             }
             assert(std::abs(i - reference) < 1.e-7 && std::abs(q - reference*.5) < 1.e-7);
         }
