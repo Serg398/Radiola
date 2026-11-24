@@ -1,8 +1,16 @@
 # Плагины Радиолы
 
-Готовые пакеты лежат в этой папке. Для установки скопируйте `gain.radiolaplugin` или `audio-spectrum.radiolaplugin` на телефон и выберите файл через **Plugins → Import plugin**. Затем выберите плагин в меню **PLUGINS** на экране приёмника.
+У каждого плагина своя папка. Внутри лежат исходники в `src/` и готовый пакет для импорта.
 
-Исходники лежат в соседних папках. После правок запустите `python plugins/build.py` из корня проекта. Повторный импорт пакета с тем же `id` обновляет плагин.
+| Плагин | Исходники | Пакет |
+|---|---|---|
+| JS Gain | [gain/src](gain/src/) | [gain.radiolaplugin](gain/gain.radiolaplugin) |
+| Audio Spectrum | [audio-spectrum/src](audio-spectrum/src/) | [audio-spectrum.radiolaplugin](audio-spectrum/audio-spectrum.radiolaplugin) |
+| FT8 JS | [ft8/src](ft8/src/) | [ft8.radiolaplugin](ft8/ft8.radiolaplugin) |
+
+Скопируйте пакет на телефон, импортируйте через **Plugins → Import plugin**, затем выберите плагин в меню **PLUGINS** приёмника. Повторный импорт пакета с тем же `id` обновляет плагин.
+
+Для сборки JS Gain и Audio Spectrum запустите `python plugins/build.py` из корня проекта. Можно указать один плагин, например `python plugins/build.py gain`. Для FT8 JS используйте [инструкцию в папке плагина](ft8/README.md).
 
 ## Формат v1
 

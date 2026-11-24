@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.sdr.ui.theme.RadiolaColors
 
+internal val DecoderCardHeight = 160.dp
+
 /** FT8 card geometry shared by every modulation panel. */
 @Composable
 internal fun DecoderCardFrame(

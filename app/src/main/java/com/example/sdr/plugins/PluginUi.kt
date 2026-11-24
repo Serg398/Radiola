@@ -23,6 +23,7 @@ import com.example.sdr.ui.components.ToolbarValue
 import com.example.sdr.ui.components.rememberCompactMenuAnchor
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.decoders.DecoderCardFrame
+import com.example.sdr.ui.decoders.DecoderCardHeight
 import com.example.sdr.ui.decoders.DecoderDivider
 import com.example.sdr.ui.decoders.DecoderToolbar
 import com.example.sdr.ui.decoders.DecoderToolbarText
@@ -49,6 +50,16 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
             PluginCardSize.FULL -> CARD
             PluginCardSize.COMPACT, null -> BOTH
         }
+    }
+}
+
+internal fun ColumnScope.pluginCardModifier(layout: PluginLayout): Modifier {
+    val width = Modifier.fillMaxWidth()
+    return when (layout) {
+        PluginLayout.BOTH -> width.height(80.dp)
+        PluginLayout.TALL -> width.height(DecoderCardHeight)
+        PluginLayout.SPECTRUM, PluginLayout.WATERFALL -> width.height(116.dp)
+        PluginLayout.CARD -> width.weight(1f)
     }
 }
 

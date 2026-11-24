@@ -41,7 +41,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import com.example.sdr.RadiolaApplication
 import com.example.sdr.plugins.PluginCard
-import com.example.sdr.plugins.PluginCardSize
+import com.example.sdr.plugins.pluginCardModifier
 import com.example.sdr.plugins.PluginLayout
 import com.example.sdr.plugins.PluginPicker
 import com.example.sdr.plugins.PluginsPage
@@ -208,8 +208,6 @@ internal fun ReceiverScreen(
         if (selectedPlugin != null && plugin == null) plugins.select(null)
         else if (!pluginPlayable) plugins.stop()
     }
-    val ftxInformation = presentation.ftxInformation
-    val cwInformation = presentation.cwInformation
     var displayFrequencyHz by remember { mutableStateOf(tunedHz.toDouble()) }
     var encoderRotating by remember { mutableStateOf(false) }
     var encoderBrakeRequest by remember { mutableStateOf(0) }
@@ -538,51 +536,15 @@ internal fun ReceiverScreen(
 
 
             }
-            val cardKind = when {
-                presentation.faxSelected -> "fax"
-                openWebRx && webSession.serverDataMode -> "server"
-                activeMode == DemodulationMode.CW || ftxMode != null -> "local"
-                else -> null
-            }
-            // Keep the outgoing card composed until its exit animation has finished.
-            var lastCard by remember { mutableStateOf(Triple(cardKind, activeMode, ftxMode)) }
-            val card = if (cardKind != null) Triple(cardKind, activeMode, ftxMode) else lastCard
-            androidx.compose.runtime.SideEffect { if (cardKind != null) lastCard = card }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = cardKind != null && plugin == null,
-                enter = androidx.compose.animation.expandVertically(
-                    animationSpec = androidx.compose.animation.core.tween(220), expandFrom = Alignment.Bottom) +
-                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
-                exit = androidx.compose.animation.shrinkVertically(
-                    animationSpec = androidx.compose.animation.core.tween(180), shrinkTowards = Alignment.Bottom) +
-                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
-            ) {
-            if (card.first == "fax") com.example.sdr.ui.decoders.FaxInformationPanel(
-                presentation.faxInformation, presentation.faxDecoder, onExpand = { faxExpanded = true })
-            else if (card.first == "server") ServerDecodedInformationPanel(
-                webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
-                sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
-                adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)
-            else ModulationInformationPanel(
-                card.second, rdsInformation, tunedHz, receiving,
-                wfmStereoEnabled && wfmStereoLocked, signalDbfs,
-                cwInformation, presentation::clearCw,
-                presentation.cwEnabled,
-                presentation::enableCw,
-                cwBackend = presentation.cwBackend, onCwBackendChange = presentation::selectCwBackend,
-                ftxMode = card.third, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
-                source = source, serverUrl = webSdrReceiverUrl,
-            ) {}
-            }
+            ReceiverDecoderCard(
+                presentation, openWebRx, activeMode, ftxMode, plugin != null, rdsInformation,
+                tunedHz, receiving, wfmStereoEnabled, wfmStereoLocked, signalDbfs, source,
+                webSdrReceiverUrl, onFaxExpand = { faxExpanded = true },
+            )
             if (plugin != null) {
-                val cardModifier = when (pluginLayout.size) {
-                    PluginCardSize.COMPACT -> Modifier.fillMaxWidth().height(80.dp)
-                    PluginCardSize.EXPANDED -> Modifier.fillMaxWidth().height(116.dp)
-                    PluginCardSize.FULL -> Modifier.fillMaxWidth().weight(1f)
-                }
                 PluginCard(plugins, pluginLayout, onLayout = { pluginLayout = it },
                     playable = pluginPlayable, onReceiverCommand = presentation::pluginReceiverCommand,
-                    modifier = cardModifier)
+                    modifier = pluginCardModifier(pluginLayout))
             }
                 }
                 androidx.compose.animation.AnimatedVisibility(
@@ -658,5 +620,61 @@ private fun ReceiverPlotHeader(
                     .padding(horizontal = 6.dp, vertical = 1.dp))
             Text("SPAN %d kHz".format(Locale.US, spanHz / 1_000), color = muted, fontSize = 11.sp)
         }
+    }
+}
+
+@Composable
+private fun ReceiverDecoderCard(
+    presentation: ReceiverPresentation,
+    openWebRx: Boolean,
+    activeMode: DemodulationMode,
+    ftxMode: com.example.sdr.decoders.ftx.FtxMode?,
+    pluginSelected: Boolean,
+    rdsInformation: RdsInformation,
+    tunedHz: Long,
+    receiving: Boolean,
+    wfmStereoEnabled: Boolean,
+    wfmStereoLocked: Boolean,
+    signalDbfs: Float,
+    source: ReceiverSource,
+    webSdrReceiverUrl: String?,
+    onFaxExpand: () -> Unit,
+) {
+    val webSession = presentation.online.session
+    val cardKind = when {
+        presentation.faxSelected -> "fax"
+        openWebRx && webSession.serverDataMode -> "server"
+        activeMode == DemodulationMode.CW || ftxMode != null -> "local"
+        else -> null
+    }
+    // Keep the outgoing card composed until its exit animation has finished.
+    var lastCard by remember { mutableStateOf(Triple(cardKind, activeMode, ftxMode)) }
+    val card = if (cardKind != null) Triple(cardKind, activeMode, ftxMode) else lastCard
+    androidx.compose.runtime.SideEffect { if (cardKind != null) lastCard = card }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = cardKind != null && !pluginSelected,
+        enter = androidx.compose.animation.expandVertically(
+            animationSpec = androidx.compose.animation.core.tween(220), expandFrom = Alignment.Bottom) +
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
+        exit = androidx.compose.animation.shrinkVertically(
+            animationSpec = androidx.compose.animation.core.tween(180), shrinkTowards = Alignment.Bottom) +
+            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
+    ) {
+    if (card.first == "fax") com.example.sdr.ui.decoders.FaxInformationPanel(
+        presentation.faxInformation, presentation.faxDecoder, onExpand = onFaxExpand)
+    else if (card.first == "server") ServerDecodedInformationPanel(
+        webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
+        sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
+        adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)
+    else ModulationInformationPanel(
+        card.second, rdsInformation, tunedHz, receiving,
+        wfmStereoEnabled && wfmStereoLocked, signalDbfs,
+        presentation.cwInformation, presentation::clearCw,
+        presentation.cwEnabled,
+        presentation::enableCw,
+        cwBackend = presentation.cwBackend, onCwBackendChange = presentation::selectCwBackend,
+        ftxMode = card.third, ftx = presentation.ftxInformation, onFtxClear = presentation::clearFtx,
+        source = source, serverUrl = webSdrReceiverUrl,
+    ) {}
     }
 }
