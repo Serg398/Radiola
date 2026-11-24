@@ -23,6 +23,9 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
         check(releaseSigningAvailable) {
             "Release signing is required. Configure keystore.properties or RADIOLA_* environment variables; see docs/RELEASING.md."
         }
+        check(rootProject.file(signingValue("STORE_FILE")!!).isFile) {
+            "Release keystore file is missing. Restore the existing release key; see docs/RELEASING.md."
+        }
     }
 }
 
