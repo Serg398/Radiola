@@ -134,9 +134,12 @@ internal fun PluginCard(
 ) {
     val plugin = manager.selected ?: return
     var webView by remember(plugin) { mutableStateOf<PluginWebView?>(null) }
-    LaunchedEffect(plugin, webView, manager.playing) {
+    LaunchedEffect(plugin, webView, manager.playing, playable) {
         val view = webView ?: return@LaunchedEffect
-        if (plugin.pcmStream && manager.playing) {
+        if (!plugin.webWorker || !manager.playing || !playable) return@LaunchedEffect
+        if (plugin.input == PluginPort.CHANNEL_IQ) {
+            streamChannelIq(view::publishChannelIq)
+        } else {
             while (true) {
                 manager.drainPcm().forEach(view::publishPcm)
                 delay(40)

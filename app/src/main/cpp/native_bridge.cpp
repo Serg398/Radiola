@@ -79,6 +79,7 @@ struct StreamState {
     std::atomic<int> demodulation{0}; // 0=WFM, 1=AM, 2=NFM, 3=USB, 4=LSB, 5=CW
     int active_demodulation = 0; // IQ callback thread only
     std::atomic<bool> retune_audio{false};
+    ChannelIqTap channel_iq;
     std::array<int16_t, 32768> audio{};
     std::atomic<uint32_t> audio_head{0};
     std::atomic<uint32_t> audio_tail{0};
@@ -155,12 +156,14 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     stream.nfm.setFrequencyOffset(offsetHz);
     stream.ssb.setFrequencyOffset(offsetHz);
     stream.wfm.setStereo(stream.wfm_stereo_enabled.load(std::memory_order_relaxed));
+    auto* iqTap = stream.channel_iq.begin(stream.spectrum_session.load(std::memory_order_relaxed),
+        tuning, mode, demodStarted) ? &stream.channel_iq : nullptr;
     std::array<int16_t, 4096> pcm{};
     size_t audio_count = mode == 1
-        ? stream.am.process(samples, length, pcm.data(), pcm.size() / 2)
-        : mode == 2 ? stream.nfm.process(samples, length, pcm.data(), pcm.size() / 2)
-        : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size() / 2)
-        : stream.wfm.process(samples, length, pcm.data(), pcm.size());
+        ? stream.am.process(samples, length, pcm.data(), pcm.size() / 2, iqTap)
+        : mode == 2 ? stream.nfm.process(samples, length, pcm.data(), pcm.size() / 2, iqTap)
+        : mode >= 3 ? stream.ssb.process(samples, length, mode, pcm.data(), pcm.size() / 2, iqTap)
+        : stream.wfm.process(samples, length, pcm.data(), pcm.size(), iqTap);
     stream.wfm_stereo_locked.store(mode == 0 && stream.wfm.stereoLocked(), std::memory_order_relaxed);
     {
         std::lock_guard<std::mutex> lock(stream.rds_mutex);
@@ -433,6 +436,26 @@ Java_com_example_sdr_NativeSdr_readAudio(JNIEnv *env, jobject, jshortArray outpu
         stream.audio_tail.store(tail + count, std::memory_order_release);
     }
     return static_cast<jint>(count);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_sdr_NativeSdr_enableChannelIq(JNIEnv *, jobject, jboolean enabled) {
+    stream.channel_iq.enable(enabled);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_example_sdr_NativeSdr_readChannelIq(JNIEnv *env, jobject, jbyteArray output, jlongArray info) {
+    constexpr auto bytes = static_cast<jsize>(ChannelIqTap::pairsPerBlock * 2 * sizeof(int16_t));
+    if (!output || !info || env->GetArrayLength(output) != bytes || env->GetArrayLength(info) < 5) {
+        return JNI_FALSE;
+    }
+    ChannelIqTap::Block block;
+    if (!stream.channel_iq.read(block)) return JNI_FALSE;
+    const jlong metadata[] = {DspProfiles::channelRate, block.frequencyHz, static_cast<jlong>(block.epoch),
+        static_cast<jlong>(block.index), static_cast<jlong>(block.timestampNs)};
+    env->SetByteArrayRegion(output, 0, bytes, reinterpret_cast<const jbyte*>(block.samples.data()));
+    env->SetLongArrayRegion(info, 0, 5, metadata);
+    return JNI_TRUE;
 }
 
 // Called only by the audio consumer thread; drop samples from the previous tuning.

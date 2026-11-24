@@ -6,6 +6,7 @@
 #include <cstdint>
 #include "frequency_mixer.h"
 #include "iq_decimator.h"
+#include "channel_iq_tap.h"
 #include "dsp_filters.h"
 #include "channel_filter.h"
 
@@ -25,13 +26,14 @@ public:
     void setFrequencyOffset(int hz) { mixer_.setOffset(hz); }
     void setBandwidth(int hz) { channel_.configure(hz, DspProfiles::channelRate, hz == DspProfiles::modes[2].bandwidthHz ? 161 : 641); }
     void retune() { discardPhase_ = true; }
-    size_t process(const uint8_t* iq, size_t bytes, int16_t* output, size_t capacity) {
+    size_t process(const uint8_t* iq, size_t bytes, int16_t* output, size_t capacity, ChannelIqTap* tap = nullptr) {
         size_t produced = 0;
         for (size_t byte = 0; byte + 1 < bytes; byte += 2) {
             float mixedI, mixedQ;
             mixer_.mix(iq[byte] - 127.5f, iq[byte + 1] - 127.5f, mixedI, mixedQ);
             float channelI, channelQ;
             if (!decimator_.push(mixedI, mixedQ, channelI, channelQ)) continue;
+            if (tap) tap->push(channelI, channelQ);
             channel_.push(channelI, channelQ);
             if (++audioCount_ < DspProfiles::channelRate / DspProfiles::audioRate) continue;
             audioCount_ = 0;

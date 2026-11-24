@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "frequency_mixer.h"
 #include "iq_decimator.h"
+#include "channel_iq_tap.h"
 #include "channel_filter.h"
 #include "fm_stereo_decoder.h"
 #include "rds_decoder.h"
@@ -24,7 +25,7 @@ public:
     RdsSnapshot rdsSnapshot() const { return rds_.snapshot(); }
     // Input: interleaved unsigned 8-bit IQ at 2.4 Msps. Output: interleaved L/R at 48 kHz.
     // Capacity and return value are int16 sample counts (two per audio frame).
-    size_t process(const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity);
+    size_t process(const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity, ChannelIqTap* tap = nullptr);
 
 private:
     FrequencyMixer mixer_;

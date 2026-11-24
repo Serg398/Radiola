@@ -17,7 +17,7 @@ void WfmDemodulator::reset() {
 }
 
 size_t WfmDemodulator::process(
-    const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity
+    const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity, ChannelIqTap* tap
 ) {
     size_t produced = 0;
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
@@ -26,6 +26,7 @@ size_t WfmDemodulator::process(
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
         float currentI, currentQ;
         if (!decimator_.push(mixedI, mixedQ, currentI, currentQ)) continue;
+        if (tap) tap->push(currentI, currentQ);
 
         channel_.push(currentI, currentQ);
         if (bandwidth_ < channelBandwidthHz) channel_.output(currentI, currentQ);

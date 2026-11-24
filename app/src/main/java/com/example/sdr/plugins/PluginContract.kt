@@ -22,8 +22,9 @@ internal data class PluginManifest(
     val initialSize: PluginCardSize,
     val script: String,
     val webFiles: Map<String, ByteArray>,
-    val pcmStream: Boolean = false,
+    val webWorker: Boolean = false,
     val sources: Set<ReceiverSource> = supportedPluginSources(output),
+    val input: PluginPort = PluginPort.PCM,
 )
 
 internal fun canRunAudioPlugin(plugin: PluginManifest?, source: ReceiverSource, receiving: Boolean, dataOnly: Boolean): Boolean =

@@ -50,13 +50,16 @@ internal class PluginStore(private val context: Context) {
         val json = JSONObject(required("manifest.json").decodeToString())
         val id = json.getString("id")
         require(id.matches(Regex("[a-z0-9][a-z0-9._-]{0,79}"))) { "Invalid plugin ID" }
-        require(json.getInt("apiVersion") == 1 && json.getString("input") == "PCM") { "Unsupported plugin API" }
+        require(json.getInt("apiVersion") == 1) { "Unsupported plugin API" }
+        val input = PluginPort.valueOf(json.getString("input"))
+        require(input == PluginPort.PCM || input == PluginPort.CHANNEL_IQ) { "Unsupported plugin input" }
         val name = json.getString("name").trim()
         val version = json.getString("version").trim()
         require(name.length in 1..80 && version.length in 1..24) { "Invalid plugin name or version" }
         val output = PluginPort.valueOf(json.getString("output"))
         require(output == PluginPort.PCM || output == PluginPort.CARD) { "Unsupported audio output" }
-        val supportedSources = supportedPluginSources(output)
+        val supportedSources = if (input == PluginPort.CHANNEL_IQ) setOf(pluginSources.getValue("rtl-sdr"))
+            else supportedPluginSources(output)
         val sources = if (json.has("sources")) {
             val declared = json.getJSONArray("sources")
             require(declared.length() in 1..pluginSources.size) { "Invalid plugin sources" }
@@ -70,12 +73,13 @@ internal class PluginStore(private val context: Context) {
         val size = PluginCardSize.valueOf(json.optString("initialSize", "COMPACT"))
         val runtime = json.optString("runtime", "rhino")
         require(runtime == "rhino" || runtime == "web-worker") { "Unsupported plugin runtime" }
-        val pcmStream = runtime == "web-worker"
-        require(!pcmStream || output == PluginPort.CARD && "worker.js" in files) { "Invalid PCM worker package" }
-        val script = if (pcmStream) "" else required("process.js").decodeToString()
+        val webWorker = runtime == "web-worker"
+        require(!webWorker || output == PluginPort.CARD && "worker.js" in files) { "Invalid worker package" }
+        require(input != PluginPort.CHANNEL_IQ || webWorker) { "IQ input requires a web worker" }
+        val script = if (webWorker) "" else required("process.js").decodeToString()
         files.remove("LICENSE")
         require("index.html" in files) { "Missing index.html" }
-        return PluginManifest(id, name, version, output, size, script, files.toMap(), pcmStream, sources)
+        return PluginManifest(id, name, version, output, size, script, files.toMap(), webWorker, sources, input)
     }
 
     private fun InputStream.readBounded(limit: Int): ByteArray {

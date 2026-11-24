@@ -6,6 +6,7 @@
 #include <cstdint>
 #include "frequency_mixer.h"
 #include "iq_decimator.h"
+#include "channel_iq_tap.h"
 #include "dsp_filters.h"
 #include "channel_filter.h"
 
@@ -29,7 +30,7 @@ public:
     }
     void setFrequencyOffset(int hz) { mixer_.setOffset(hz); }
     // Native mode IDs: USB=3, LSB=4, CW=5.
-    size_t process(const uint8_t* iq, size_t bytes, int mode, int16_t* output, size_t capacity) {
+    size_t process(const uint8_t* iq, size_t bytes, int mode, int16_t* output, size_t capacity, ChannelIqTap* tap = nullptr) {
         const auto& inputFilter = DspFilters::ssbInput();
         if (bandwidth_ == 0 || mode != filterMode_) {
             setBandwidth(mode, bandwidth_ == 0 ? DspProfiles::modes[mode].bandwidthHz : bandwidth_);
@@ -43,6 +44,7 @@ public:
             mixer_.mix(iq[byte] - 127.5f, iq[byte+1] - 127.5f, mixedI, mixedQ);
             float channelI, channelQ;
             if (!decimator_.push(mixedI, mixedQ, channelI, channelQ)) continue;
+            if (tap) tap->push(channelI, channelQ);
             inputI_[inputPosition_] = channelI;
             inputQ_[inputPosition_] = channelQ;
             inputPosition_ = (inputPosition_ + 1) % 161;

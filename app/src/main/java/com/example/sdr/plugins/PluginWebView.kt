@@ -85,6 +85,10 @@ internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView
 
     fun open() { loadUrl(page) }
 
+    fun publishChannelIq(payload: String) {
+        port?.postMessage(WebMessage(payload))
+    }
+
     fun replyReceiverCommand(request: JSONObject, error: String?) {
         val requestId = (request.opt("requestId") as? String)?.takeIf { it.length in 1..64 } ?: return
         val payload = JSONObject().put("type", "receiverResult").put("requestId", requestId)

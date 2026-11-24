@@ -15,7 +15,7 @@ void AmDemodulator::reset() {
 }
 
 size_t AmDemodulator::process(
-    const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity
+    const uint8_t* iq, size_t byteCount, int16_t* output, size_t capacity, ChannelIqTap* tap
 ) {
     size_t produced = 0;
     for (size_t byte = 0; byte + 1 < byteCount; byte += 2) {
@@ -24,6 +24,7 @@ size_t AmDemodulator::process(
             static_cast<float>(iq[byte + 1]) - 127.5f, mixedI, mixedQ);
         float channelI, channelQ;
         if (!decimator_.push(mixedI, mixedQ, channelI, channelQ)) continue;
+        if (tap) tap->push(channelI, channelQ);
         channel_.push(channelI, channelQ);
         if (++audioCount_ < audioDecimation) continue;
         audioCount_ = 0;

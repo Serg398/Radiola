@@ -172,7 +172,7 @@ internal class PluginManager(private val context: Context) {
         fallbackBlocks.set(0)
         activePlugin = selected
         playing = true
-        if (selected?.pcmStream == true) {
+        if (selected?.webWorker == true) {
             ready = true
             return
         }
@@ -222,8 +222,8 @@ internal class PluginManager(private val context: Context) {
     @Synchronized
     fun observePcm(samples: ShortArray, count: Int, rate: Int, channels: Int) {
         val plugin = activePlugin ?: return
-        if (plugin.output != PluginPort.CARD || rate <= 0 || channels !in 1..2) return
-        if (plugin.pcmStream) {
+        if (plugin.input != PluginPort.PCM || plugin.output != PluginPort.CARD || rate <= 0 || channels !in 1..2) return
+        if (plugin.webWorker) {
             queuePcm(samples, count, rate, channels)
             return
         }
