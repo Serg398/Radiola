@@ -51,7 +51,7 @@ internal fun AmberSpectrum(
         axisPaint.color = RadiolaColors.secondaryText.toArgb()
         val started = System.nanoTime()
         val left = 31.dp.toPx()
-        val top = 20.dp.toPx()
+        val top = 8.dp.toPx()
         val bottom = size.height
         val width = size.width - left
         val height = bottom - top

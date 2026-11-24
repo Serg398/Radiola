@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.sdr.RadiolaApplication
 import com.example.sdr.plugins.PluginCard
 import com.example.sdr.plugins.PluginCardSize
+import com.example.sdr.plugins.PluginLayout
 import com.example.sdr.plugins.PluginPicker
 import com.example.sdr.plugins.PluginsPage
 import androidx.compose.ui.platform.LocalDensity
@@ -151,7 +152,11 @@ internal fun ReceiverScreen(
     val context = LocalContext.current
     val plugins = (context.applicationContext as RadiolaApplication).plugins
     val plugin = plugins.selected
-    var pluginSize by remember(plugin) { mutableStateOf(plugin?.initialSize ?: PluginCardSize.COMPACT) }
+    var pluginLayout by remember(plugin) {
+        mutableStateOf(PluginLayout.entries.firstOrNull { it.size == plugin?.initialSize } ?: PluginLayout.BOTH)
+    }
+    val showSpectrum = selected != "Waterfall" && (plugin == null || pluginLayout.spectrum)
+    val showWaterfall = selected != "Spectrum" && (plugin == null || pluginLayout.waterfall)
     val online = presentation.online
     val uiState = presentation.state
     val source = uiState.source
@@ -364,12 +369,12 @@ internal fun ReceiverScreen(
                         enabled = !remote || webSession.bandwidthAdjustable)
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
                         webSession.active, presentation::selectBand)
+                    PluginPicker(plugins)
                     if (!remote && activeMode == DemodulationMode.WFM) StereoToggle(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
                     )
                     Spacer(Modifier.weight(1f))
-                    PluginPicker(plugins)
                     com.example.sdr.ui.components.NoiseReductionControl(
                         available = com.example.sdr.audio.HamNoiseSettings.model(activeMode) != 0 && !(openWebRx && webSession.serverDataMode),
                         cw = activeMode == DemodulationMode.CW)
@@ -431,42 +436,52 @@ internal fun ReceiverScreen(
                     Modifier.fillMaxSize().padding(end = 78.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-            if (plugin == null || pluginSize != PluginCardSize.FULL) Box(
+            if (showSpectrum || showWaterfall) Box(
                 Modifier.fillMaxWidth().weight(1f)
                     .clipToBounds()
                     .border(1.dp, edge, RoundedCornerShape(6.dp))
                     .background(RadiolaColors.plot, RoundedCornerShape(6.dp))
             ) {
+                var spectrumControlsWidth by remember { mutableStateOf(0) }
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
-                    if (selected != "Waterfall") {
-                        Box(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
-                                displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
-                            var spectrumControlsWidth by remember { mutableStateOf(0) }
-                            FavoriteFrequencyMarkers(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
-                                Modifier.fillMaxSize().padding(start = 31.dp),
-                                endInset = with(LocalDensity.current) { spectrumControlsWidth.toDp() } + 8.dp,
-                                onSelect = { station ->
-                                    encoderBrakeRequest++
-                                    encoderRotating = false
-                                    presentation.activateFavorite(station) { selected = "Receiver" }
-                                })
-                            Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS", Modifier.align(Alignment.TopStart).padding(start = 5.dp, top = 3.dp), color = muted, fontSize = 11.sp)
-                            Row(Modifier.align(Alignment.TopEnd).onSizeChanged { spectrumControlsWidth = it.width }.padding(end = 7.dp, top = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.fillMaxWidth().height(18.dp)) {
+                        if (showSpectrum) {
+                            Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS",
+                                Modifier.align(Alignment.CenterStart).padding(start = 5.dp),
+                                color = muted, fontSize = 11.sp)
+                        }
+                        FavoriteFrequencyMarkers(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
+                            Modifier.fillMaxSize().padding(start = 31.dp),
+                            endInset = with(LocalDensity.current) { spectrumControlsWidth.toDp() } + 8.dp,
+                            onSelect = { station ->
+                                encoderBrakeRequest++
+                                encoderRotating = false
+                                presentation.activateFavorite(station) { selected = "Receiver" }
+                            })
+
+                        Row(
+                            Modifier.align(Alignment.CenterEnd)
+                                .onSizeChanged { spectrumControlsWidth = it.width }.padding(end = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                             Text("AUTO", color = if (automaticDisplay) warm else muted, fontSize = 10.sp,
                                 modifier = Modifier.clickable { automaticDisplay = !automaticDisplay }
                                     .background(if (automaticDisplay) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
                                     .border(.5.dp, if (automaticDisplay) warm else edge, RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp))
-                            Text(
-                                "SPAN %d kHz".format(Locale.US, visibleSpanHz / 1_000),
-                                color = muted, fontSize = 11.sp
-                            )
-                            }
+                                    .padding(horizontal = 6.dp, vertical = 1.dp))
+                            Text("SPAN %d kHz".format(Locale.US, visibleSpanHz / 1_000), color = muted, fontSize = 11.sp)
                         }
                     }
-                    if (selected != "Spectrum") {
+                    if (showSpectrum) {
+                        Box(Modifier.fillMaxWidth().weight(1f)) {
+                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
+                                displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
+                            FavoriteFrequencyGuides(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
+                                Modifier.fillMaxSize().padding(start = 31.dp))
+                        }
+                    }
+                    if (showWaterfall) {
                         Box(Modifier.fillMaxWidth().weight(1f).then(waterfallNavigation(
                             visibleSpanHz = visibleSpanHz,
                             zoom = effectiveZoom,
@@ -530,6 +545,7 @@ internal fun ReceiverScreen(
                     }
                 }
 
+
             }
             val cardKind = when {
                 presentation.faxSelected -> "fax"
@@ -568,18 +584,13 @@ internal fun ReceiverScreen(
             ) {}
             }
             if (plugin != null) {
-                val cardModifier = when (pluginSize) {
-                    PluginCardSize.COMPACT -> Modifier.fillMaxWidth().height(68.dp)
+                val cardModifier = when (pluginLayout.size) {
+                    PluginCardSize.COMPACT -> Modifier.fillMaxWidth().height(80.dp)
                     PluginCardSize.EXPANDED -> Modifier.fillMaxWidth().height(116.dp)
                     PluginCardSize.FULL -> Modifier.fillMaxWidth().weight(1f)
                 }
-                PluginCard(plugins, pluginSize, onResize = {
-                    pluginSize = when (pluginSize) {
-                        PluginCardSize.COMPACT -> PluginCardSize.EXPANDED
-                        PluginCardSize.EXPANDED -> PluginCardSize.FULL
-                        PluginCardSize.FULL -> PluginCardSize.COMPACT
-                    }
-                }, playable = pluginPlayable, modifier = cardModifier)
+                PluginCard(plugins, pluginLayout, onLayout = { pluginLayout = it },
+                    playable = pluginPlayable, modifier = cardModifier)
             }
                 }
                 androidx.compose.animation.AnimatedVisibility(

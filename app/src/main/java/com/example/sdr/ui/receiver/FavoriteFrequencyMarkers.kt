@@ -11,6 +11,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -33,7 +34,6 @@ private data class FavoriteLabelGroup(val stations: MutableList<FavoriteStation>
 internal fun FavoriteFrequencyMarkers(stations: List<FavoriteStation>, centerHz: Double, spanHz: Int,
     modifier: Modifier = Modifier, endInset: Dp = 0.dp, onSelect: (FavoriteStation) -> Unit) {
     val accent = RadiolaColors.primary
-    val guide = RadiolaColors.adaptive(Color(0xFF167A78), Color(0xFF70C7C2), Color(0xFF397F77))
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val style = TextStyle(fontSize = 10.sp)
@@ -69,21 +69,12 @@ internal fun FavoriteFrequencyMarkers(stations: List<FavoriteStation>, centerHz:
             }
             result
         }
-        Canvas(Modifier.fillMaxSize()) {
-            clipRect {
-                visible.distinctBy { it.frequencyHz }.forEach { station ->
-                    val anchor = x(station)
-                    drawLine(guide.copy(alpha = .38f), Offset(anchor, 17.dp.toPx()), Offset(anchor, size.height),
-                        .65.dp.toPx())
-                }
-            }
-        }
         groups.forEach { group ->
             key(group.stations.map { it.id }) {
                 var expanded by remember { mutableStateOf(false) }
                 val multiple = group.stations.size > 1
                 val title = if (multiple) "${group.stations.first().name} +${group.stations.size - 1}" else group.stations.first().name
-                Box(Modifier.offset(x = with(density) { group.left.toDp() }, y = 2.dp)
+                Box(Modifier.align(Alignment.CenterStart).offset(x = with(density) { group.left.toDp() })
                     .width(with(density) { group.width.toDp() })) {
                     Text(title, color = accent, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
@@ -98,6 +89,31 @@ internal fun FavoriteFrequencyMarkers(stations: List<FavoriteStation>, centerHz:
                                 onClick = { expanded = false; onSelect(station) })
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun FavoriteFrequencyGuides(
+    stations: List<FavoriteStation>,
+    centerHz: Double,
+    spanHz: Int,
+    modifier: Modifier = Modifier,
+) {
+    val guide = RadiolaColors.adaptive(Color(0xFF167A78), Color(0xFF70C7C2), Color(0xFF397F77))
+    val frequencies = remember(stations) { stations.map { it.frequencyHz }.distinct() }
+    Canvas(modifier) {
+        if (spanHz <= 0) return@Canvas
+        val low = centerHz - spanHz / 2.0
+        clipRect {
+            for (frequency in frequencies) {
+                val fraction = (frequency - low) / spanHz
+                if (fraction in 0.0..1.0) {
+                    val x = (fraction * size.width).toFloat()
+                    drawLine(guide.copy(alpha = .38f), Offset(x, 0f), Offset(x, size.height), .65.dp.toPx())
                 }
             }
         }

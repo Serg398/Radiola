@@ -4,13 +4,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sdr.ui.decoders.DecoderCardFrame
+import com.example.sdr.ui.decoders.DecoderAction
+import com.example.sdr.ui.decoders.DecoderDivider
+import com.example.sdr.ui.decoders.DecoderToolbar
+import com.example.sdr.ui.decoders.DecoderToolbarText
 import com.example.sdr.ui.theme.RadiolaColors
 import kotlinx.coroutines.delay
+
+internal enum class PluginLayout(val label: String, val spectrum: Boolean, val waterfall: Boolean, val size: PluginCardSize) {
+    BOTH("Both", true, true, PluginCardSize.COMPACT),
+    TALL("Tall card", true, true, PluginCardSize.EXPANDED),
+    SPECTRUM("Spectrum", true, false, PluginCardSize.EXPANDED),
+    WATERFALL("Waterfall", false, true, PluginCardSize.EXPANDED),
+    CARD("Card only", false, false, PluginCardSize.FULL),
+}
 
 @Composable
 internal fun PluginPicker(manager: PluginManager) {
@@ -43,7 +55,7 @@ internal fun PluginsPage(manager: PluginManager) {
 
 @Composable
 internal fun PluginCard(
-    manager: PluginManager, size: PluginCardSize, onResize: () -> Unit,
+    manager: PluginManager, layout: PluginLayout, onLayout: (PluginLayout) -> Unit,
     playable: Boolean, modifier: Modifier,
 ) {
     val plugin = manager.selected ?: return
@@ -64,22 +76,31 @@ internal fun PluginCard(
         manager.playing -> "JS active: $processed blocks / $fallback bypassed"
         else -> "Bypass"
     }
-    DecoderCardFrame(modifier, sidebar = {
-        Column(Modifier.width(124.dp).padding(top = 8.dp)) {
-            Text(plugin.name, color = RadiolaColors.primary, fontSize = 17.sp)
-            Text("PCM / PCM", color = RadiolaColors.secondaryText, fontSize = 11.sp)
+    DecoderCardFrame(modifier) {
+        DecoderToolbar {
+            Text(plugin.name.uppercase(java.util.Locale.ROOT), color = RadiolaColors.secondaryText,
+                style = DecoderToolbarText, modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("v${plugin.version}", color = RadiolaColors.secondaryText,
+                style = DecoderToolbarText, maxLines = 1)
         }
-    }) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { if (manager.playing) manager.stop() else manager.play() },
-                enabled = playable || manager.playing) { Text(if (manager.playing) "STOP" else "PLAY") }
+        DecoderDivider()
+        DecoderToolbar {
             Text("Gain ${(manager.gain * 100).toInt()}% / $status",
-                color = RadiolaColors.secondaryText, fontSize = 12.sp)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onResize) { Text(if (size == PluginCardSize.FULL) "COLLAPSE" else "EXPAND") }
-            TextButton(onClick = { manager.select(null) }) { Text("CLOSE") }
+                color = RadiolaColors.secondaryText, style = DecoderToolbarText,
+                modifier = Modifier.weight(1f).alignByBaseline(), maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
+            DecoderAction(if (manager.playing) "STOP" else "PLAY", enabled = playable || manager.playing) {
+                if (manager.playing) manager.stop() else manager.play()
+            }
+            DecoderAction("CLOSE") { manager.select(null) }
         }
         Slider(value = manager.gain.toFloat(), onValueChange = { manager.updateGain(it.toDouble()) },
             modifier = Modifier.width(220.dp).height(24.dp), valueRange = .25f..2f)
+        DecoderToolbar {
+            PluginLayout.entries.forEach { option ->
+                DecoderAction(option.label, checked = layout == option) { onLayout(option) }
+            }
+        }
     }
 }
