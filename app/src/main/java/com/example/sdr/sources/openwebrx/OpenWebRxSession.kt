@@ -16,7 +16,7 @@ import com.example.sdr.decoders.cw.CwDecodeWorker
 import com.example.sdr.decoders.ftx.FtxDecodeWorker
 import com.example.sdr.decoders.ftx.FtxMode
 import com.example.sdr.receiver.BandwidthOptions
-import com.example.sdr.receiver.SpectrumFrameQueue
+import com.example.sdr.receiver.VsyncFramePublisher
 import com.example.sdr.receiver.LatestCommand
 import com.example.sdr.receiver.OnlineReceiverSession
 import com.example.sdr.receiver.ReceiverAudioMetrics
@@ -29,7 +29,6 @@ import com.example.sdr.receiver.offsetForBandwidth
 import com.example.sdr.sources.websdr.WebSdrBandwidth
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import okhttp3.*
@@ -158,39 +157,18 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private var diagnosticsAt = 0L
     private var renderedFft = 0
     private data class Row(val token: Long, val bins: FloatArray, val center: Long, val span: Int, val timestampNanos: Long)
-    private val pendingRows = SpectrumFrameQueue<Row>()
-    private val renderScheduled = AtomicBoolean(false)
-    @Volatile private var nextRenderAt = 0L
-    private fun scheduleRender() {
-        if (renderScheduled.compareAndSet(false, true)) {
-            handler.postDelayed(render, (nextRenderAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
-        }
-    }
-    private fun clearPendingFrames() {
-        pendingRows.clear()
-        handler.removeCallbacks(render)
-        renderScheduled.set(false)
-        nextRenderAt = 0
-    }
-    private var lastSentTuning: JSONObject? = null
-    private val render = object : Runnable {
-        override fun run() {
-            if (!active) { renderScheduled.set(false); return }
-            pendingRows.poll(SystemClock.elapsedRealtime())?.let { row ->
-                if (initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
-                    val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
-                    if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
-                    waterfallHistory.append(captured); frame = captured; frames++; renderedFft++; spectrumWarning = null
-                    if (!needsAudio && initialized && state != ReceiverConnectionState.Connected) {
-                        state = ReceiverConnectionState.Connected; error = null; retry = 0
-                    }
-                }
+    private val pendingRows = VsyncFramePublisher<Row> { row ->
+        if (active && initialized && !changingProfile && row.token == generation && row.center == centerHz && row.span == spanHz) {
+            val captured = SpectrumFrame(row.bins, row.center, ++frameId, row.timestampNanos, row.token, row.span)
+            if (waterfallHistory.binCount != row.bins.size) waterfallHistory = WaterfallHistory(row.bins.size)
+            waterfallHistory.append(captured); frame = captured; frames++; renderedFft++; spectrumWarning = null
+            if (!needsAudio && state != ReceiverConnectionState.Connected) {
+                state = ReceiverConnectionState.Connected; error = null; retry = 0
             }
-            nextRenderAt = SystemClock.elapsedRealtime() + 34
-            renderScheduled.set(false)
-            if (pendingRows.isNotEmpty()) scheduleRender()
         }
     }
+    private fun clearPendingFrames() = pendingRows.clear()
+    private var lastSentTuning: JSONObject? = null
     // Keep gesture updates local; the remote DSP only needs the latest frequency.
     private val tuning = LatestCommand<JSONObject>(34, SystemClock::elapsedRealtime,
         { task, delay -> handler.postDelayed(task, delay); Unit }, handler::removeCallbacks) {
@@ -387,8 +365,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                             receivedFft.incrementAndGet()
                             lastFftAt = SystemClock.elapsedRealtime()
                             pendingRows.offer(Row(token, bins, decoder.centerHz, decoder.spanHz,
-                                SystemClock.elapsedRealtimeNanos()), lastFftAt)
-                            scheduleRender()
+                                SystemClock.elapsedRealtimeNanos()))
                         }
                         2, 4 -> {
                             val rate = if (bytes[0].toInt() == 4) 48000 else 12000

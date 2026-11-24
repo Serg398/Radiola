@@ -31,3 +31,15 @@ Added an optional SurfaceView inside WaterfallView for USB only. History publica
 Debug build, 109 tests and Lint passed. Screenshot confirmed waterfall and passband overlays. Background/foreground restored USB reception at 30 FPS without AndroidRuntime errors.
 
 The first 12-second trace including receiver startup had 321 surface buffer updates, p95 49.60 ms and max 66.84 ms. After warm-up, a second trace had 359 updates: median 33.17 ms, p95 33.49 ms, p99 35.19 ms, max 49.86 ms, four gaps of at least 45 ms. Warm-up matters. The earlier ordinary-View measurement used frame presentation timestamps, while this surface measurement uses SurfaceFlinger setBuffer timestamps; the comparison supports improved steady pacing but is not an identical measurement of final display presentation. Rare pauses remain.
+
+## WebSDR и OpenWebRX
+
+Сетевые сессии переведены с `Handler.postDelayed(..., 34)` на общий `VsyncFramePublisher`. Декодирование пакетов остаётся в сетевых потоках. Очередь сохраняет прежние ограничения: максимум три кадра и возраст до 250 мс. Публикация истории и спектра выполняется в главном потоке через `Choreographer` с темпом не выше 30 Гц.
+
+Для сглаживания сетевых пачек при запуске очереди допускается короткий запас: второй кадр либо примерно 33 мс ожидания, после чего используется ближайший VSync. Сервер с 5–8 FPS не обязан прислать второй кадр для вывода первого. Планировщик останавливается при опустошении очереди, а при отключении или смене потока снимает callback и очищает данные. Проверки поколения сессии и RF-координат остаются в клиентах протоколов.
+
+Водопад обоих сетевых источников теперь использует ту же отдельную SurfaceView и прямое уведомление об обновлении истории, что и USB. Шкала, жесты, AUTO и наложение полосы приёма сохраняются. Обновление цветового кэша также перерисовывает поверхность при изменении AUTO без новых FFT.
+
+Частота сетевых запросов, параметры серверного потока, декодирование аудио и команды настройки не менялись. Новые кадры не синтезируются: если сервер отдаёт 8 FPS, VSync не превращает их в 30 FPS.
+
+Проверка: debug APK и APK тестов собраны, 116 unit-тестов и Lint прошли. На OnePlus 15R прошли 7 instrumentation-тестов: три сценария `VsyncFramePublisherTest`, восстановление WebSDR при сбоях и пересоздании Activity, доставка пачек FFT OpenWebRX и сохранение аудио при остановке FFT, настройка OpenWebRX без повторного открытия сокета, сохранение USB-истории при переходе в настройки. Сетевые сценарии использовали моделируемые серверы. Новая сборка установлена. Замеры плавности на публичных серверах до/после этой правки не выполнялись.

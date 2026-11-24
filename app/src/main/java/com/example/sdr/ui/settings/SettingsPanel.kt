@@ -10,8 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,17 +26,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.sdr.DemodulationMode
 import com.example.sdr.R
 import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.platform.EncoderFeedback
-import com.example.sdr.receiver.ReceiverGain
-import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.TuningStep
 import com.example.sdr.ui.theme.RadiolaColors
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 private val settingsEdge get() = RadiolaColors.border
 private val settingsWarm get() = RadiolaColors.primary
@@ -46,24 +38,19 @@ private val settingsIvory get() = RadiolaColors.text
 private val settingsMuted get() = RadiolaColors.secondaryText
 
 private enum class SettingsPage(val title: String) {
-    ROOT("Settings"), RECEIVER("Receiver"), GAIN("Gain controls"), SQL("Squelch"),
-    AUDIO("Audio"), DISPLAY("Display"), BACKLIGHT("Backlight"), SIGNAL_METER("S-meter"), METER_TYPE("Type"), METER_INERTIA("Inertia"),
+    ROOT("Settings"), DISPLAY("Display"), BACKLIGHT("Backlight"), SIGNAL_METER("S-meter"), METER_TYPE("Type"), METER_INERTIA("Inertia"),
     ENCODER("Encoder"), STEP("Tuning step"), FEEDBACK("Tactile feedback"),
-    DEVICE("Device"), ABOUT("About"), THEME("Theme")
+    ABOUT("About"), THEME("Theme")
 }
 
 @Composable
 internal fun SettingsPanel(
-    gain: ReceiverGain, gainSteps: List<Int>, onGainChange: (ReceiverGain) -> Unit,
-    squelch: ReceiverSquelch, onSquelchChange: (ReceiverSquelch) -> Unit,
-    mode: DemodulationMode, stereo: Boolean, onStereoChange: (Boolean) -> Unit,
     tuningStep: TuningStep, onStepChange: (TuningStep) -> Unit,
     feedback: EncoderFeedback, onFeedbackChange: (EncoderFeedback) -> Unit,
     signalMeterInertia: SignalMeterInertia, onSignalMeterInertiaChange: (SignalMeterInertia) -> Unit,
     analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean, onScreenAlwaysOnChange: (Boolean) -> Unit,
-    deviceName: String, connected: Boolean, permitted: Boolean, streaming: Boolean, pending: Boolean,
-    onPermission: () -> Unit, onUsbTest: () -> Unit, onIqTest: () -> Unit, onClose: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var path by remember { mutableStateOf(listOf(SettingsPage.ROOT)) }
@@ -109,32 +96,6 @@ internal fun SettingsPanel(
                             SettingsChoice(theme.label, RadiolaColors.selected == theme) { RadiolaColors.select(theme, themeContext) }
                         }
                     }
-                    SettingsPage.RECEIVER -> {
-                        SettingsEntry("Gain controls", "RF AGC, manual gain and bias-T") { open(SettingsPage.GAIN) }
-                        SettingsEntry("Squelch", if (squelch.enabled) "ON \u00b7 ${squelch.thresholdDbfs.roundToInt()} dBFS" else "OFF") { open(SettingsPage.SQL) }
-                    }
-                    SettingsPage.GAIN -> {
-                        SettingsToggle("RF AGC", "Automatic tuner gain", gain.rfAgc) { onGainChange(gain.copy(rfAgc = it)) }
-                        if (gainSteps.isNotEmpty()) {
-                            val index = gainSteps.indices.minByOrNull { abs(gainSteps[it] - gain.gainTenthsDb) } ?: 0
-                            SettingsSlider("RF gain", if (gain.rfAgc) "AUTO" else "%.1f dB".format(Locale.US, gain.gainTenthsDb / 10f),
-                                index.toFloat(), 0f..maxOf(1, gainSteps.lastIndex).toFloat(), !gain.rfAgc,
-                                maxOf(0, gainSteps.size - 2)) { onGainChange(gain.copy(gainTenthsDb = gainSteps[it.roundToInt().coerceIn(gainSteps.indices)])) }
-                        }
-                        SettingsToggle("Bias-T", "Power for an active antenna or amplifier", gain.biasT) { onGainChange(gain.copy(biasT = it)) }
-                    }
-                    SettingsPage.SQL -> {
-                        SettingsToggle("Squelch", "Mute audio below the selected signal level", squelch.enabled) { onSquelchChange(squelch.copy(enabled = it)) }
-                        SettingsSlider("Threshold", "${squelch.thresholdDbfs.roundToInt()} dBFS", squelch.thresholdDbfs, -90f..-6f, true, 83) {
-                            onSquelchChange(squelch.copy(thresholdDbfs = it.roundToInt().toFloat()))
-                        }
-                    }
-                    SettingsPage.AUDIO -> {
-                        SettingsToggle("Audio AGC", "Automatic playback level", gain.audioAgc) { onGainChange(gain.copy(audioAgc = it)) }
-                        SettingsToggle("WFM stereo", "Automatic mono fallback without a stable pilot", stereo,
-                            mode == DemodulationMode.WFM, onStereoChange)
-                        Text("Volume is controlled with the phone's volume buttons.", color = settingsMuted, fontSize = 13.sp)
-                    }
                     SettingsPage.DISPLAY -> {
                         SettingsEntry("Theme", RadiolaColors.selected.label) { open(SettingsPage.THEME) }
                         SettingsEntry("Backlight", if (screenAlwaysOn) "Lock" else "Auto") { open(SettingsPage.BACKLIGHT) }
@@ -174,16 +135,6 @@ internal fun SettingsPanel(
                         }
                         Spacer(Modifier.height(10.dp))
                         Text("Short clicks at the wheel detents, controlled by OFF / LIGHT / MEDIUM.", color = settingsMuted, fontSize = 13.sp)
-                    }
-                    SettingsPage.DEVICE -> {
-                        SettingsInfo("Receiver", deviceName)
-                        SettingsInfo("USB", if (!connected) "Disconnected" else if (!permitted) "Permission required" else "Connected")
-                        SettingsInfo("Reception", if (streaming) "Running" else if (pending) "Please wait" else "Stopped")
-                        if (connected && !permitted) SettingsButton("Grant USB access", !pending, onPermission)
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            SettingsButton("USB test", connected && permitted && !streaming && !pending, onUsbTest)
-                            SettingsButton("IQ test", connected && permitted && !streaming && !pending, onIqTest)
-                        }
                     }
                     SettingsPage.ABOUT -> {
                         val context = LocalContext.current
@@ -226,31 +177,6 @@ private fun SettingsInfo(title: String, value: String) {
 }
 
 @Composable
-private fun SettingsToggle(title: String, subtitle: String, value: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!value) }.padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = if (enabled) settingsIvory else settingsMuted, fontSize = 16.sp)
-            Text(subtitle, color = settingsMuted, fontSize = 12.sp)
-        }
-        Text(if (value) "ON" else "OFF", color = if (value && enabled) settingsWarm else settingsMuted, fontSize = 15.sp)
-    }
-}
-
-@Composable
-private fun SettingsSlider(title: String, reading: String, value: Float, range: ClosedFloatingPointRange<Float>, enabled: Boolean,
-    steps: Int, onChange: (Float) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(title, color = settingsIvory, fontSize = 16.sp)
-            Text(reading, color = settingsWarm, fontSize = 15.sp)
-        }
-        Slider(value, onChange, enabled = enabled, valueRange = range, steps = steps,
-            colors = SliderDefaults.colors(thumbColor = settingsWarm, activeTrackColor = settingsWarm, inactiveTrackColor = settingsEdge))
-    }
-}
-
-@Composable
 private fun SettingsChoice(label: String, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().height(42.dp).clickable(onClick = onClick).padding(horizontal = 12.dp),
@@ -259,13 +185,5 @@ private fun SettingsChoice(label: String, active: Boolean, modifier: Modifier = 
             if (active) Text("\u2713", color = settingsWarm, fontSize = 17.sp)
         }
         HorizontalDivider(color = settingsEdge.copy(alpha = 0.5f), thickness = 0.5.dp)
-    }
-}
-
-@Composable
-private fun SettingsButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Box(Modifier.height(38.dp).clickable(enabled = enabled, onClick = onClick)
-        .padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-        Text(label, color = if (enabled) settingsWarm else settingsMuted, fontSize = 14.sp)
     }
 }

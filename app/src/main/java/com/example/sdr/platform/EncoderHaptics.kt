@@ -26,7 +26,7 @@ class EncoderHaptics(context: Context) {
     private var lastTickMs = 0L
 
     private fun effect(scale: Float, amplitude: Int): VibrationEffect {
-        if (Build.VERSION.SDK_INT >= 30 && vibrator?.arePrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_LOW_TICK)?.firstOrNull() == true) {
+        if (Build.VERSION.SDK_INT >= 31 && vibrator?.arePrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_LOW_TICK)?.firstOrNull() == true) {
             return VibrationEffect.startComposition()
                 .addPrimitive(VibrationEffect.Composition.PRIMITIVE_LOW_TICK, scale).compose()
         }

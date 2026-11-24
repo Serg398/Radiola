@@ -14,6 +14,7 @@ import android.os.Message
 import android.os.Messenger
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.setValue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -54,7 +55,7 @@ internal class PluginManager(private val context: Context) {
     @Synchronized
     fun drainPcm(): List<PcmBlock> = pcmQueue.toList().also { pcmQueue.clear() }
 
-    internal class Block(val id: Int, val endpoint: Messenger, val analysisRate: Int = 0) {
+    internal class Block(val id: Int, val endpoint: Messenger, val sampleCount: Int, val analysisRate: Int = 0) {
         @Volatile var output: ShortArray? = null
         val ready = CountDownLatch(1)
     }
@@ -71,7 +72,7 @@ internal class PluginManager(private val context: Context) {
         private set
     val processedBlocks = AtomicLong()
     val fallbackBlocks = AtomicLong()
-    var gain by mutableStateOf(1.5)
+    var gain by mutableDoubleStateOf(1.5)
         private set
     @Volatile private var activeGain = 1.5
     @Volatile private var endpoint: Messenger? = null
@@ -112,7 +113,7 @@ internal class PluginManager(private val context: Context) {
                     }
                 }
             } else {
-                block.output = message.data.getShortArray("pcm")
+                block.output = message.data.getShortArray("pcm")?.takeIf { it.size == block.sampleCount }
                 if (block.output == null) reportFailure(block, "Script processing failed")
             }
             block.ready.countDown()
@@ -207,6 +208,7 @@ internal class PluginManager(private val context: Context) {
     }
 
     private fun reportFailure(block: Block, message: String) {
+        block.ready.countDown()
         handler.post { if (endpoint === block.endpoint) fail(message) }
     }
 
@@ -273,7 +275,7 @@ internal class PluginManager(private val context: Context) {
     }
 
     private fun send(target: Messenger, samples: ShortArray, rate: Int): Block {
-        val block = Block(sequence.incrementAndGet(), target, rate)
+        val block = Block(sequence.incrementAndGet(), target, samples.size, rate)
         pending[block.id] = block
         val request = Message.obtain(null, if (rate == 0) PROCESS_PCM else ANALYZE_PCM, block.id, 0).apply {
             replyTo = reply

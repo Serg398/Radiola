@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -69,9 +71,9 @@ internal fun VerticalEncoder(
     val currentStep by rememberUpdatedState(onStep)
     val currentMode by rememberUpdatedState(tuningStep)
     var menuExpanded by remember { mutableStateOf(false) }
-    var activeStepHz by remember { mutableStateOf(1_000L) }
-    var travel by remember { mutableStateOf(0f) }
-    var phase by remember { mutableStateOf(0f) }
+    var activeStepHz by remember { mutableLongStateOf(1_000L) }
+    var travel by remember { mutableFloatStateOf(0f) }
+    var phase by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val pitch = with(density) { 18.dp.toPx() }
     val notch = with(density) { 18.dp.toPx() }
@@ -79,10 +81,10 @@ internal fun VerticalEncoder(
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var idleJob by remember { mutableStateOf<Job?>(null) }
     var motionIdleJob by remember { mutableStateOf<Job?>(null) }
-    var lastRotationSpeed by remember { mutableStateOf(0f) }
-    var lastRotationTime by remember { mutableStateOf(0L) }
-    var carrySpeed by remember { mutableStateOf(0f) }
-    var lastRotationDirection by remember { mutableStateOf(0f) }
+    var lastRotationSpeed by remember { mutableFloatStateOf(0f) }
+    var lastRotationTime by remember { mutableLongStateOf(0L) }
+    var carrySpeed by remember { mutableFloatStateOf(0f) }
+    var lastRotationDirection by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(brakeRequest) {
         if (brakeRequest != 0) {
             flingJob?.cancel()

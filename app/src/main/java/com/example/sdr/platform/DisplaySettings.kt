@@ -5,7 +5,6 @@ import com.example.sdr.DemodulationMode
 import com.example.sdr.receiver.ReceiverGain
 import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.TuningStep
-import com.example.sdr.ui.receiver.WaterfallFrameRate
 
 class DisplaySettings(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("display", Context.MODE_PRIVATE)
@@ -55,13 +54,6 @@ class DisplaySettings(context: Context) {
     fun saveReceiverSquelch(value: ReceiverSquelch) {
         preferences.edit().putBoolean("squelch_enabled", value.enabled)
             .putFloat("squelch_threshold", value.thresholdDbfs).apply()
-    }
-
-    fun waterfallFrameRate(): WaterfallFrameRate =
-        WaterfallFrameRate.fromStored(preferences.getString("waterfall_frame_rate", null))
-
-    fun saveWaterfallFrameRate(option: WaterfallFrameRate) {
-        preferences.edit().putString("waterfall_frame_rate", option.name).apply()
     }
 
     fun tuningStep(): TuningStep = TuningStep.fromStored(preferences.getString("tuning_step", null))

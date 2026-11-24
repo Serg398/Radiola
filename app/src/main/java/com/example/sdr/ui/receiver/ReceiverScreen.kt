@@ -24,6 +24,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -67,7 +70,6 @@ import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.TuningStep
 import com.example.sdr.receiver.WaterfallHistory
 import com.example.sdr.receiver.offsetForBandwidth
-import com.example.sdr.sources.usb.ReceiverState
 import com.example.sdr.ui.components.BandwidthControl
 import com.example.sdr.ui.components.ModeControl
 import com.example.sdr.ui.components.SourcePlaybackControl
@@ -91,37 +93,28 @@ private val ivory get() = RadiolaColors.text
 @Composable
 internal fun ReceiverScreen(
     presentation: ReceiverPresentation,
-    deviceName: String,
     connected: Boolean,
     permitted: Boolean,
-    usbCheckResult: String?,
     streaming: Boolean,
     streamPending: Boolean,
     starting: Boolean = false,
-    receiverState: ReceiverState = if (streaming) ReceiverState.Running else ReceiverState.Idle,
     frequencyInput: String,
     spectrumSpanHz: Int,
     bandwidthDefault: Boolean = true,
     receiverGain: ReceiverGain,
     gainSteps: List<Int>,
     spectrumState: State<SpectrumFrame?>,
-    waterfallState: State<SpectrumFrame?>,
     waterfallHistory: WaterfallHistory,
-    waterfallFrameRate: WaterfallFrameRate,
     tuningStep: TuningStep,
-    actualSpectrumFps: Int,
     actualWaterfallFps: Int,
     signalDbfs: Float,
     onRequestPermission: () -> Unit,
-    onCheckConnection: () -> Unit,
-    onCaptureIq: () -> Unit,
     onStartStream: () -> Unit,
     onStopStream: () -> Unit,
     onFrequencyInput: (String) -> Unit,
     onTune: () -> Unit,
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
-    onWaterfallFrameRateChange: (WaterfallFrameRate) -> Unit,
     signalMeterInertia: SignalMeterInertia, onSignalMeterInertiaChange: (SignalMeterInertia) -> Unit,
     analogSignalMeter: Boolean, onAnalogSignalMeterChange: (Boolean) -> Unit,
     screenAlwaysOn: Boolean,
@@ -188,10 +181,9 @@ internal fun ReceiverScreen(
     LaunchedEffect(tunedHz, editingFrequency) {
         if (!editingFrequency) remoteInput = "%.6f".format(Locale.US, tunedHz / 1_000_000.0)
     }
-    var zoom by remember { mutableStateOf(1f) }
+    var zoom by remember { mutableFloatStateOf(1f) }
     val onlineFrame = remember(webSession) { androidx.compose.runtime.derivedStateOf { webSession.frame } }
     val activeSpectrum = if (remote) onlineFrame else spectrumState
-    val activeWaterfall = if (remote) onlineFrame else waterfallState
     val activeHistory = if (remote) webSession.waterfallHistory else waterfallHistory
     val captureSpanHz = if (remote) webSession.bands.getOrNull(webSession.currentBand)?.spanHz
         ?: spectrumSpanHz else spectrumSpanHz
@@ -208,9 +200,9 @@ internal fun ReceiverScreen(
         if (selectedPlugin != null && plugin == null) plugins.select(null)
         else if (!pluginPlayable) plugins.stop()
     }
-    var displayFrequencyHz by remember { mutableStateOf(tunedHz.toDouble()) }
+    var displayFrequencyHz by remember { mutableDoubleStateOf(tunedHz.toDouble()) }
     var encoderRotating by remember { mutableStateOf(false) }
-    var encoderBrakeRequest by remember { mutableStateOf(0) }
+    var encoderBrakeRequest by remember { mutableIntStateOf(0) }
     val frequencyMotion = remember { FrequencyMotion(tunedHz.toDouble()) }
     val latestFrequencyHz by rememberUpdatedState(tunedHz)
     val latestSpanHz by rememberUpdatedState(captureSpanHz)
@@ -405,17 +397,11 @@ internal fun ReceiverScreen(
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 if (selected == "Settings") {
                     SettingsPanel(
-                        gain = receiverGain, gainSteps = gainSteps, onGainChange = onReceiverGainChange,
-                        squelch = receiverSquelch, onSquelchChange = onSquelchChange,
-                        mode = activeMode, stereo = wfmStereoEnabled, onStereoChange = onWfmStereoChange,
                         tuningStep = tuningStep, onStepChange = onTuningStepChange,
                         feedback = encoderFeedback, onFeedbackChange = onEncoderFeedbackChange,
                         signalMeterInertia = signalMeterInertia, onSignalMeterInertiaChange = onSignalMeterInertiaChange,
                         analogSignalMeter = analogSignalMeter, onAnalogSignalMeterChange = onAnalogSignalMeterChange,
                         screenAlwaysOn = screenAlwaysOn, onScreenAlwaysOnChange = onScreenAlwaysOnChange,
-                        deviceName = deviceName, connected = connected, permitted = permitted,
-                        streaming = streaming, pending = streamPending,
-                        onPermission = onRequestPermission, onUsbTest = onCheckConnection, onIqTest = onCaptureIq,
                         onClose = { selected = "Receiver" }
                     )
                 } else if (selected == "Favorites") {
@@ -486,11 +472,10 @@ internal fun ReceiverScreen(
                         ))) {
                             androidx.compose.runtime.key(activeHistory) {
                             AndroidView(
-                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024, separateSurface = !remote) },
+                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024, separateSurface = true) },
                                 update = { view ->
                                     view.setDisplayRange(if (automaticDisplay) automaticLevels?.waterfall else null)
                                     view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
-                                    if (remote) activeWaterfall.value // USB is driven directly by history publication.
                                     view.refresh()
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset)
@@ -598,7 +583,7 @@ private fun ReceiverPlotHeader(
     onAutomatic: () -> Unit,
     onFavorite: (com.example.sdr.favorites.FavoriteStation) -> Unit,
 ) {
-    var controlsWidth by remember { mutableStateOf(0) }
+    var controlsWidth by remember { mutableIntStateOf(0) }
     Box(Modifier.fillMaxWidth().height(ReceiverPlotGeometry.headerHeight)) {
         if (axisLabel != null) {
             Text(axisLabel, Modifier.align(Alignment.CenterStart).padding(start = 5.dp),

@@ -5,8 +5,6 @@ object NativeSdr {
         System.loadLibrary("sdr_native")
     }
 
-    external fun isUsbDescriptorOpen(fd: Int): Boolean
-    external fun captureIq(fd: Int, frequencyHz: Long): String
     external fun startStream(fd: Int, frequencyHz: Long): Int
     external fun stopStream()
     external fun streamStats(): LongArray

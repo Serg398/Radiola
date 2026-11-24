@@ -3,7 +3,6 @@
 #include "visual_timings.h"
 #include "audio_queue_policy.h"
 #include <jni.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <cstdio>
 #include <atomic>
@@ -583,51 +582,6 @@ Java_com_example_sdr_NativeSdr_receiverRates(JNIEnv *env, jobject) {
     jintArray result = env->NewIntArray(2);
     if (result) env->SetIntArrayRegion(result, 0, 2, values);
     return result;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_sdr_NativeSdr_isUsbDescriptorOpen(JNIEnv *, jobject, jint fd) {
-    return fd >= 0 && fcntl(fd, F_GETFD) != -1;
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_sdr_NativeSdr_captureIq(JNIEnv *env, jobject, jint fd, jlong frequency_hz) {
-    int native_fd = dup(fd);
-    if (native_fd < 0) return env->NewStringUTF("Не удалось скопировать USB-дескриптор");
-
-    rtlsdr_dev_t *device = nullptr;
-    int result = rtlsdr_open_fd(&device, native_fd);
-    if (result < 0 || !device) {
-        close(native_fd);
-        char message[96];
-        snprintf(message, sizeof(message), "Ошибка открытия RTL-SDR: %d", result);
-        return env->NewStringUTF(message);
-    }
-
-    char message[128];
-    result = rtlsdr_set_sample_rate(device, WfmDemodulator::inputSampleRate);
-    if (result == 0) result = rtlsdr_set_center_freq(device, static_cast<uint32_t>(frequency_hz));
-    if (result == 0) result = rtlsdr_reset_buffer(device);
-    if (result == 0) {
-        unsigned char samples[32768];
-        int received = 0;
-        result = rtlsdr_read_sync(device, samples, sizeof(samples), &received);
-        if (result == 0 && received > 0) {
-            unsigned char minimum = 255, maximum = 0;
-            for (int i = 0; i < received; ++i) {
-                if (samples[i] < minimum) minimum = samples[i];
-                if (samples[i] > maximum) maximum = samples[i];
-            }
-            snprintf(message, sizeof(message), "IQ получены: %d байт, диапазон %u–%u", received, minimum, maximum);
-        } else {
-            snprintf(message, sizeof(message), "Ошибка чтения IQ: %d (%d байт)", result, received);
-        }
-    } else {
-        snprintf(message, sizeof(message), "Ошибка настройки RTL-SDR: %d", result);
-    }
-    rtlsdr_close(device);
-    close(native_fd);
-    return env->NewStringUTF(message);
 }
 
 extern "C" JNIEXPORT void JNICALL

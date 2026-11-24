@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -110,7 +111,7 @@ internal fun SignalMeter(
         }
     }
     val changeSquelch by rememberUpdatedState(onSquelchChange)
-    var meterWidth by remember { mutableStateOf(1) }
+    var meterWidth by remember { mutableIntStateOf(1) }
     val density = LocalDensity.current
     fun setThreshold(x: Float) {
         val left = with(density) { 10.dp.toPx() }

@@ -16,10 +16,14 @@ internal data class FtxInformation(val lines: List<String> = emptyList(), val co
     val decoding: Boolean = false, val error: String? = null)
 
 /** PCM collection and native decoding never block playback or the UI. */
-internal class FtxDecodeWorker {
+internal class FtxDecodeWorker(
+    private val decoder: java.util.concurrent.ExecutorService = Executors.newSingleThreadExecutor {
+        Thread(it, "FtxDecode").apply { isDaemon = true }
+    },
+    private val decode: (ShortArray, Boolean) -> Array<String> = { samples, ft4 -> NativeFtx.decode(samples, ft4) },
+) {
     private data class Block(val epoch: Long, val samples: ShortArray, val rate: Int, val channels: Int)
     private val queue = ArrayBlockingQueue<Block>(128)
-    private val decoder = Executors.newSingleThreadExecutor { Thread(it, "FtxDecode").apply { isDaemon = true } }
     private val busy = AtomicBoolean(false)
     @Volatile private var epoch = 0L
     @Volatile private var mode: FtxMode? = null
@@ -35,8 +39,9 @@ internal class FtxDecodeWorker {
     }
     @Synchronized fun clear() { epoch++; queue.clear(); information = FtxInformation() }
     fun snapshot() = information
-    fun offer(samples: ShortArray, count: Int, rate: Int, channels: Int) {
+    @Synchronized fun offer(samples: ShortArray, count: Int, rate: Int, channels: Int) {
         if (mode == null || closed || count <= 0) return
+        require(count <= samples.size && rate > 0 && channels in 1..2 && count % channels == 0)
         if (!queue.offer(Block(epoch, samples.copyOf(count), rate, channels))) clear()
     }
     private fun collect() {
@@ -49,8 +54,7 @@ internal class FtxDecodeWorker {
         try {
             while (!closed) {
                 val block = queue.take()
-                val protocol = mode ?: continue
-                if (block.epoch != epoch) continue
+                val protocol = synchronized(this) { mode?.takeIf { !closed && block.epoch == epoch } } ?: continue
                 if (generation != block.epoch || sampleRate != block.rate) {
                     generation = block.epoch; sampleRate = block.rate
                     ring = ShortArray(protocol.windowSamples); head = 0; size = 0; sinceDecode = 0
@@ -75,26 +79,32 @@ internal class FtxDecodeWorker {
                 sinceDecode = 0
                 val pcm = ShortArray(ring.size) { ring[(head + it) % ring.size] }
                 val ownedEpoch = generation
-                synchronized(this) { if (ownedEpoch == epoch) information = information.copy(decoding = true) }
-                decoder.execute {
-                    try {
-                        val rows = NativeFtx.decode(pcm, protocol == FtxMode.FT4)
-                        synchronized(this) {
-                            if (ownedEpoch == epoch && !closed) {
-                                if (seenEpoch != ownedEpoch) { seen.clear(); seenEpoch = ownedEpoch }
-                                val now = System.currentTimeMillis()
-                                val additions = rows.filter { row ->
-                                    val last = seen[row] ?: 0
-                                    if (now - last < if (protocol == FtxMode.FT8) 7000 else 3000) false
-                                    else { seen[row] = now; true }
-                                }.map { "${utc.format(Date(now))}  ${it.substringBefore('\t')} Hz  ${it.substringAfter('\t')}" }
-                                seen.entries.removeAll { now - it.value > 60000 }
-                                information = information.copy(lines = (information.lines + additions).takeLast(100), decoding = false, error = null)
+                synchronized(this) {
+                    if (closed || ownedEpoch != epoch) {
+                        busy.set(false)
+                        return@synchronized
+                    }
+                    information = information.copy(decoding = true)
+                    decoder.execute {
+                        try {
+                            val rows = decode(pcm, protocol == FtxMode.FT4)
+                            synchronized(this) {
+                                if (ownedEpoch == epoch && !closed) {
+                                    if (seenEpoch != ownedEpoch) { seen.clear(); seenEpoch = ownedEpoch }
+                                    val now = System.currentTimeMillis()
+                                    val additions = rows.filter { row ->
+                                        val last = seen[row] ?: 0
+                                        if (now - last < if (protocol == FtxMode.FT8) 7000 else 3000) false
+                                        else { seen[row] = now; true }
+                                    }.map { "${utc.format(Date(now))}  ${it.substringBefore('\t')} Hz  ${it.substringAfter('\t')}" }
+                                    seen.entries.removeAll { now - it.value > 60000 }
+                                    information = information.copy(lines = (information.lines + additions).takeLast(100), decoding = false, error = null)
+                                }
                             }
-                        }
-                    } catch (failure: Exception) {
-                        synchronized(this) { if (ownedEpoch == epoch) information = information.copy(decoding = false, error = failure.message ?: "Decode failed") }
-                    } finally { busy.set(false) }
+                        } catch (failure: Exception) {
+                            synchronized(this) { if (ownedEpoch == epoch) information = information.copy(decoding = false, error = failure.message ?: "Decode failed") }
+                        } finally { busy.set(false) }
+                    }
                 }
             }
         } catch (_: InterruptedException) { /* close */ }

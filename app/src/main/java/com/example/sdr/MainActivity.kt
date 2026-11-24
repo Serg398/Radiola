@@ -7,15 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.os.SystemClock
 import android.view.Choreographer
 import android.view.View
 import android.view.WindowInsets
@@ -33,13 +29,13 @@ import com.example.sdr.platform.DisplaySettings
 import com.example.sdr.platform.SignalMeterInertia
 import com.example.sdr.platform.EncoderFeedback
 import com.example.sdr.platform.EncoderHaptics
+import com.example.sdr.receiver.VisualFramePacer
 import com.example.sdr.receiver.offsetForBandwidth
 import com.example.sdr.sources.usb.ReceiverSnapshot
 import com.example.sdr.sources.usb.ReceiverState
 import com.example.sdr.telemetry.RenderTimings
 import com.example.sdr.ui.receiver.ReceiverScreen
 import com.example.sdr.ui.receiver.ReceiverViewModel
-import com.example.sdr.ui.receiver.WaterfallFrameRate
 import com.example.sdr.ui.theme.RadiolaTheme
 import kotlin.math.roundToInt
 
@@ -63,20 +59,13 @@ class MainActivity : ComponentActivity() {
     private var hasUsbPermission
         get() = model.hasUsbPermission
         set(value) { model.hasUsbPermission = value }
-    private var usbCheckResult
-        get() = model.usbCheckResult
-        set(value) { model.usbCheckResult = value }
+
     private var receiverSnapshot
         get() = model.receiverSnapshot
         set(value) { model.receiverSnapshot = value }
     private val streaming get() = receiverSnapshot.state == ReceiverState.Running
     private val streamPending get() = receiverSnapshot.state == ReceiverState.Starting || receiverSnapshot.state == ReceiverState.Stopping
-    private var receiverMessage
-        get() = model.receiverMessage
-        set(value) { model.receiverMessage = value }
-    private var inputError
-        get() = model.inputError
-        set(value) { model.inputError = value }
+
     private var destroyed = false
     private var frequencyInput
         get() = model.frequencyInput
@@ -85,15 +74,7 @@ class MainActivity : ComponentActivity() {
         get() = model.frequencyHz
         set(value) { model.frequencyHz = value }
     private val spectrumState get() = model.spectrumState
-    private val waterfallState get() = model.waterfallState
-    private var lastCapturedGeneration = 0L
-    private var capturedSessionId = 0L
-    private val pendingVisualFrames = ArrayDeque<SpectrumFrame>()
-    private var nextVisualFrameNanos = 0L
-    private var previousVsyncNanos = 0L
-    private var waterfallFrameRate
-        get() = model.waterfallFrameRate
-        set(value) { model.waterfallFrameRate = value }
+    private val visualFrames = VisualFramePacer()
     private val encoderHaptics by lazy { EncoderHaptics(this) }
     private var encoderFeedback
         get() = model.encoderFeedback
@@ -110,9 +91,7 @@ class MainActivity : ComponentActivity() {
     private var gainSteps
         get() = model.gainSteps
         set(value) { model.gainSteps = value }
-    private var actualSpectrumFps
-        get() = model.actualSpectrumFps
-        set(value) { model.actualSpectrumFps = value }
+
     private var actualWaterfallFps
         get() = model.actualWaterfallFps
         set(value) { model.actualWaterfallFps = value }
@@ -147,7 +126,6 @@ class MainActivity : ComponentActivity() {
         }
     }
     private var fpsWindowStartNanos = 0L
-    private var spectrumFramesInWindow = 0
     private var waterfallFramesInWindow = 0
     private val receiverSession get() = runtime.session
     private val receiverRates by lazy { NativeSdr.receiverRates() }
@@ -160,73 +138,19 @@ class MainActivity : ComponentActivity() {
         window.setFlags(if (enabled) WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON else 0,
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
-    private val mainHandler = Handler(Looper.getMainLooper())
     private val choreographer by lazy { Choreographer.getInstance() }
-    private var lastStreamBytes = 0L
-    private var lastStreamTime = 0L
-    private val streamPoll = object : Runnable {
-        override fun run() {
-            if (!streaming) return
-            val stats = receiverSession.stats()
-            val now = SystemClock.elapsedRealtime()
-            val elapsed = (now - lastStreamTime).coerceAtLeast(1)
-            val samplesPerSecond = (stats[0] - lastStreamBytes) * 500L / elapsed
-            lastStreamBytes = stats[0]
-            lastStreamTime = now
-            receiverMessage = if (stats[2] == 1L) {
-                "IQ: %.2f млн отсчётов/с · %s: %.1f тыс. аудиоотсчётов".format(
-                    samplesPerSecond / 1_000_000.0, demodulationMode.label, stats[4] / 1_000.0
-                )
-            } else {
-                "Поток остановился: код ${stats[3]}"
-            }
-            if (stats[2] == 1L) mainHandler.postDelayed(this, 500)
-            else runtime.stop("Stream stopped: ${stats[3]}")
-        }
-    }
     private val spectrumFrameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!streaming) return
-            // Capture each new FFT independently of the 30 Hz publication deadline.
             val generation = receiverSession.spectrumGeneration()
-            if (generation != lastCapturedGeneration) {
-                val frame = receiverSession.spectrum()
-                if (frame.sessionId != capturedSessionId) {
-                    pendingVisualFrames.clear()
-                    nextVisualFrameNanos = 0L
-                    capturedSessionId = frame.sessionId
-                }
-                lastCapturedGeneration = frame.generation
-                pendingVisualFrames.addLast(frame)
-                // Bound latency when the UI stalls instead of replaying an old backlog.
-                while (pendingVisualFrames.size > 3) pendingVisualFrames.removeFirst()
-            }
-            val vsyncInterval = if (previousVsyncNanos == 0L) 0L else
-                (frameTimeNanos - previousVsyncNanos).coerceIn(0L, 33_333_333L)
-            previousVsyncNanos = frameTimeNanos
-            val interval = 1_000_000_000L / waterfallFrameRate.framesPerSecond
-            // One frame of headroom absorbs small differences between FFT and display clocks.
-            if (nextVisualFrameNanos == 0L && pendingVisualFrames.size >= 2)
-                nextVisualFrameNanos = frameTimeNanos
-            if (nextVisualFrameNanos != 0L &&
-                frameTimeNanos + vsyncInterval / 2 >= nextVisualFrameNanos) {
-                if (pendingVisualFrames.isEmpty()) {
-                    nextVisualFrameNanos = 0L
-                } else {
-                    val frame = pendingVisualFrames.removeFirst()
-                    publishVisualFrame(frame)
-                    nextVisualFrameNanos += interval
-                    if (nextVisualFrameNanos <= frameTimeNanos - vsyncInterval / 2)
-                        nextVisualFrameNanos = frameTimeNanos + interval
-                }
-            }
+            if (generation != visualFrames.lastGeneration)
+                visualFrames.offer(receiverSession.spectrum())
+            visualFrames.poll(frameTimeNanos)?.let(::publishVisualFrame)
             if (fpsWindowStartNanos == 0L) fpsWindowStartNanos = frameTimeNanos
             val windowDuration = frameTimeNanos - fpsWindowStartNanos
             if (windowDuration >= 1_000_000_000L) {
-                actualSpectrumFps = (spectrumFramesInWindow * 1_000_000_000.0 / windowDuration).roundToInt()
                 actualWaterfallFps = (waterfallFramesInWindow * 1_000_000_000.0 / windowDuration).roundToInt()
                 fpsWindowStartNanos = frameTimeNanos
-                spectrumFramesInWindow = 0
                 waterfallFramesInWindow = 0
             }
             choreographer.postFrameCallback(this)
@@ -248,8 +172,6 @@ class MainActivity : ComponentActivity() {
         wfmStereoLocked = NativeSdr.wfmStereoLocked()
         spectrumState.value = frame
         model.waterfallHistory.append(frame)
-        waterfallState.value = frame
-        spectrumFramesInWindow++
         waterfallFramesInWindow++
     }
 
@@ -273,7 +195,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        waterfallFrameRate = displaySettings.waterfallFrameRate()
         tuningStep = displaySettings.tuningStep()
         encoderFeedback = displaySettings.encoderFeedback()
         receiverGain = displaySettings.receiverGain()
@@ -304,14 +225,11 @@ class MainActivity : ComponentActivity() {
                     applyScreenAlwaysOn(it)
                     displaySettings.saveScreenAlwaysOn(it)
                 },
-                deviceName = device?.productName ?: "RTL-SDR V4",
                 connected = device != null,
                 permitted = hasUsbPermission,
-                usbCheckResult = inputError ?: receiverSnapshot.error ?: usbCheckResult ?: receiverMessage,
                 streaming = streaming,
                 streamPending = streamPending,
                 starting = receiverSnapshot.state == ReceiverState.Starting,
-                receiverState = receiverSnapshot.state,
                 frequencyInput = frequencyInput,
                 spectrumSpanHz = receiverRates[0],
                 bandwidthDefault = runtime.bandwidths[demodulationMode] == null,
@@ -319,9 +237,7 @@ class MainActivity : ComponentActivity() {
                 receiverGain = receiverGain,
                 gainSteps = gainSteps,
                 spectrumState = spectrumState,
-                waterfallState = waterfallState,
                 waterfallHistory = model.waterfallHistory,
-                waterfallFrameRate = waterfallFrameRate,
                 tuningStep = tuningStep,
                 encoderFeedback = encoderFeedback,
                 onEncoderTick = { encoderHaptics.tick(encoderFeedback) },
@@ -331,7 +247,6 @@ class MainActivity : ComponentActivity() {
                     if (it == EncoderFeedback.OFF) encoderHaptics.cancel()
                     else encoderHaptics.tick(it)
                 },
-                actualSpectrumFps = actualSpectrumFps,
                 actualWaterfallFps = actualWaterfallFps,
                 signalDbfs = signalDbfs,
                 wfmStereoEnabled = wfmStereoEnabled,
@@ -353,8 +268,6 @@ class MainActivity : ComponentActivity() {
                 batteryPercent = batteryPercent,
                 batteryCharging = batteryCharging,
                 onRequestPermission = ::requestUsbPermission,
-                onCheckConnection = ::checkUsbConnection,
-                onCaptureIq = ::captureIq,
                 onStartStream = ::startStream,
                 onPlaybackStart = ::requestNotificationPermission,
                 onStopStream = ::stopStream,
@@ -365,7 +278,6 @@ class MainActivity : ComponentActivity() {
                     tuningStep = option
                     displaySettings.saveTuningStep(option)
                 },
-                onWaterfallFrameRateChange = ::changeWaterfallFrameRate
             )
             }
         }
@@ -387,11 +299,7 @@ class MainActivity : ComponentActivity() {
         )
         refreshDevice()
         if (streaming) {
-            resetFrameTiming()
-            lastStreamBytes = receiverSession.stats()[0]
-            lastStreamTime = SystemClock.elapsedRealtime()
-            mainHandler.post(streamPoll)
-            choreographer.postFrameCallback(spectrumFrameCallback)
+            startVisualFrames()
         }
     }
 
@@ -423,7 +331,6 @@ class MainActivity : ComponentActivity() {
         unregisterReceiver(batteryReceiver)
         runtime.removeObserver(receiverObserver)
         runtime.visible(false)
-        mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         resetFrameTiming()
         unregisterReceiver(usbReceiver)
@@ -431,7 +338,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         resetFrameTiming()
         destroyed = true
@@ -440,12 +346,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshDevice() {
-        val previousName = device?.deviceName
         device = usbManager.deviceList.values.firstOrNull {
             it.vendorId == 0x0bda && it.productId == 0x2838
         }
         hasUsbPermission = device?.let(usbManager::hasPermission) == true
-        if (device?.deviceName != previousName) usbCheckResult = null
         if (receiverSession.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running) &&
             !receiverSession.deviceAvailable())
             receiverSession.stop("USB device disconnected")
@@ -460,72 +364,6 @@ class MainActivity : ComponentActivity() {
         usbManager.requestPermission(currentDevice, pendingIntent)
     }
 
-    private fun checkUsbConnection() {
-        val currentDevice = device ?: return
-        val session = receiverSession.snapshot()
-        if (session.state !in listOf(ReceiverState.Idle, ReceiverState.Error)) return
-        if (!usbManager.hasPermission(currentDevice)) return
-        usbCheckResult = "Проверка USB-связи…"
-        Thread {
-            val result = try {
-                val connection = usbManager.openDevice(currentDevice)
-                    ?: error("Не удалось открыть USB-устройство")
-                try {
-                    check(NativeSdr.isUsbDescriptorOpen(connection.fileDescriptor)) {
-                        "Нативный модуль не получил USB-дескриптор"
-                    }
-                    val descriptor = ByteArray(18)
-                    val count = connection.controlTransfer(
-                        UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_STANDARD,
-                        0x06, 0x0100, 0, descriptor, descriptor.size, 1000
-                    )
-                    val vendorId = (descriptor[9].toInt() and 0xff) shl 8 or
-                        (descriptor[8].toInt() and 0xff)
-                    val productId = (descriptor[11].toInt() and 0xff) shl 8 or
-                        (descriptor[10].toInt() and 0xff)
-                    if (count == 18 && vendorId == 0x0bda && productId == 0x2838) {
-                        "USB-связь работает: 0BDA:2838"
-                    } else {
-                        "Ошибка USB-ответа: получено $count байт"
-                    }
-                } finally {
-                    connection.close()
-                }
-            } catch (error: Exception) {
-                "Ошибка USB-связи: ${error.message ?: error.javaClass.simpleName}"
-            }
-            runOnUiThread {
-                if (!destroyed && device?.deviceName == currentDevice.deviceName &&
-                    receiverSession.snapshot().sessionId == session.sessionId) usbCheckResult = result
-            }
-        }.start()
-    }
-
-    private fun captureIq() {
-        val currentDevice = device ?: return
-        val session = receiverSession.snapshot()
-        if (session.state !in listOf(ReceiverState.Idle, ReceiverState.Error)) return
-        if (!usbManager.hasPermission(currentDevice)) return
-        usbCheckResult = "Чтение IQ на 100 МГц…"
-        Thread {
-            val result = try {
-                val connection = usbManager.openDevice(currentDevice)
-                    ?: error("Не удалось открыть USB-устройство")
-                try {
-                    NativeSdr.captureIq(connection.fileDescriptor, frequencyHz)
-                } finally {
-                    connection.close()
-                }
-            } catch (error: Exception) {
-                "Ошибка приёма: ${error.message ?: error.javaClass.simpleName}"
-            }
-            runOnUiThread {
-                if (!destroyed && device?.deviceName == currentDevice.deviceName &&
-                    receiverSession.snapshot().sessionId == session.sessionId) usbCheckResult = result
-            }
-        }.start()
-    }
-
     private fun acceptReceiverSnapshot(value: ReceiverSnapshot) {
         if (destroyed || value.version < receiverSession.snapshot().version || value.version <= receiverSnapshot.version) return
         val wasRunning = streaming
@@ -536,24 +374,12 @@ class MainActivity : ComponentActivity() {
         receiverSnapshot = value
         if (streaming && !wasRunning) {
             NativeSdr.tunerGains().takeIf { it.isNotEmpty() }?.let { gainSteps = it.sorted() }
-            resetFrameTiming()
-            lastStreamBytes = receiverSession.stats()[0]
-            lastStreamTime = SystemClock.elapsedRealtime()
-            mainHandler.removeCallbacks(streamPoll)
-            choreographer.removeFrameCallback(spectrumFrameCallback)
-            mainHandler.postDelayed(streamPoll, 500)
-            choreographer.postFrameCallback(spectrumFrameCallback)
+            startVisualFrames()
         } else if (!streaming) {
-            mainHandler.removeCallbacks(streamPoll)
             choreographer.removeFrameCallback(spectrumFrameCallback)
             resetFrameTiming()
-            actualSpectrumFps = 0
+
             actualWaterfallFps = 0
-            receiverMessage = when (value.state) {
-                ReceiverState.Starting -> "Starting receiver..."
-                ReceiverState.Stopping -> "Stopping receiver..."
-                else -> null
-            }
         }
     }
 
@@ -569,7 +395,6 @@ class MainActivity : ComponentActivity() {
             !usbManager.hasPermission(currentDevice)) return
         val requestedFrequency = model.parseFrequency() ?: return
         model.requestFrequency(requestedFrequency)
-        usbCheckResult = null
         requestNotificationPermission()
         runtime.mode = demodulationMode
         runtime.gain = receiverGain
@@ -578,26 +403,20 @@ class MainActivity : ComponentActivity() {
 
     private fun stopStream() {
         runtime.stop()
-        mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
         resetFrameTiming()
     }
 
+    private fun startVisualFrames() {
+        choreographer.removeFrameCallback(spectrumFrameCallback)
+        resetFrameTiming()
+        choreographer.postFrameCallback(spectrumFrameCallback)
+    }
+
     private fun resetFrameTiming() {
-        lastCapturedGeneration = 0L
-        capturedSessionId = 0L
-        pendingVisualFrames.clear()
-        nextVisualFrameNanos = 0L
-        previousVsyncNanos = 0L
+        visualFrames.clear()
         fpsWindowStartNanos = 0L
-        spectrumFramesInWindow = 0
         waterfallFramesInWindow = 0
     }
 
-    private fun changeWaterfallFrameRate(option: WaterfallFrameRate) {
-        waterfallFrameRate = option
-        resetFrameTiming()
-        actualWaterfallFps = 0
-        displaySettings.saveWaterfallFrameRate(option)
-    }
 }

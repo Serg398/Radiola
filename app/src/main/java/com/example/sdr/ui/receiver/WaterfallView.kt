@@ -22,7 +22,7 @@ class WaterfallView(
 ) : FrameLayout(context) {
     private var surfaceReady = false
     private val surface = if (separateSurface) SurfaceView(context) else null
-    private val historyListener: () -> Unit = { refresh(); renderSurface() }
+    private val historyListener: () -> Unit = { refresh() }
 
     init {
         setWillNotDraw(separateSurface)
@@ -127,7 +127,7 @@ class WaterfallView(
         for (age in 0 until rows) renderRow(history.rowAtAge(age))
         cachedRevision = history.revision
         RenderTimings.cache.record(System.nanoTime() - started)
-        if (!separateSurface) invalidate()
+        if (separateSurface) renderSurface() else invalidate()
     }
     private fun renderRow(row: Int) {
         for (x in 0 until renderWidth) {

@@ -29,9 +29,10 @@ class ReceiverPresentationTest {
                 oldFrequency = model.frequencyHz; oldMode = model.demodulationMode
                 model.online.selectSource(ReceiverSource.USB)
                 model.presentation.selectFtx(FtxMode.FT8)
-                model.requestFrequency(7_074_000)
+                model.requestFrequency(7_074_125)
                 model.presentation.step(1_000)
-                assertEquals(7_075_000L, model.presentation.state.frequencyHz)
+                assertEquals(7_075_125L, model.presentation.state.frequencyHz)
+                assertEquals(7_075_125L, model.parseFrequency())
                 assertEquals(3000, model.presentation.state.bandwidthHz)
             }
             scenario.recreate()
@@ -39,7 +40,7 @@ class ReceiverPresentationTest {
                 val model = ViewModelProvider(activity)[ReceiverViewModel::class.java]
                 assertSame(first, model)
                 assertEquals(FtxMode.FT8, model.presentation.ftxMode)
-                assertEquals(7_075_000L, model.frequencyHz)
+                assertEquals(7_075_125L, model.frequencyHz)
                 model.presentation.changeMode(DemodulationMode.CW)
                 assertNull(model.presentation.ftxMode)
                 assertEquals(DemodulationMode.CW, model.presentation.state.mode)

@@ -17,6 +17,7 @@ internal class SpectrumFrameQueue<T>(private val capacity: Int = 3, private val 
         discardExpired(now)
         return entries.pollFirst()?.value
     }
+    @Synchronized fun size(): Int = entries.size
     @Synchronized fun isNotEmpty() = entries.isNotEmpty()
     @Synchronized fun clear() { entries.clear() }
     @Synchronized fun takeDropped(): Int = dropped.also { dropped = 0 }

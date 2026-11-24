@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import com.example.sdr.SpectrumFrame
 import com.example.sdr.telemetry.RenderTimings
 import com.example.sdr.ui.theme.RadiolaColors
-import java.util.Locale
 import kotlin.math.roundToInt
 
 private val emptySpectrum = FloatArray(0)
@@ -131,5 +130,3 @@ internal fun AmberSpectrum(
         RenderTimings.spectrum.record(System.nanoTime() - started)
     }
 }
-
-internal fun formatFrequency(hz: Long): String = String.format(Locale.US, "%d.%03d.%03d", hz / 1_000_000, (hz / 1_000) % 1_000, hz % 1_000)

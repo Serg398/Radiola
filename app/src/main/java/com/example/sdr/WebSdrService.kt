@@ -25,7 +25,7 @@ class WebSdrService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return
             }
             val text = description()
-            if (text != lastText) { getSystemService(NotificationManager::class.java).notify(2, notification(text)); lastText = text }
+            if (text != lastText) { getSystemService(NotificationManager::class.java).notify(2, notification()); lastText = text }
             handler.postDelayed(this, 1000)
         }
     }
@@ -37,9 +37,8 @@ class WebSdrService : Service() {
         ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val text = description()
-        if (Build.VERSION.SDK_INT >= 29) startForeground(2, notification(text), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        else startForeground(2, notification(text))
+        if (Build.VERSION.SDK_INT >= 29) startForeground(2, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        else startForeground(2, notification())
         if (intent?.action == START) runtime.startFromService()
         if (intent?.action == STOP) runtime.disconnect()
         handler.removeCallbacks(monitor); monitor.run()
@@ -47,7 +46,7 @@ class WebSdrService : Service() {
     }
     private fun description() = String.format(Locale.US, "%.3f MHz  %s  %s", runtime.session.frequencyHz / 1e6,
         runtime.session.modeLabel, if (runtime.session.state == ReceiverConnectionState.Connected) "LIVE" else "CONNECTING")
-    private fun notification(text: String): Notification {
+    private fun notification(): Notification {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 3, Intent(this, WebSdrService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

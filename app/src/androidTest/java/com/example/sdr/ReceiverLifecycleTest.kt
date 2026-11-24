@@ -45,7 +45,9 @@ class ReceiverLifecycleTest {
         // Sidebar geometry is fixed in dp; OnePlus restricts accessibility roots for instrumentation.
         val density = context.resources.displayMetrics.density
         val x = (54 * density).toInt()
-        val y = ((if (text == "Settings") 100 else 64) * density).toInt()
+        val index = listOf("Receiver", "Favorites", "Plugins", "Settings").indexOf(text)
+        require(index >= 0)
+        val y = ((46 + index * 36 + 18) * density).toInt()
         val command = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input tap $x $y")
         java.io.FileInputStream(command.fileDescriptor).use { it.readBytes() }
         command.close()
@@ -63,8 +65,8 @@ class ReceiverLifecycleTest {
                     history = model.waterfallHistory; before = history.revision
                     assertTrue(history.size > 10)
                     val spectrum = model.spectrumState.value!!
-                    val waterfall = model.waterfallState.value!!
-                    assertSame(spectrum, waterfall)
+                    assertEquals(spectrum.timestampNanos, history.timestampAt(history.newestRow))
+                    assertEquals(spectrum.centerFrequencyHz, history.centerAt(history.newestRow))
                     assertTrue(spectrum.timestampNanos > 0 && spectrum.sessionId > 0)
                     assertEquals(2880000, spectrum.spanHz)
                 }

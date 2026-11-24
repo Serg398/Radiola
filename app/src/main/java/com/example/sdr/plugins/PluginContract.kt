@@ -2,7 +2,7 @@ package com.example.sdr.plugins
 
 import com.example.sdr.receiver.ReceiverSource
 
-internal enum class PluginPort { PCM, CHANNEL_IQ, SPECTRUM, CARD }
+internal enum class PluginPort { PCM, CHANNEL_IQ, CARD }
 internal enum class PluginCardSize { COMPACT, EXPANDED, FULL }
 
 internal val pluginSources = mapOf(

@@ -4,6 +4,9 @@ import android.app.Application
 import android.hardware.usb.UsbDevice
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -39,34 +42,27 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     }
     var device by mutableStateOf<UsbDevice?>(null)
     var hasUsbPermission by mutableStateOf(false)
-    var usbCheckResult by mutableStateOf<String?>(null)
     var receiverSnapshot by mutableStateOf(runtime.snapshot)
-    var receiverMessage by mutableStateOf<String?>(null)
-    var inputError by mutableStateOf<String?>(null)
-    var frequencyInput by mutableStateOf("%.3f".format(java.util.Locale.US, runtime.session.snapshot().requestedHz / 1_000_000.0))
-    var frequencyHz by mutableStateOf(runtime.session.snapshot().requestedHz)
+    var frequencyInput by mutableStateOf("%.6f".format(java.util.Locale.US, runtime.session.snapshot().requestedHz / 1_000_000.0))
+    var frequencyHz by mutableLongStateOf(runtime.session.snapshot().requestedHz)
     val waterfallHistory = WaterfallHistory()
     val spectrumState = mutableStateOf<SpectrumFrame?>(null)
-    val waterfallState = mutableStateOf<SpectrumFrame?>(null)
-    var waterfallFrameRate by mutableStateOf(WaterfallFrameRate.FPS_30)
     var encoderFeedback by mutableStateOf(EncoderFeedback.LIGHT)
     var tuningStep by mutableStateOf(TuningStep.fromStored(null))
     var demodulationMode by mutableStateOf(runtime.mode)
     var receiverGain by mutableStateOf(runtime.gain)
     var gainSteps by mutableStateOf(ReceiverGain.defaultSteps)
-    var actualSpectrumFps by mutableStateOf(0)
-    var actualWaterfallFps by mutableStateOf(0)
+    var actualWaterfallFps by mutableIntStateOf(0)
     var wfmStereoEnabled by mutableStateOf(false)
     var wfmStereoLocked by mutableStateOf(false)
     var receiverSquelch by mutableStateOf(ReceiverSquelch())
     var squelchOpen by mutableStateOf(true)
-    var signalDbfs by mutableStateOf(-90f)
-    var batteryPercent by mutableStateOf(-1)
+    var signalDbfs by mutableFloatStateOf(-90f)
+    var batteryPercent by mutableIntStateOf(-1)
     var batteryCharging by mutableStateOf(false)
     fun parseFrequency(): Long? {
         val mhz = frequencyInput.replace(',', '.').toDoubleOrNull()
         if (mhz == null || mhz !in 0.5..1766.0) {
-            usbCheckResult = "Введите частоту от 0,5 до 1766 МГц"
             return null
         }
         return (mhz * 1_000_000.0).roundToLong()
@@ -77,11 +73,9 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     }
 
     fun requestFrequency(hz: Long) {
-        inputError = null
-        usbCheckResult = null
         // Display the request immediately; only the controller tracks hardware acknowledgements.
         frequencyHz = hz
-        frequencyInput = "%.3f".format(java.util.Locale.US, hz / 1_000_000.0)
+        frequencyInput = "%.6f".format(java.util.Locale.US, hz / 1_000_000.0)
         runtime.session.tune(hz)
     }
 
