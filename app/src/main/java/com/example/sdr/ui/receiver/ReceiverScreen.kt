@@ -426,7 +426,7 @@ internal fun ReceiverScreen(
             ) {
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
                     if (selected != "Waterfall") {
-                        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                        Box(Modifier.fillMaxWidth().weight(1f)) {
                             AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
                                 displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
                             var spectrumControlsWidth by remember { mutableStateOf(0) }
