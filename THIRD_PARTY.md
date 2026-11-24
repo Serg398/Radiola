@@ -1,5 +1,12 @@
 # Встроенные библиотеки
 
+## JavaScript для плагинов
+
+Rhino 1.7.15 подключается через Maven как `org.mozilla:rhino`. Движок работает
+в режиме интерпретации в отдельном Android-сервисе.
+[Исходный код Rhino](https://github.com/mozilla/rhino/tree/Rhino1_7_15_Release).
+Лицензия MPL 2.0 и уведомления поставляются в `assets/licenses/rhino.txt`.
+
 - **RTL-SDR Blog driver** — commit `aed0ea19f3a273370a13c9009b96313c75d54c7b` из
   <https://github.com/rtlsdrblog/rtl-sdr-blog>. Лицензия GPL-2.0-or-later;
   текст лицензии: `app/src/main/cpp/third_party/rtl_sdr_blog/COPYING`.

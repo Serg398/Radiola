@@ -39,6 +39,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import com.example.sdr.RadiolaApplication
+import com.example.sdr.plugins.PluginCard
+import com.example.sdr.plugins.PluginCardSize
+import com.example.sdr.plugins.PluginPicker
+import com.example.sdr.plugins.PluginsPage
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -144,6 +149,9 @@ internal fun ReceiverScreen(
             onDelete = { presentation.favorites.delete(value.id) }, onClose = { favoriteEditor = null })
     }
     val context = LocalContext.current
+    val plugins = (context.applicationContext as RadiolaApplication).plugins
+    val plugin = plugins.selected
+    var pluginSize by remember(plugin) { mutableStateOf(plugin?.initialSize ?: PluginCardSize.COMPACT) }
     val online = presentation.online
     val uiState = presentation.state
     val source = uiState.source
@@ -187,6 +195,8 @@ internal fun ReceiverScreen(
     val visibleSpanHz = (captureSpanHz / effectiveZoom).roundToInt().coerceAtLeast(1)
     LaunchedEffect(webSession, receiverSquelch) { webSession.squelchSetting = receiverSquelch }
     val receiving = uiState.receiving
+    val pluginPlayable = remote && receiving && !(openWebRx && webSession.serverDataMode)
+    LaunchedEffect(pluginPlayable) { if (!pluginPlayable) plugins.stop() }
     val ftxInformation = presentation.ftxInformation
     val cwInformation = presentation.cwInformation
     var displayFrequencyHz by remember { mutableStateOf(tunedHz.toDouble()) }
@@ -359,6 +369,7 @@ internal fun ReceiverScreen(
                         onWfmStereoChange
                     )
                     Spacer(Modifier.weight(1f))
+                    PluginPicker(plugins)
                     com.example.sdr.ui.components.NoiseReductionControl(
                         available = com.example.sdr.audio.HamNoiseSettings.model(activeMode) != 0 && !(openWebRx && webSession.serverDataMode),
                         cw = activeMode == DemodulationMode.CW)
@@ -400,6 +411,8 @@ internal fun ReceiverScreen(
                     )
                 } else if (selected == "Favorites") {
                     FavoritesPanel(presentation, onEdit = { favoriteEditor = it }, onClose = { selected = "Receiver" }, usbConnected = connected)
+                } else if (selected == "Plugins") {
+                    PluginsPage(plugins)
                 } else if (remote && webSdrPage == "MAP") {
                     mapState.SaveableStateProvider("server-map-$source") {
                     androidx.compose.runtime.key(source) {
@@ -418,7 +431,7 @@ internal fun ReceiverScreen(
                     Modifier.fillMaxSize().padding(end = 78.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-            Box(
+            if (plugin == null || pluginSize != PluginCardSize.FULL) Box(
                 Modifier.fillMaxWidth().weight(1f)
                     .clipToBounds()
                     .border(1.dp, edge, RoundedCornerShape(6.dp))
@@ -529,7 +542,7 @@ internal fun ReceiverScreen(
             val card = if (cardKind != null) Triple(cardKind, activeMode, ftxMode) else lastCard
             androidx.compose.runtime.SideEffect { if (cardKind != null) lastCard = card }
             androidx.compose.animation.AnimatedVisibility(
-                visible = cardKind != null,
+                visible = cardKind != null && plugin == null,
                 enter = androidx.compose.animation.expandVertically(
                     animationSpec = androidx.compose.animation.core.tween(220), expandFrom = Alignment.Bottom) +
                     androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
@@ -553,6 +566,20 @@ internal fun ReceiverScreen(
                 ftxMode = card.third, ftx = ftxInformation, onFtxClear = presentation::clearFtx,
                 source = source, serverUrl = webSdrReceiverUrl,
             ) {}
+            }
+            if (plugin != null) {
+                val cardModifier = when (pluginSize) {
+                    PluginCardSize.COMPACT -> Modifier.fillMaxWidth().height(68.dp)
+                    PluginCardSize.EXPANDED -> Modifier.fillMaxWidth().height(116.dp)
+                    PluginCardSize.FULL -> Modifier.fillMaxWidth().weight(1f)
+                }
+                PluginCard(plugins, pluginSize, onResize = {
+                    pluginSize = when (pluginSize) {
+                        PluginCardSize.COMPACT -> PluginCardSize.EXPANDED
+                        PluginCardSize.EXPANDED -> PluginCardSize.FULL
+                        PluginCardSize.FULL -> PluginCardSize.COMPACT
+                    }
+                }, playable = pluginPlayable, modifier = cardModifier)
             }
                 }
                 androidx.compose.animation.AnimatedVisibility(

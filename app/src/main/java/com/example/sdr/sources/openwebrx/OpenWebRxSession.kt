@@ -40,6 +40,7 @@ import org.json.JSONObject
 
 /** Native OpenWebRX client. Socket workers decode; the main thread owns UI state. */
 internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
+    private val plugins = (context.applicationContext as? com.example.sdr.RadiolaApplication)?.plugins
     private var modeDescriptors by mutableStateOf<List<OpenWebRxMode>>(emptyList())
     private var features by mutableStateOf<Map<String, Boolean>>(emptyMap())
     private var selectedMode by mutableStateOf<OpenWebRxMode?>(null)
@@ -285,6 +286,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         val origin = base.resolve("/")!!.toString().removeSuffix("/")
         val request = Request.Builder().url(base.resolve("ws/")!!).header("Origin", origin).build()
         val ownedOutput = WebSdrAudioOutput(
+            plugins = plugins,
             onPlaying = { publish(token) { if (initialized && !changingProfile) { state = ReceiverConnectionState.Connected; error = null; retry = 0 } } },
             onError = { message -> publish(token) { recover(message) } },
             onSignal = { value -> publish(token) { signalDbm = value } },

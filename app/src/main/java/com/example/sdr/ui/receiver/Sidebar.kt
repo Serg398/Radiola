@@ -74,7 +74,7 @@ internal fun Sidebar(selected: String, onSelect: (String) -> Unit) {
                 modifier = Modifier.alpha(labelAlpha), color = RadiolaColors.primary, fontSize = 18.sp,
                 fontWeight = FontWeight.Light, letterSpacing = 0.3.sp, maxLines = 1)
         }
-        listOf("Receiver", "Favorites", "Settings").forEach { name ->
+        listOf("Receiver", "Favorites", "Plugins", "Settings").forEach { name ->
             val active = selected == name
             Box(
                 Modifier.fillMaxWidth().height(36.dp)

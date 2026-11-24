@@ -20,6 +20,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <service android:name=".ReceiverService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".WebSdrService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".plugins.PluginScriptService" android:exported="false" android:isolatedProcess="true" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"

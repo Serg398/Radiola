@@ -17,7 +17,8 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
     private val onSquelchOpen: (Boolean) -> Unit = {},
     private val noiseModel: () -> Int = { 0 },
     private val needsPlayedPcm: () -> Boolean = { false },
-    private val onPlayedPcm: (Int, ShortArray) -> Unit = { _, _ -> }) {
+    private val onPlayedPcm: (Int, ShortArray) -> Unit = { _, _ -> },
+    private val plugins: com.example.sdr.plugins.PluginManager? = null) {
     private val queue = WebSdrPcmQueue()
     private val signal = Semaphore(0)
     @Volatile private var running = true
@@ -27,7 +28,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
 
     fun offer(rate: Int, samples: ShortArray, signalDbm: Float? = null) {
         if (!running) return
-        queue.offer(WebSdrPcmQueue.Block(rate, samples, signalDbm))
+        queue.offer(WebSdrPcmQueue.Block(rate, samples, signalDbm, plugins?.submit(samples)))
         if (signal.availablePermits() == 0) signal.release()
     }
     fun close() { running = false; queue.clear(); worker.interrupt() }
@@ -106,7 +107,8 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
                 if (block == null) { signal.tryAcquire(10, TimeUnit.MILLISECONDS); continue }
                 if (block.rate != rate || track == null) create(block.rate)
                 if (scratch.size < block.samples.size) scratch = ShortArray(block.samples.size)
-                for (i in block.samples.indices) scratch[i] = (block.samples[i] * .65536f).toInt().toShort()
+                val playbackSamples = plugins?.output(block.pluginBlock) ?: block.samples
+                for (i in playbackSamples.indices) scratch[i] = (playbackSamples[i] * .65536f).toInt().toShort()
                 val gateOpen = gate.process(scratch, block.samples.size, rate, squelchSetting(), block.signalDbm)
                 val audible = noiseReduction.process(scratch, block.samples.size, rate, 1, noiseModel())
                 var offset = 0

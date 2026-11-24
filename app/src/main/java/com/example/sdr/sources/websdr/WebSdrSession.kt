@@ -35,6 +35,7 @@ import okio.ByteString
 
 /** Application-owned session. All controls run on main; stateful network decoders stay on socket workers. */
 internal class WebSdrSession(context: Context) : OnlineReceiverSession {
+    private val plugins = (context.applicationContext as? com.example.sdr.RadiolaApplication)?.plugins
     override val bandwidthOptions get() = WebSdrBandwidth.options(mode, bandwidthLimit)
     private val preferences = context.getSharedPreferences("websdr", Context.MODE_PRIVATE)
     override fun configureFtx(mode: FtxMode?, frequency: Long) = ftxDecoder.configure(mode, frequency)
@@ -244,6 +245,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
             if (epoch == audioGeneration) recoverAudio(message)
         }
         val ownedOutput = WebSdrAudioOutput(
+            plugins = plugins,
             onPlaying = { publish(token) {
                 if (epoch == audioGeneration) {
                     audioPlaying = true; error = null; state = ReceiverConnectionState.Connected
