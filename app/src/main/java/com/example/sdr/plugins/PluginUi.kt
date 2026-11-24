@@ -21,7 +21,15 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
     TALL("Tall card", true, true, PluginCardSize.EXPANDED),
     SPECTRUM("Spectrum", true, false, PluginCardSize.EXPANDED),
     WATERFALL("Waterfall", false, true, PluginCardSize.EXPANDED),
-    CARD("Card only", false, false, PluginCardSize.FULL),
+    CARD("Card only", false, false, PluginCardSize.FULL);
+
+    companion object {
+        fun forInitialSize(size: PluginCardSize?): PluginLayout = when (size) {
+            PluginCardSize.EXPANDED -> TALL
+            PluginCardSize.FULL -> CARD
+            PluginCardSize.COMPACT, null -> BOTH
+        }
+    }
 }
 
 @Composable

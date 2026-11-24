@@ -50,7 +50,7 @@ internal fun AmberSpectrum(
     Canvas(modifier) {
         axisPaint.color = RadiolaColors.secondaryText.toArgb()
         val started = System.nanoTime()
-        val left = 31.dp.toPx()
+        val left = ReceiverPlotGeometry.frequencyInset.toPx()
         val top = 8.dp.toPx()
         val bottom = size.height
         val width = size.width - left

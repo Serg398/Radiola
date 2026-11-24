@@ -29,7 +29,7 @@ internal fun waterfallNavigation(
     val currentZoomChange by rememberUpdatedState(onZoom)
     val currentContact by rememberUpdatedState(onContact)
     return Modifier.pointerInput(Unit) {
-        val plotInset = 31.dp.toPx()
+        val plotInset = ReceiverPlotGeometry.frequencyInset.toPx()
         val minimumDistance = 24.dp.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)

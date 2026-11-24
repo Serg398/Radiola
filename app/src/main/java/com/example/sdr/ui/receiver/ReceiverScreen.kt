@@ -152,11 +152,11 @@ internal fun ReceiverScreen(
     val context = LocalContext.current
     val plugins = (context.applicationContext as RadiolaApplication).plugins
     val plugin = plugins.selected
-    var pluginLayout by remember(plugin) {
-        mutableStateOf(PluginLayout.entries.firstOrNull { it.size == plugin?.initialSize } ?: PluginLayout.BOTH)
+    var pluginLayout by rememberSaveable(plugin?.id) {
+        mutableStateOf(PluginLayout.forInitialSize(plugin?.initialSize))
     }
-    val showSpectrum = selected != "Waterfall" && (plugin == null || pluginLayout.spectrum)
-    val showWaterfall = selected != "Spectrum" && (plugin == null || pluginLayout.waterfall)
+    val showSpectrum = plugin == null || pluginLayout.spectrum
+    val showWaterfall = plugin == null || pluginLayout.waterfall
     val online = presentation.online
     val uiState = presentation.state
     val source = uiState.source
@@ -389,8 +389,8 @@ internal fun ReceiverScreen(
                     }
                     }
                 }
-                // The plot excludes the encoder (78 dp) and starts after the amplitude axis (31 dp).
-                if (remote) Box(Modifier.align(Alignment.Center).offset(x = (31.dp - 78.dp) / 2)) {
+                // Center the view toggle over the same horizontal area as the RF plot.
+                if (remote) Box(Modifier.align(Alignment.Center).offset(x = (ReceiverPlotGeometry.frequencyInset - ReceiverPlotGeometry.encoderReserve) / 2)) {
                     ServerViewToggle(
                         page = webSdrPage, active = selected == "Receiver",
                         onSelect = { online.selectPage(it); selected = "Receiver" },
@@ -433,7 +433,7 @@ internal fun ReceiverScreen(
                     }
                 } else {
                 Column(
-                    Modifier.fillMaxSize().padding(end = 78.dp),
+                    Modifier.fillMaxSize().padding(end = ReceiverPlotGeometry.encoderReserve),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
             if (showSpectrum || showWaterfall) Box(
@@ -444,14 +444,14 @@ internal fun ReceiverScreen(
             ) {
                 var spectrumControlsWidth by remember { mutableStateOf(0) }
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
-                    Box(Modifier.fillMaxWidth().height(18.dp)) {
+                    Box(Modifier.fillMaxWidth().height(ReceiverPlotGeometry.headerHeight)) {
                         if (showSpectrum) {
                             Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS",
                                 Modifier.align(Alignment.CenterStart).padding(start = 5.dp),
                                 color = muted, fontSize = 11.sp)
                         }
                         FavoriteFrequencyMarkers(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
-                            Modifier.fillMaxSize().padding(start = 31.dp),
+                            Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset),
                             endInset = with(LocalDensity.current) { spectrumControlsWidth.toDp() } + 8.dp,
                             onSelect = { station ->
                                 encoderBrakeRequest++
@@ -478,7 +478,7 @@ internal fun ReceiverScreen(
                             AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
                                 displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
                             FavoriteFrequencyGuides(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
-                                Modifier.fillMaxSize().padding(start = 31.dp))
+                                Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset))
                         }
                     }
                     if (showWaterfall) {
@@ -504,10 +504,10 @@ internal fun ReceiverScreen(
                                     activeWaterfall.value // Subscribe to the independent waterfall snapshot.
                                     view.refresh()
                                 },
-                                modifier = Modifier.fillMaxSize().padding(start = 31.dp)
+                                modifier = Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset)
                             )
                             }
-                            Canvas(Modifier.fillMaxSize().padding(start = 31.dp).clipToBounds()) {
+                            Canvas(Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset).clipToBounds()) {
                                 val center = size.width * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
                                 val channelWidth = size.width * (activeBandwidth.toFloat() / visibleSpanHz)
                                 val passbandCenter = size.width * (0.5f + (channelOffsetHz + passbandOffsetHz).toFloat() / visibleSpanHz)
@@ -536,7 +536,7 @@ internal fun ReceiverScreen(
                         }
                     }
                     Row(
-                        Modifier.fillMaxWidth().height(18.dp).padding(start = 31.dp, end = 4.dp),
+                        Modifier.fillMaxWidth().height(18.dp).padding(start = ReceiverPlotGeometry.frequencyInset, end = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         for (fraction in listOf(-0.5, -0.25, 0.0, 0.25, 0.5)) {
@@ -595,7 +595,7 @@ internal fun ReceiverScreen(
                 }
                 androidx.compose.animation.AnimatedVisibility(
                     visible = faxExpanded && presentation.faxSelected,
-                    modifier = Modifier.fillMaxSize().padding(end = 78.dp),
+                    modifier = Modifier.fillMaxSize().padding(end = ReceiverPlotGeometry.encoderReserve),
                     enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) +
                         androidx.compose.animation.scaleIn(
                             initialScale = .96f,
@@ -626,7 +626,7 @@ internal fun ReceiverScreen(
                         frequencyMotion.snapTo(tunedHz.toDouble())
                         displayFrequencyHz = tunedHz.toDouble()
                     },
-                    modifier = Modifier.align(Alignment.CenterEnd).width(74.dp).fillMaxHeight()
+                    modifier = Modifier.align(Alignment.CenterEnd).width(ReceiverPlotGeometry.encoderWidth).fillMaxHeight()
                 )
                 }
             }
