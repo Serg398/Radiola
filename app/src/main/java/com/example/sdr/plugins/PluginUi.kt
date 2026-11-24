@@ -1,7 +1,11 @@
 package com.example.sdr.plugins
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +28,8 @@ import com.example.sdr.ui.decoders.DecoderToolbar
 import com.example.sdr.ui.decoders.DecoderToolbarText
 import com.example.sdr.ui.theme.RadiolaColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONArray
@@ -47,6 +53,7 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
 
 @Composable
 internal fun PluginPicker(manager: PluginManager) {
+    LaunchedEffect(manager) { manager.loadInstalled() }
     var open by remember { mutableStateOf(false) }
     val anchor = rememberCompactMenuAnchor()
     Box(anchor.modifier) {
@@ -65,7 +72,7 @@ internal fun PluginPicker(manager: PluginManager) {
         DropdownMenu(offset = ToolbarMenuOffset, expanded = open, onDismissRequest = { open = false },
             modifier = Modifier.width(140.dp).heightIn(max = anchor.maxHeight),
             containerColor = RadiolaColors.surface) {
-            for (plugin in listOf(null) + bundledPlugins) {
+            for (plugin in listOf(null) + manager.installed) {
                 CompactMenuEntry(plugin?.name ?: "Off", selected = plugin == manager.selected) {
                     open = false
                     manager.select(plugin)
@@ -77,14 +84,43 @@ internal fun PluginPicker(manager: PluginManager) {
 
 @Composable
 internal fun PluginsPage(manager: PluginManager) {
+    var message by remember { mutableStateOf<String?>(null) }
+    var importing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(manager) { manager.loadInstalled() }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            importing = true
+            message = null
+            try {
+                manager.importPlugin(uri)
+                message = "Plugin imported"
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                message = "Import failed: ${error.localizedMessage ?: "Invalid plugin package"}"
+            } finally {
+                importing = false
+            }
+        }
+    }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Plugins", color = RadiolaColors.text, fontSize = 22.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Plugins", Modifier.weight(1f), color = RadiolaColors.text, fontSize = 22.sp)
+            TextButton(enabled = !importing, onClick = { picker.launch(arrayOf("*/*")) }) { Text("Import plugin") }
+        }
         HorizontalDivider(color = RadiolaColors.border)
-        for (plugin in bundledPlugins) {
-            Text(plugin.name, color = RadiolaColors.text, fontSize = 16.sp)
-            Text("Built-in / v${plugin.version} / ${if (plugin == gainPlugin) "Online audio" else "Receiver audio"}",
-                color = RadiolaColors.secondaryText, fontSize = 12.sp)
-            if (manager.selected == plugin) Text("Selected", color = RadiolaColors.primary, fontSize = 12.sp)
+        message?.let { Text(it, color = RadiolaColors.secondaryText, fontSize = 12.sp) }
+        if (manager.installed.isEmpty()) {
+            Text("Import a .radiolaplugin file to get started.", color = RadiolaColors.secondaryText, fontSize = 14.sp)
+        }
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (plugin in manager.installed) {
+                Text(plugin.name, color = RadiolaColors.text, fontSize = 16.sp)
+                Text("v${plugin.version} / ${if (plugin.output == PluginPort.PCM) "Online audio" else "Receiver audio"}",
+                    color = RadiolaColors.secondaryText, fontSize = 12.sp)
+                if (manager.selected == plugin) Text("Selected", color = RadiolaColors.primary, fontSize = 12.sp)
+            }
         }
     }
 }
@@ -143,7 +179,7 @@ internal fun PluginCard(
         DecoderDivider()
         key(plugin.id) {
             AndroidView(
-                factory = { PluginWebView(it, plugin.uiDirectory).apply { open() } },
+                factory = { PluginWebView(it, plugin).apply { open() } },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 onRelease = PluginWebView::release,
                 update = { view ->

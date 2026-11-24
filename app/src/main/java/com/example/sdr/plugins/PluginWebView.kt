@@ -11,17 +11,17 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.io.ByteArrayInputStream
-import java.io.FileNotFoundException
+import java.util.UUID
 import org.json.JSONObject
 
-/** Loads only the bundled UI package. The message port is scoped to its local origin. */
+/** Loads the imported UI from an origin unique to this view. */
 @SuppressLint("SetJavaScriptEnabled")
-internal class PluginWebView(context: Context, directory: String) : WebView(context) {
-    private val origin = Uri.parse("https://plugin.radiola.invalid")
-    private val page = "$origin/$directory/index.html"
+internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView(context) {
+    private val origin = Uri.parse("https://${UUID.randomUUID()}.plugin.radiola.invalid")
+    private val page = "$origin/index.html"
     private val files = mapOf(
-        "/$directory/index.html" to "text/html",
-        "/$directory/view.js" to "text/javascript",
+        "/index.html" to "text/html",
+        "/view.js" to "text/javascript",
         "/common.css" to "text/css",
         "/api.js" to "text/javascript",
     )
@@ -43,12 +43,13 @@ internal class PluginWebView(context: Context, directory: String) : WebView(cont
                 val url = request.url
                 val path = url.encodedPath.orEmpty()
                 val type = files[path]
-                if (request.method == "GET" && url.scheme == origin.scheme && url.authority == origin.authority && type != null) {
-                    try {
-                        return WebResourceResponse(type, "UTF-8", context.assets.open("plugins/ui$path"))
-                    } catch (_: FileNotFoundException) {
-                        // A missing package resource is handled like an unsupported request.
-                    }
+                val bytes = plugin.webFiles[path.removePrefix("/")]
+                if (request.method == "GET" && url.scheme == origin.scheme && url.authority == origin.authority && type != null && bytes != null) {
+                    return WebResourceResponse(type, "UTF-8", 200, "OK", mapOf(
+                        "Content-Security-Policy" to "default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; base-uri 'none'; form-action 'none'",
+                        "X-Content-Type-Options" to "nosniff",
+                        "Cache-Control" to "no-store",
+                    ), ByteArrayInputStream(bytes))
                 }
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", emptyMap(),
                     ByteArrayInputStream(ByteArray(0)))

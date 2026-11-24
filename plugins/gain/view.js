@@ -12,7 +12,7 @@ function updateCard(next) {
   }
   play.textContent = next.playing ? "STOP" : "START";
   play.disabled = !next.playing && !next.available;
-  byId("status").textContent = next.error || "";
+  byId("status").textContent = next.error || (!next.available ? "Audio source unavailable" : "");
   for (const button of layouts) {
     button.setAttribute("aria-pressed", button.dataset.layout === next.layout);
   }

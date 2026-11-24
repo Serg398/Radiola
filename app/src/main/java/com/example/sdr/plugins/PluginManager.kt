@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -18,8 +19,29 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 internal class PluginManager(private val context: Context) {
+    private val store = PluginStore(context)
+    private val importLock = Mutex()
+    var installed by mutableStateOf(emptyList<PluginManifest>())
+        private set
+    private var loaded = false
+
+    suspend fun loadInstalled() = importLock.withLock {
+        if (loaded) return@withLock
+        installed = withContext(Dispatchers.IO) { store.list() }
+        loaded = true
+    }
+
+    suspend fun importPlugin(uri: Uri) = importLock.withLock {
+        val plugin = withContext(Dispatchers.IO) { store.install(uri) }
+        if (selected?.id == plugin.id) select(null)
+        installed = (installed.filterNot { it.id == plugin.id } + plugin).sortedBy { it.name }
+    }
     internal data class AudioSpectrum(val sampleRate: Int, val bins: FloatArray)
 
     internal class Block(val id: Int, val endpoint: Messenger, val analysisRate: Int = 0) {
@@ -43,6 +65,7 @@ internal class PluginManager(private val context: Context) {
         private set
     @Volatile private var activeGain = 1.5
     @Volatile private var endpoint: Messenger? = null
+    private var startupEndpoint: Messenger? = null
     @Volatile private var activePlugin: PluginManifest? = null
     private val analysisWindow = ShortArray(SPECTRUM_SAMPLES)
     private var analysisCount = 0
@@ -52,7 +75,21 @@ internal class PluginManager(private val context: Context) {
     private val sequence = java.util.concurrent.atomic.AtomicInteger()
     private val handler = Handler(Looper.getMainLooper())
     private val replyThread by lazy { HandlerThread("PluginReplies").apply { start() } }
+    private var startupId = 0
     private val reply by lazy { Messenger(Handler(replyThread.looper) { message ->
+        if (message.what == LOAD_PLUGIN) {
+            val id = message.arg1
+            val success = message.arg2 == 1
+            handler.post {
+                if (playing && id == startupId) {
+                    if (success) {
+                        endpoint = startupEndpoint
+                        ready = true
+                    } else fail("Cannot load plugin script")
+                }
+            }
+            return@Handler true
+        }
         val block = pending.remove(message.arg1)
         if (block != null) {
             if (block.analysisRate > 0) {
@@ -76,8 +113,27 @@ internal class PluginManager(private val context: Context) {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             if (bound && playing) {
-                endpoint = Messenger(service)
-                ready = true
+                val plugin = activePlugin ?: return
+                val id = sequence.incrementAndGet()
+                startupId = id
+                val target = Messenger(service)
+                val request = Message.obtain(null, LOAD_PLUGIN, id, 0).apply {
+                    replyTo = reply
+                    data = Bundle().apply {
+                        putString("script", plugin.script)
+                        putBoolean("analysis", plugin.output == PluginPort.CARD)
+                    }
+                }
+                try {
+                    target.send(request)
+                } catch (_: android.os.RemoteException) {
+                    fail("Script process disconnected")
+                    return
+                }
+                handler.postDelayed({
+                    if (playing && startupId == id && !ready) fail("Script startup timed out")
+                }, 2000)
+                startupEndpoint = target
             }
         }
 
@@ -115,6 +171,8 @@ internal class PluginManager(private val context: Context) {
         ready = false
         activePlugin = null
         endpoint = null
+        startupEndpoint = null
+        startupId = 0
         spectrum = null
         analysisCount = 0
         analysisRate = 0
@@ -139,7 +197,7 @@ internal class PluginManager(private val context: Context) {
     /** Accept bursts of network PCM without waiting for the script. */
     @Synchronized
     fun submit(samples: ShortArray): Block? {
-        if (activePlugin != gainPlugin) return null
+        if (activePlugin?.output != PluginPort.PCM) return null
         val target = endpoint ?: return null
         if (samples.size !in 1..8192 || pending.size >= 16) return null
         return send(target, samples, 0)
@@ -147,7 +205,7 @@ internal class PluginManager(private val context: Context) {
 
     @Synchronized
     fun observePcm(samples: ShortArray, count: Int, rate: Int, channels: Int) {
-        if (activePlugin != audioSpectrumPlugin) return
+        if (activePlugin?.output != PluginPort.CARD) return
         val target = endpoint ?: return
         val now = System.nanoTime()
         if (now < nextAnalysisNs || pending.isNotEmpty() || rate <= 0 || channels !in 1..2) return
@@ -190,7 +248,7 @@ internal class PluginManager(private val context: Context) {
     }
 
     fun output(block: Block?): ShortArray? {
-        if (activePlugin != gainPlugin) return null
+        if (activePlugin?.output != PluginPort.PCM) return null
         val target = endpoint ?: return null
         // Spend at most a small part of the playback buffer waiting on the worker.
         val output = if (block?.endpoint === target && block.ready.await(12, TimeUnit.MILLISECONDS)) block.output else null

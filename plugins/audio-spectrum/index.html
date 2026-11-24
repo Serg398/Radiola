@@ -7,7 +7,6 @@
 <script defer src="/api.js"></script>
 <script defer src="./view.js"></script>
 <title>Audio Spectrum</title>
-<div class="controls"><small id="status" role="status"></small><button id='play'>START</button></div>
 <main><canvas id='plot' aria-label='Audio spectrum'></canvas></main>
 <nav aria-label="Card layout">
   <button data-layout="both">BOTH</button>
@@ -15,5 +14,7 @@
   <button data-layout="spectrum">SPECTRUM</button>
   <button data-layout="waterfall">WATERFALL</button>
   <button data-layout="card">CARD ONLY</button>
+  <small id='status' role='status'></small>
+  <button id='play'>START</button>
 </nav>
 </html>
