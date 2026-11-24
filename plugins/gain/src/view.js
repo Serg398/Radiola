@@ -1,17 +1,11 @@
 const byId = id => document.getElementById(id);
-const play = byId("play");
 const layouts = [...document.querySelectorAll("[data-layout]")];
-let state;
-play.onclick = () => radiola.send(state?.playing ? "stop" : "start");
 for (const button of layouts) button.onclick = () => radiola.send("layout", button.dataset.layout);
 
 function updateCard(next) {
-  state = next;
   for (const [name, color] of Object.entries(next.theme)) {
     document.documentElement.style.setProperty("--" + name, color);
   }
-  play.textContent = next.playing ? "STOP" : "START";
-  play.disabled = !next.playing && !next.available;
   byId("status").textContent = next.error || (!next.available ? "Audio source unavailable" : "");
   for (const button of layouts) {
     button.setAttribute("aria-pressed", button.dataset.layout === next.layout);

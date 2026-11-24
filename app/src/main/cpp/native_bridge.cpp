@@ -157,7 +157,7 @@ void on_iq(unsigned char *samples, uint32_t length, void *) {
     stream.ssb.setFrequencyOffset(offsetHz);
     stream.wfm.setStereo(stream.wfm_stereo_enabled.load(std::memory_order_relaxed));
     auto* iqTap = stream.channel_iq.begin(stream.spectrum_session.load(std::memory_order_relaxed),
-        tuning, mode, demodStarted) ? &stream.channel_iq : nullptr;
+        tuning, mode, demodStarted, bandwidth, passband_offset) ? &stream.channel_iq : nullptr;
     std::array<int16_t, 4096> pcm{};
     size_t audio_count = mode == 1
         ? stream.am.process(samples, length, pcm.data(), pcm.size() / 2, iqTap)
@@ -446,15 +446,16 @@ Java_com_example_sdr_NativeSdr_enableChannelIq(JNIEnv *, jobject, jboolean enabl
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_example_sdr_NativeSdr_readChannelIq(JNIEnv *env, jobject, jbyteArray output, jlongArray info) {
     constexpr auto bytes = static_cast<jsize>(ChannelIqTap::pairsPerBlock * 2 * sizeof(int16_t));
-    if (!output || !info || env->GetArrayLength(output) != bytes || env->GetArrayLength(info) < 5) {
+    if (!output || !info || env->GetArrayLength(output) != bytes || env->GetArrayLength(info) < 7) {
         return JNI_FALSE;
     }
     ChannelIqTap::Block block;
     if (!stream.channel_iq.read(block)) return JNI_FALSE;
     const jlong metadata[] = {DspProfiles::channelRate, block.frequencyHz, static_cast<jlong>(block.epoch),
-        static_cast<jlong>(block.index), static_cast<jlong>(block.timestampNs)};
+        static_cast<jlong>(block.index), static_cast<jlong>(block.timestampNs),
+        block.bandwidthHz, block.passbandOffsetHz};
     env->SetByteArrayRegion(output, 0, bytes, reinterpret_cast<const jbyte*>(block.samples.data()));
-    env->SetLongArrayRegion(info, 0, 5, metadata);
+    env->SetLongArrayRegion(info, 0, 7, metadata);
     return JNI_TRUE;
 }
 

@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 internal suspend fun streamChannelIq(publish: (String) -> Unit) {
     val samples = ByteArray(4096 * 4) // 4096 interleaved signed 16-bit I/Q pairs.
-    val info = LongArray(5)
+    val info = LongArray(7)
     NativeSdr.enableChannelIq(true)
     try {
         while (true) {
@@ -21,6 +21,7 @@ internal suspend fun streamChannelIq(publish: (String) -> Unit) {
                             .put("rate", info[0]).put("frequencyHz", info[1])
                             .put("epoch", info[2]).put("index", info[3])
                             .put("timestampNs", info[4])
+                            .put("bandwidthHz", info[5]).put("passbandOffsetHz", info[6])
                             .put("samples", Base64.encodeToString(samples, Base64.NO_WRAP))
                             .toString())
                     }

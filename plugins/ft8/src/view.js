@@ -1,8 +1,6 @@
 const messages = document.getElementById("messages");
 const status = document.getElementById("status");
-const play = document.getElementById("play");
 let port, worker, playing = false, workerError = false;
-let available = false, startup, nextRequest = 0, startupError = "";
 
 window.addEventListener("message", event => {
   if (port || event.data !== "radiola-plugin" || event.ports.length !== 1) return;
@@ -17,16 +15,7 @@ window.addEventListener("message", event => {
         epoch: message.epoch, bytes}, [bytes.buffer]);
       return;
     }
-    if (message.type === "receiverResult") {
-      if (startup?.id !== message.requestId) return;
-      if (!message.ok) finishStartup(message.error || "Cannot select USB");
-      else {
-        startup.modeAccepted = true;
-        tryStart();
-      }
-      return;
-    }
-    available = message.available;
+    if (message.type === "receiverResult") return;
     for (const [name, color] of Object.entries(message.theme)) {
       document.documentElement.style.setProperty("--" + name, color);
     }
@@ -34,7 +23,7 @@ window.addEventListener("message", event => {
       playing = message.playing;
       workerError = false;
       if (playing) {
-        finishStartup();
+
         startWorker();
       }
       else {
@@ -42,43 +31,11 @@ window.addEventListener("message", event => {
         worker = undefined;
       }
     }
-    if (!playing && !startup) {
-      status.textContent = message.error || startupError || (available ? "Ready" : "Start the receiver");
+    if (!playing) {
+      status.textContent = message.error || (message.available ? "Ready" : "Start the receiver");
     }
-    play.disabled = Boolean(startup);
-    play.textContent = playing ? "STOP" : "START";
-    tryStart();
   };
 });
-play.onclick = () => {
-  if (!port || startup) return;
-  if (playing) {
-    port.postMessage(JSON.stringify({type: "stop"}));
-    return;
-  }
-  startupError = "";
-  const id = "ft8-usb-" + ++nextRequest;
-  startup = {id, modeAccepted: false, startSent: false,
-    timer: setTimeout(() => finishStartup("USB audio did not become available"), 5000)};
-  play.disabled = true;
-  status.textContent = "Selecting USB";
-  port.postMessage(JSON.stringify({type: "setMode", value: "USB", requestId: id}));
-};
-
-function tryStart() {
-  if (!startup?.modeAccepted || startup.startSent || !available) return;
-  startup.startSent = true;
-  status.textContent = "Starting decoder";
-  port.postMessage(JSON.stringify({type: "start"}));
-}
-
-function finishStartup(error = "") {
-  clearTimeout(startup?.timer);
-  startup = undefined;
-  startupError = error;
-  play.disabled = false;
-  if (error) status.textContent = error;
-}
 
 function startWorker() {
   status.textContent = "Collecting audio";

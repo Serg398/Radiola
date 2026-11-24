@@ -1,0 +1,12 @@
+* { box-sizing:border-box; }
+body { position:fixed; inset:0; margin:0; display:flex; flex-direction:column; gap:4px; font:11px system-ui,sans-serif; color:var(--text,#ddd); }
+main { position:relative; flex:1; min-height:0; overflow:hidden; border:1px solid #68472c; border-radius:9px; background:radial-gradient(ellipse at 50% 65%,#dba760 0%,#b4783f 40%,#57351f 85%); box-shadow:inset 0 0 13px #24150d; }
+canvas { display:block; width:100%; height:100%; }
+aside { position:absolute; right:9px; bottom:5px; display:grid; text-align:right; color:#24150d; pointer-events:none; }
+output { font:bold clamp(12px,3vw,22px) Georgia,serif; font-variant-numeric:tabular-nums; }
+small,#status { font-size:9px; }
+footer { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+#band { margin-right:auto; color:var(--muted,#aaa); font-size:9px; }
+button { padding:1px 6px; font:600 9px system-ui,sans-serif; border-radius:4px; border:1px solid var(--border,#555); color:var(--text,#ddd); background:var(--surface,#222); }
+button[aria-pressed=true] { color:var(--accent,#fc8); }
+button:disabled { opacity:.45; }

@@ -3,7 +3,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 root = Path(__file__).resolve().parent
-packages = ("gain", "audio-spectrum")
+packages = ("gain", "audio-spectrum", "tube-meter")
 parser = ArgumentParser(description="Build the standard Radiola plugin packages.")
 parser.add_argument("package", nargs="?", choices=packages, help="Build just one plugin.")
 selected = parser.parse_args().package

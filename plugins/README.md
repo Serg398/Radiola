@@ -7,10 +7,11 @@
 | JS Gain | [gain/src](gain/src/) | [gain.radiolaplugin](gain/gain.radiolaplugin) |
 | Audio Spectrum | [audio-spectrum/src](audio-spectrum/src/) | [audio-spectrum.radiolaplugin](audio-spectrum/audio-spectrum.radiolaplugin) |
 | FT8 JS | [ft8/src](ft8/src/) | [ft8.radiolaplugin](ft8/ft8.radiolaplugin) |
+| Tube S-Meter | [tube-meter/src](tube-meter/src/) | [tube-meter.radiolaplugin](tube-meter/tube-meter.radiolaplugin) |
 
 Скопируйте пакет на телефон, импортируйте через **Plugins → Import plugin**, затем выберите плагин в меню **PLUGINS** приёмника. Повторный импорт пакета с тем же `id` обновляет плагин.
 
-Для сборки JS Gain и Audio Spectrum запустите `python plugins/build.py` из корня проекта. Можно указать один плагин, например `python plugins/build.py gain`. Для FT8 JS используйте [инструкцию в папке плагина](ft8/README.md).
+Для сборки JS Gain, Audio Spectrum и Tube S-Meter запустите `python plugins/build.py` из корня проекта. Можно указать один плагин, например `python plugins/build.py tube-meter`. Для FT8 JS используйте [инструкцию в папке плагина](ft8/README.md).
 
 ## Формат v1
 
@@ -19,7 +20,8 @@
 - `manifest.json` задаёт `id`, `name`, `version`, `apiVersion: 1`, `input: "PCM"`, `output` и необязательное `initialSize`.
 - `sources` перечисляет источники, для которых плагин виден в меню приёмника: `rtl-sdr`, `websdr`, `openwebrx`. Для старых пакетов без поля доступны оба сетевых источника, а для `output: "CARD"` также RTL-SDR. Выбор плагина не меняет режим демодуляции.
 - `process.js` выполняется в Rhino. Для `output: "PCM"` функция `processPcm(samples, gain)` меняет отсчёты на месте. Для `output: "CARD"` функция `analyzePcm(samples)` возвращает 257 значений для окна из 512 отсчётов.
-- `index.html` задаёт содержимое карточки. Опциональные файлы интерфейса — `common.css`, `api.js` и `view.js`. Примеры используют `radiola.onState(callback)` для получения состояния и `radiola.send(type, value)` для команд `start`, `stop`, `gain`, `layout`.
+- `index.html` задаёт содержимое карточки. Опциональные файлы интерфейса — `common.css`, `api.js` и `view.js`. START/STOP находится в шапке «Радиолы». Плагин следит за полем `playing` и запускает или останавливает свою обработку по его изменению.
+- Необязательное `startMode` задаёт модуляцию, которую «Радиола» запрашивает перед запуском. Например, FT8 JS указывает `"startMode": "USB"`.
 
 ### Поток PCM в Web Worker
 
@@ -36,6 +38,7 @@
 - `samples` содержит пары `I, Q` в Base64, формат `s16le`. Один блок содержит 4096 комплексных отсчётов. Для перевода компоненты в диапазон около ±1 делите её на 32768.
 - `rate` — комплексных отсчётов в секунду. Текущий USB-тракт выдаёт 240000.
 - `frequencyHz` — частота настройки, соответствующая 0 Гц в этом потоке.
+- `bandwidthHz` — текущая ширина полосы в «Радиоле». `passbandOffsetHz` — смещение центра этой полосы относительно частоты настройки.
 - `epoch` и `index` обозначают непрерывный участок и индекс первого комплексного отсчёта блока. Смена участка или скачок индекса означает разрыв. Очередь ограничена, при отставании чтения возможен пропуск блоков.
 - `timestampNs` — приблизительное монотонное время USB-колбэка, в котором начался блок.
 

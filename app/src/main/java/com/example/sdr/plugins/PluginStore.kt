@@ -79,7 +79,10 @@ internal class PluginStore(private val context: Context) {
         val script = if (webWorker) "" else required("process.js").decodeToString()
         files.remove("LICENSE")
         require("index.html" in files) { "Missing index.html" }
-        return PluginManifest(id, name, version, output, size, script, files.toMap(), webWorker, sources, input)
+        val startMode = if (json.has("startMode")) json.getString("startMode").trim().also {
+            require(it.length in 1..32) { "Invalid start mode" }
+        } else null
+        return PluginManifest(id, name, version, output, size, script, files.toMap(), webWorker, sources, input, startMode)
     }
 
     private fun InputStream.readBounded(limit: Int): ByteArray {

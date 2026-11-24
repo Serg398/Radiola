@@ -13,6 +13,7 @@ public:
     struct Block {
         std::array<int16_t, pairsPerBlock * 2> samples{};
         int64_t frequencyHz = 0;
+        int bandwidthHz = 0, passbandOffsetHz = 0;
         uint64_t epoch = 0, index = 0, timestampNs = 0;
     };
 
@@ -25,10 +26,11 @@ public:
     }
 
     // Called once per USB callback, then push() runs on that same producer thread.
-    bool begin(uint64_t session, uint64_t tuning, int mode, uint64_t timestampNs) {
+    bool begin(uint64_t session, uint64_t tuning, int mode, uint64_t timestampNs, int bandwidthHz = 0, int passbandOffsetHz = 0) {
         const auto token = subscription_.load(std::memory_order_acquire);
         if (!(token & 1)) return false;
-        if (token != token_ || session != session_ || tuning != tuning_ || mode != mode_) {
+        if (token != token_ || session != session_ || tuning != tuning_ || mode != mode_ ||
+            bandwidthHz != pending_.bandwidthHz || passbandOffsetHz != pending_.passbandOffsetHz) {
             token_ = token;
             session_ = session;
             tuning_ = tuning;
@@ -36,6 +38,8 @@ public:
             ++pending_.epoch;
             pending_.index = 0;
             pending_.frequencyHz = static_cast<int64_t>(tuning >> 32) + static_cast<int32_t>(tuning);
+            pending_.bandwidthHz = bandwidthHz;
+            pending_.passbandOffsetHz = passbandOffsetHz;
             filled_ = 0;
         }
         callbackNs_ = timestampNs;

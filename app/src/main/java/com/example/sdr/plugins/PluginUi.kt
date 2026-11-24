@@ -23,6 +23,7 @@ import com.example.sdr.ui.components.ToolbarValue
 import com.example.sdr.ui.components.rememberCompactMenuAnchor
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.decoders.DecoderCardFrame
+import com.example.sdr.ui.decoders.DecoderAction
 import com.example.sdr.ui.decoders.DecoderCardHeight
 import com.example.sdr.ui.decoders.DecoderDivider
 import com.example.sdr.ui.decoders.DecoderToolbar
@@ -144,6 +145,29 @@ internal fun PluginCard(
     playable: Boolean, onReceiverCommand: (PluginManifest, JSONObject) -> String?, modifier: Modifier,
 ) {
     val plugin = manager.selected ?: return
+    var starting by remember(plugin) { mutableStateOf(false) }
+    var startupError by remember(plugin) { mutableStateOf<String?>(null) }
+    LaunchedEffect(starting, playable) {
+        if (starting) {
+            if (playable) manager.play()
+            else {
+                delay(5000)
+                startupError = "Receiver input did not become available"
+            }
+            starting = false
+        }
+    }
+    val toggle = {
+        startupError = null
+        if (manager.playing) manager.stop()
+        else if (!starting) {
+            val mode = plugin.startMode
+            if (mode != null) {
+                startupError = onReceiverCommand(plugin, JSONObject().put("type", "setMode").put("value", mode))
+                starting = startupError == null
+            } else if (playable) manager.play()
+        }
+    }
     var webView by remember(plugin) { mutableStateOf<PluginWebView?>(null) }
     LaunchedEffect(plugin, webView, manager.playing, playable) {
         val view = webView ?: return@LaunchedEffect
@@ -178,7 +202,7 @@ internal fun PluginCard(
     val state = JSONObject()
         .put("name", plugin.name).put("version", plugin.version)
         .put("playing", manager.playing).put("ready", manager.ready).put("available", playable)
-        .put("error", manager.error ?: JSONObject.NULL)
+        .put("error", startupError ?: manager.error ?: JSONObject.NULL)
         .put("layout", layout.name.lowercase(java.util.Locale.ROOT))
         .put("gain", manager.gain).put("processedBlocks", processed).put("fallbackBlocks", fallback)
         .put("spectrum", plot ?: JSONObject.NULL)
@@ -188,6 +212,12 @@ internal fun PluginCard(
             .put("tint", css(RadiolaColors.primaryTint)).put("grid", css(RadiolaColors.plotGrid)))
     DecoderCardFrame(modifier) {
         DecoderToolbar {
+            DecoderAction(
+                if (manager.playing) "STOP" else if (starting) "WAIT" else "START",
+                enabled = !starting && (manager.playing || playable || plugin.startMode != null),
+                checked = if (manager.playing) true else null,
+                onClick = toggle,
+            )
             Text(plugin.name.uppercase(java.util.Locale.ROOT), color = RadiolaColors.secondaryText,
                 style = DecoderToolbarText, modifier = Modifier.weight(1f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
