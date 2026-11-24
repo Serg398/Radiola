@@ -6,6 +6,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -16,12 +19,15 @@ import com.example.sdr.ui.components.ToolbarValue
 import com.example.sdr.ui.components.rememberCompactMenuAnchor
 import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.decoders.DecoderCardFrame
-import com.example.sdr.ui.decoders.DecoderAction
 import com.example.sdr.ui.decoders.DecoderDivider
 import com.example.sdr.ui.decoders.DecoderToolbar
 import com.example.sdr.ui.decoders.DecoderToolbarText
 import com.example.sdr.ui.theme.RadiolaColors
 import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
+import org.json.JSONArray
+import org.json.JSONObject
 
 internal enum class PluginLayout(val label: String, val spectrum: Boolean, val waterfall: Boolean, val size: PluginCardSize) {
     BOTH("Both", true, true, PluginCardSize.COMPACT),
@@ -59,7 +65,7 @@ internal fun PluginPicker(manager: PluginManager) {
         DropdownMenu(offset = ToolbarMenuOffset, expanded = open, onDismissRequest = { open = false },
             modifier = Modifier.width(140.dp).heightIn(max = anchor.maxHeight),
             containerColor = RadiolaColors.surface) {
-            for (plugin in listOf(null, gainPlugin)) {
+            for (plugin in listOf(null) + bundledPlugins) {
                 CompactMenuEntry(plugin?.name ?: "Off", selected = plugin == manager.selected) {
                     open = false
                     manager.select(plugin)
@@ -74,9 +80,12 @@ internal fun PluginsPage(manager: PluginManager) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Plugins", color = RadiolaColors.text, fontSize = 22.sp)
         HorizontalDivider(color = RadiolaColors.border)
-        Text(gainPlugin.name, color = RadiolaColors.text, fontSize = 16.sp)
-        Text("Built-in / v${gainPlugin.version} / Online audio", color = RadiolaColors.secondaryText, fontSize = 12.sp)
-        if (manager.selected == gainPlugin) Text("Selected", color = RadiolaColors.primary, fontSize = 12.sp)
+        for (plugin in bundledPlugins) {
+            Text(plugin.name, color = RadiolaColors.text, fontSize = 16.sp)
+            Text("Built-in / v${plugin.version} / ${if (plugin == gainPlugin) "Online audio" else "Receiver audio"}",
+                color = RadiolaColors.secondaryText, fontSize = 12.sp)
+            if (manager.selected == plugin) Text("Selected", color = RadiolaColors.primary, fontSize = 12.sp)
+        }
     }
 }
 
@@ -86,23 +95,35 @@ internal fun PluginCard(
     playable: Boolean, modifier: Modifier,
 ) {
     val plugin = manager.selected ?: return
-    var processed by remember { mutableLongStateOf(0) }
-    var fallback by remember { mutableLongStateOf(0) }
-    LaunchedEffect(manager.playing) {
+    var processed by remember(plugin) { mutableLongStateOf(0) }
+    var fallback by remember(plugin) { mutableLongStateOf(0) }
+    LaunchedEffect(plugin, manager.playing) {
         while (manager.playing) {
             processed = manager.processedBlocks.get()
             fallback = manager.fallbackBlocks.get()
             delay(500)
         }
     }
-    val status = when {
-        manager.error != null -> manager.error
-        !playable -> "Requires online audio"
-        manager.playing && !manager.ready -> "Starting JS"
-        manager.playing && processed == 0L -> "Waiting for processed audio"
-        manager.playing -> "JS active: $processed blocks / $fallback bypassed"
-        else -> "Bypass"
+    val spectrum = manager.spectrum
+    val plot = remember(spectrum) {
+        spectrum?.let { frame ->
+            JSONObject().put("sampleRate", frame.sampleRate)
+                .put("bins", JSONArray(frame.bins.toList()))
+        }
     }
+    fun css(color: androidx.compose.ui.graphics.Color): String =
+        "#%06x".format(java.util.Locale.ROOT, color.toArgb() and 0xffffff)
+    val state = JSONObject()
+        .put("name", plugin.name).put("version", plugin.version)
+        .put("playing", manager.playing).put("ready", manager.ready).put("available", playable)
+        .put("error", manager.error ?: JSONObject.NULL)
+        .put("layout", layout.name.lowercase(java.util.Locale.ROOT))
+        .put("gain", manager.gain).put("processedBlocks", processed).put("fallbackBlocks", fallback)
+        .put("spectrum", plot ?: JSONObject.NULL)
+        .put("theme", JSONObject().put("surface", css(RadiolaColors.surface))
+            .put("text", css(RadiolaColors.text)).put("muted", css(RadiolaColors.secondaryText))
+            .put("border", css(RadiolaColors.border)).put("accent", css(RadiolaColors.primary))
+            .put("tint", css(RadiolaColors.primaryTint)).put("grid", css(RadiolaColors.plotGrid)))
     DecoderCardFrame(modifier) {
         DecoderToolbar {
             Text(plugin.name.uppercase(java.util.Locale.ROOT), color = RadiolaColors.secondaryText,
@@ -110,24 +131,35 @@ internal fun PluginCard(
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("v${plugin.version}", color = RadiolaColors.secondaryText,
                 style = DecoderToolbarText, maxLines = 1)
+            Box(
+                Modifier.size(width = 22.dp, height = 14.dp)
+                    .clickable(role = Role.Button) { manager.select(null) }
+                    .semantics { contentDescription = "Close plugin" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("×", color = RadiolaColors.secondaryText, style = DecoderToolbarText, fontSize = 13.sp)
+            }
         }
         DecoderDivider()
-        DecoderToolbar {
-            Text("Gain ${(manager.gain * 100).toInt()}% / $status",
-                color = RadiolaColors.secondaryText, style = DecoderToolbarText,
-                modifier = Modifier.weight(1f).alignByBaseline(), maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            DecoderAction(if (manager.playing) "STOP" else "PLAY", enabled = playable || manager.playing) {
-                if (manager.playing) manager.stop() else manager.play()
-            }
-            DecoderAction("CLOSE") { manager.select(null) }
-        }
-        Slider(value = manager.gain.toFloat(), onValueChange = { manager.updateGain(it.toDouble()) },
-            modifier = Modifier.width(220.dp).height(24.dp), valueRange = .25f..2f)
-        DecoderToolbar {
-            PluginLayout.entries.forEach { option ->
-                DecoderAction(option.label, checked = layout == option) { onLayout(option) }
-            }
+        key(plugin.id) {
+            AndroidView(
+                factory = { PluginWebView(it, plugin.uiDirectory).apply { open() } },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                onRelease = PluginWebView::release,
+                update = { view ->
+                    view.publish(state) { command ->
+                        if (manager.selected != plugin) return@publish
+                        when (command.optString("type")) {
+                            "start" -> if (playable) manager.play()
+                            "stop" -> manager.stop()
+                            "gain" -> command.optDouble("value").takeIf { it.isFinite() }?.let(manager::updateGain)
+                            "layout" -> PluginLayout.entries.firstOrNull {
+                                it.name.equals(command.optString("value"), ignoreCase = true)
+                            }?.let(onLayout)
+                        }
+                    }
+                },
+            )
         }
     }
 }

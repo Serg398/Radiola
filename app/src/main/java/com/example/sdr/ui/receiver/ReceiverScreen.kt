@@ -200,7 +200,9 @@ internal fun ReceiverScreen(
     val visibleSpanHz = (captureSpanHz / effectiveZoom).roundToInt().coerceAtLeast(1)
     LaunchedEffect(webSession, receiverSquelch) { webSession.squelchSetting = receiverSquelch }
     val receiving = uiState.receiving
-    val pluginPlayable = remote && receiving && !(openWebRx && webSession.serverDataMode)
+    val pluginPlayable = com.example.sdr.plugins.canRunAudioPlugin(
+        plugin, remote, receiving, openWebRx && webSession.serverDataMode,
+    )
     LaunchedEffect(pluginPlayable) { if (!pluginPlayable) plugins.stop() }
     val ftxInformation = presentation.ftxInformation
     val cwInformation = presentation.cwInformation
@@ -442,37 +444,22 @@ internal fun ReceiverScreen(
                     .border(1.dp, edge, RoundedCornerShape(6.dp))
                     .background(RadiolaColors.plot, RoundedCornerShape(6.dp))
             ) {
-                var spectrumControlsWidth by remember { mutableStateOf(0) }
                 Column(Modifier.fillMaxSize().padding(4.dp)) {
-                    Box(Modifier.fillMaxWidth().height(ReceiverPlotGeometry.headerHeight)) {
-                        if (showSpectrum) {
-                            Text(if (remote) (if (automaticDisplay) "dB" else "REL") else "dBFS",
-                                Modifier.align(Alignment.CenterStart).padding(start = 5.dp),
-                                color = muted, fontSize = 11.sp)
-                        }
-                        FavoriteFrequencyMarkers(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
-                            Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset),
-                            endInset = with(LocalDensity.current) { spectrumControlsWidth.toDp() } + 8.dp,
-                            onSelect = { station ->
-                                encoderBrakeRequest++
-                                encoderRotating = false
-                                presentation.activateFavorite(station) { selected = "Receiver" }
-                            })
-
-                        Row(
-                            Modifier.align(Alignment.CenterEnd)
-                                .onSizeChanged { spectrumControlsWidth = it.width }.padding(end = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text("AUTO", color = if (automaticDisplay) warm else muted, fontSize = 10.sp,
-                                modifier = Modifier.clickable { automaticDisplay = !automaticDisplay }
-                                    .background(if (automaticDisplay) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
-                                    .border(.5.dp, if (automaticDisplay) warm else edge, RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 1.dp))
-                            Text("SPAN %d kHz".format(Locale.US, visibleSpanHz / 1_000), color = muted, fontSize = 11.sp)
-                        }
-                    }
+                    ReceiverPlotHeader(
+                        stations = presentation.favorites.stations,
+                        centerHz = visibleCenterHz,
+                        spanHz = visibleSpanHz,
+                        axisLabel = if (!showSpectrum) null else if (remote) {
+                            if (automaticDisplay) "dB" else "REL"
+                        } else "dBFS",
+                        automatic = automaticDisplay,
+                        onAutomatic = { automaticDisplay = !automaticDisplay },
+                        onFavorite = { station ->
+                            encoderBrakeRequest++
+                            encoderRotating = false
+                            presentation.activateFavorite(station) { selected = "Receiver" }
+                        },
+                    )
                     if (showSpectrum) {
                         Box(Modifier.fillMaxWidth().weight(1f)) {
                             AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
@@ -630,6 +617,41 @@ internal fun ReceiverScreen(
                 )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReceiverPlotHeader(
+    stations: List<com.example.sdr.favorites.FavoriteStation>,
+    centerHz: Double,
+    spanHz: Int,
+    axisLabel: String?,
+    automatic: Boolean,
+    onAutomatic: () -> Unit,
+    onFavorite: (com.example.sdr.favorites.FavoriteStation) -> Unit,
+) {
+    var controlsWidth by remember { mutableStateOf(0) }
+    Box(Modifier.fillMaxWidth().height(ReceiverPlotGeometry.headerHeight)) {
+        if (axisLabel != null) {
+            Text(axisLabel, Modifier.align(Alignment.CenterStart).padding(start = 5.dp),
+                color = muted, fontSize = 11.sp)
+        }
+        FavoriteFrequencyMarkers(stations, centerHz, spanHz,
+            Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset),
+            endInset = with(LocalDensity.current) { controlsWidth.toDp() } + 8.dp,
+            onSelect = onFavorite)
+        Row(
+            Modifier.align(Alignment.CenterEnd).onSizeChanged { controlsWidth = it.width }.padding(end = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("AUTO", color = if (automatic) warm else muted, fontSize = 10.sp,
+                modifier = Modifier.clickable(onClick = onAutomatic)
+                    .background(if (automatic) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
+                    .border(.5.dp, if (automatic) warm else edge, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 1.dp))
+            Text("SPAN %d kHz".format(Locale.US, spanHz / 1_000), color = muted, fontSize = 11.sp)
         }
     }
 }

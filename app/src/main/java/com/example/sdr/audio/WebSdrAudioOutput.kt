@@ -28,6 +28,7 @@ internal class WebSdrAudioOutput(private val onPlaying: () -> Unit, private val 
 
     fun offer(rate: Int, samples: ShortArray, signalDbm: Float? = null) {
         if (!running) return
+        plugins?.observePcm(samples, samples.size, rate, 1)
         queue.offer(WebSdrPcmQueue.Block(rate, samples, signalDbm, plugins?.submit(samples)))
         if (signal.availablePermits() == 0) signal.release()
     }

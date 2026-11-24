@@ -20,7 +20,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 internal class PluginManager(private val context: Context) {
-    internal class Block(val id: Int, val endpoint: Messenger) {
+    internal data class AudioSpectrum(val sampleRate: Int, val bins: FloatArray)
+
+    internal class Block(val id: Int, val endpoint: Messenger, val analysisRate: Int = 0) {
         @Volatile var output: ShortArray? = null
         val ready = CountDownLatch(1)
     }
@@ -33,12 +35,19 @@ internal class PluginManager(private val context: Context) {
         private set
     var ready by mutableStateOf(false)
         private set
+    var spectrum by mutableStateOf<AudioSpectrum?>(null)
+        private set
     val processedBlocks = AtomicLong()
     val fallbackBlocks = AtomicLong()
     var gain by mutableStateOf(1.5)
         private set
     @Volatile private var activeGain = 1.5
     @Volatile private var endpoint: Messenger? = null
+    @Volatile private var activePlugin: PluginManifest? = null
+    private val analysisWindow = ShortArray(SPECTRUM_SAMPLES)
+    private var analysisCount = 0
+    private var analysisRate = 0
+    private var nextAnalysisNs = 0L
     private val pending = ConcurrentHashMap<Int, Block>()
     private val sequence = java.util.concurrent.atomic.AtomicInteger()
     private val handler = Handler(Looper.getMainLooper())
@@ -46,9 +55,20 @@ internal class PluginManager(private val context: Context) {
     private val reply by lazy { Messenger(Handler(replyThread.looper) { message ->
         val block = pending.remove(message.arg1)
         if (block != null) {
-            block.output = message.data.getShortArray("pcm")
+            if (block.analysisRate > 0) {
+                val bins = message.data.getFloatArray("spectrum")
+                if (bins == null || bins.size != SPECTRUM_SAMPLES / 2 + 1) {
+                    reportFailure(block, "Spectrum processing failed")
+                } else {
+                    handler.post {
+                        if (endpoint === block.endpoint) spectrum = AudioSpectrum(block.analysisRate, bins)
+                    }
+                }
+            } else {
+                block.output = message.data.getShortArray("pcm")
+                if (block.output == null) reportFailure(block, "Script processing failed")
+            }
             block.ready.countDown()
-            if (block.output == null) reportFailure(block, "Script processing failed")
         }
         true
     }) }
@@ -84,15 +104,21 @@ internal class PluginManager(private val context: Context) {
         error = null
         processedBlocks.set(0)
         fallbackBlocks.set(0)
+        activePlugin = selected
         playing = true
         bound = context.bindService(Intent(context, PluginScriptService::class.java), connection, Context.BIND_AUTO_CREATE)
         if (!bound) fail("Cannot start script process")
     }
 
-    fun stop() {
+    @Synchronized fun stop() {
         playing = false
         ready = false
+        activePlugin = null
         endpoint = null
+        spectrum = null
+        analysisCount = 0
+        analysisRate = 0
+        nextAnalysisNs = 0
         pending.values.forEach { it.ready.countDown() }
         pending.clear()
         if (bound) {
@@ -113,11 +139,39 @@ internal class PluginManager(private val context: Context) {
     /** Accept bursts of network PCM without waiting for the script. */
     @Synchronized
     fun submit(samples: ShortArray): Block? {
+        if (activePlugin != gainPlugin) return null
         val target = endpoint ?: return null
         if (samples.size !in 1..8192 || pending.size >= 16) return null
-        val block = Block(sequence.incrementAndGet(), target)
+        return send(target, samples, 0)
+    }
+
+    @Synchronized
+    fun observePcm(samples: ShortArray, count: Int, rate: Int, channels: Int) {
+        if (activePlugin != audioSpectrumPlugin) return
+        val target = endpoint ?: return
+        val now = System.nanoTime()
+        if (now < nextAnalysisNs || pending.isNotEmpty() || rate <= 0 || channels !in 1..2) return
+        if (analysisRate != rate) {
+            analysisRate = rate
+            analysisCount = 0
+        }
+        for (index in 0 until (minOf(count, samples.size) / channels) * channels step channels) {
+            val sample = if (channels == 1) samples[index]
+                else ((samples[index].toInt() + samples[index + 1].toInt()) / 2).toShort()
+            analysisWindow[analysisCount++] = sample
+            if (analysisCount == SPECTRUM_SAMPLES) {
+                analysisCount = 0
+                nextAnalysisNs = now + 100_000_000L
+                send(target, analysisWindow.copyOf(), rate)
+                break
+            }
+        }
+    }
+
+    private fun send(target: Messenger, samples: ShortArray, rate: Int): Block {
+        val block = Block(sequence.incrementAndGet(), target, rate)
         pending[block.id] = block
-        val request = Message.obtain(null, PROCESS_PCM, block.id, 0).apply {
+        val request = Message.obtain(null, if (rate == 0) PROCESS_PCM else ANALYZE_PCM, block.id, 0).apply {
             replyTo = reply
             data = Bundle().apply {
                 putShortArray("pcm", samples)
@@ -128,7 +182,7 @@ internal class PluginManager(private val context: Context) {
             target.send(request)
             handler.postDelayed({
                 if (pending.remove(block.id, block)) reportFailure(block, "Script process did not respond")
-            }, 200)
+            }, if (rate == 0) 200 else 400)
         } catch (_: android.os.RemoteException) {
             if (pending.remove(block.id, block)) reportFailure(block, "Script process disconnected")
         }
@@ -136,6 +190,7 @@ internal class PluginManager(private val context: Context) {
     }
 
     fun output(block: Block?): ShortArray? {
+        if (activePlugin != gainPlugin) return null
         val target = endpoint ?: return null
         // Spend at most a small part of the playback buffer waiting on the worker.
         val output = if (block?.endpoint === target && block.ready.await(12, TimeUnit.MILLISECONDS)) block.output else null

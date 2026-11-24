@@ -24,7 +24,11 @@ class ReceiverSession(private val usbManager: UsbManager, listener: (ReceiverSna
     internal val ftxDecoder = FtxDecodeWorker()
     @Volatile private var cwMode = DemodulationMode.WFM
     private var cwFrequency = 0L
-    private val audio = AudioOutput(onSamples = { samples, count -> ftxDecoder.offer(samples, count, 48000, 2) },
+    private val plugins = (context?.applicationContext as? com.example.sdr.RadiolaApplication)?.plugins
+    private val audio = AudioOutput(onSamples = { samples, count ->
+        ftxDecoder.offer(samples, count, 48000, 2)
+        plugins?.observePcm(samples, count, 48000, 2)
+    },
         noiseModel = { com.example.sdr.audio.HamNoiseSettings.model(cwMode) },
         needsPlayedPcm = { cwDecoder.acceptsAudio() || faxDecoder.acceptsAudio() },
         onPlayedPcm = { samples ->
