@@ -1,5 +1,6 @@
 package com.example.sdr.ui.decoders
 
+import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,7 +49,7 @@ internal fun FaxInformationPanel(info: FaxInformation, decoder: FaxDecodeWorker,
         if (uri != null && image != null) scope.launch {
             saveStatus = withContext(Dispatchers.IO) {
                 runCatching {
-                    val bitmap = Bitmap.createBitmap(image.width, image.lines, Bitmap.Config.ARGB_8888)
+                    val bitmap = createBitmap(image.width, image.lines, Bitmap.Config.ARGB_8888)
                     try {
                         val canvas = android.graphics.Canvas(bitmap)
                         var y = 0f

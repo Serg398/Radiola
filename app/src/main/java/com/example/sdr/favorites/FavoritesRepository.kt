@@ -1,5 +1,6 @@
 package com.example.sdr.favorites
 
+import androidx.core.content.edit
 import android.content.Context
 import androidx.compose.runtime.*
 import com.example.sdr.DemodulationMode
@@ -51,6 +52,6 @@ internal class FavoritesRepository(context: Context, storageName: String = "favo
             .put("frequency", v.frequencyHz).put("mode", v.mode.name).put("bandwidth", v.bandwidthHz)
             .put("source", v.source.name).put("url", v.serverUrl).put("server", v.serverName)
             .put("bandId", v.bandId).put("band", v.bandName).put("serverMode", v.serverMode).put("ftx", v.ftx?.name)) }
-        prefs.edit().putString("collection", JSONObject().put("version", 1).put("stations", rows).toString()).apply()
+        prefs.edit { putString("collection", JSONObject().put("version", 1).put("stations", rows).toString()) }
     }
 }

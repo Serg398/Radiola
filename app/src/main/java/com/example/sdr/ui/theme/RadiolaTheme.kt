@@ -1,5 +1,6 @@
 package com.example.sdr.ui.theme
 
+import androidx.core.content.edit
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -23,7 +24,7 @@ internal object RadiolaColors {
     fun select(theme: Theme, context: android.content.Context) {
         selected = theme
         context.getSharedPreferences("appearance", android.content.Context.MODE_PRIVATE)
-            .edit().putString("theme", theme.name).apply()
+            .edit { putString("theme", theme.name) }
     }
     fun adaptive(light: Color, night: Color, retro: Color = classicAccent(light)) = when (selected) {
         Theme.LIGHT -> light

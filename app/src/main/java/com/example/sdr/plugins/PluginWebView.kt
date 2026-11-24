@@ -3,7 +3,7 @@ package com.example.sdr.plugins
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
-import android.net.Uri
+import androidx.core.net.toUri
 import android.webkit.WebMessage
 import android.webkit.WebMessagePort
 import android.webkit.WebResourceRequest
@@ -15,9 +15,9 @@ import java.util.UUID
 import org.json.JSONObject
 
 /** Loads the imported UI from an origin unique to this view. */
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ViewConstructor") // Imported content is required; never inflated from XML.
 internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView(context) {
-    private val origin = Uri.parse("https://${UUID.randomUUID()}.plugin.radiola.invalid")
+    private val origin = "https://${UUID.randomUUID()}.plugin.radiola.invalid".toUri()
     private val page = "$origin/index.html"
     private val files = mapOf(
         "/index.html" to "text/html",

@@ -1,5 +1,6 @@
 package com.example.sdr.decoders.fax
 
+import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
 import java.util.concurrent.ArrayBlockingQueue
 
@@ -63,7 +64,7 @@ internal class FaxDecodeWorker : AutoCloseable {
         info = FaxInformation(pages, decoder.width, lines, status, lpm, ioc, ++revision)
     }
     private fun renderRow(row: ByteArray, index: Int) {
-        if (index % TILE_ROWS == 0) tile = Bitmap.createBitmap(decoder.width, TILE_ROWS, Bitmap.Config.ARGB_8888)
+        if (index % TILE_ROWS == 0) tile = createBitmap(decoder.width, TILE_ROWS, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(decoder.width) { x ->
             val gray = row[x].toInt() and 255
             0xff000000.toInt() or (gray shl 16) or (gray shl 8) or gray

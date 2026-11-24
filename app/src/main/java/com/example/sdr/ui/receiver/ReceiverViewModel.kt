@@ -24,7 +24,6 @@ import com.example.sdr.receiver.ReceiverSquelch
 import com.example.sdr.receiver.TuningStep
 import com.example.sdr.receiver.WaterfallHistory
 import com.example.sdr.sources.usb.ReceiverState
-import kotlin.math.roundToLong
 
 class ReceiverViewModel(application: Application, private val savedState: SavedStateHandle) : AndroidViewModel(application) {
     private val runtime = (application as RadiolaApplication).receiver
@@ -57,22 +56,34 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     var wfmStereoLocked by mutableStateOf(false)
     var receiverSquelch by mutableStateOf(ReceiverSquelch())
     var squelchOpen by mutableStateOf(true)
-    var signalDbfs by mutableFloatStateOf(-90f)
+    val signalDbfsState = mutableFloatStateOf(-90f)
+    var signalDbfs by signalDbfsState
     var batteryPercent by mutableIntStateOf(-1)
     var batteryCharging by mutableStateOf(false)
+    var frequencyInputError by mutableStateOf<String?>(null)
+        private set
+
     fun parseFrequency(): Long? {
-        val mhz = frequencyInput.replace(',', '.').toDoubleOrNull()
-        if (mhz == null || mhz !in 0.5..1766.0) {
-            return null
+        val result = com.example.sdr.receiver.validateFrequencyInput(frequencyInput, listOf(localTuningRange))
+        frequencyInputError = result.error?.let {
+            if (it == com.example.sdr.receiver.FrequencyInputError.OUT_OF_RANGE) "Allowed: 0.5 - 1766 MHz" else it.message
         }
-        return (mhz * 1_000_000.0).roundToLong()
+        return result.hz
     }
 
-    fun applyFrequency() {
-        parseFrequency()?.let(::requestFrequency)
+    fun applyFrequency(): Boolean {
+        val hz = parseFrequency() ?: return false
+        requestFrequency(hz)
+        return true
+    }
+
+    fun editFrequency(value: String) {
+        frequencyInput = value
+        frequencyInputError = null
     }
 
     fun requestFrequency(hz: Long) {
+        frequencyInputError = null
         // Display the request immediately; only the controller tracks hardware acknowledgements.
         frequencyHz = hz
         frequencyInput = "%.6f".format(java.util.Locale.US, hz / 1_000_000.0)

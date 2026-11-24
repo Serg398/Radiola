@@ -1,5 +1,6 @@
 package com.example.sdr.audio
 
+import androidx.core.content.edit
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +32,7 @@ internal object HamNoiseSettings {
         publish(if (level == NoiseReductionLevel.OFF) ui.copy(enabled = false) else Config(true, level.strength!!))
         save()
     }
-    fun save() { preferences?.edit()?.putBoolean("enabled", ui.enabled)?.putFloat("strength", ui.strength)?.apply() }
+    fun save() { preferences?.edit { putBoolean("enabled", ui.enabled).putFloat("strength", ui.strength) } }
     fun model(mode: DemodulationMode): Int = when (mode) {
         DemodulationMode.CW -> 1
         DemodulationMode.USB, DemodulationMode.LSB, DemodulationMode.AM, DemodulationMode.NFM -> 2

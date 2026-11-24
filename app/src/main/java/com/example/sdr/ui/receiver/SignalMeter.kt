@@ -343,3 +343,12 @@ internal fun SignalMeter(
 
     }
 }
+
+@Composable
+internal fun UsbSignalMeter(
+    signal: androidx.compose.runtime.State<Float>, squelch: com.example.sdr.receiver.ReceiverSquelch,
+    open: Boolean, onSquelch: (com.example.sdr.receiver.ReceiverSquelch) -> Unit,
+    modifier: Modifier = Modifier, analog: Boolean, inertia: com.example.sdr.platform.SignalMeterInertia,
+) {
+    SignalMeter(signal.value, squelch, open, onSquelch, modifier, analog = analog, inertia = inertia)
+}

@@ -1,6 +1,5 @@
 package com.example.sdr.ui.receiver
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,28 +33,19 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import com.example.sdr.RadiolaApplication
 import com.example.sdr.plugins.PluginCard
-import com.example.sdr.plugins.pluginCardModifier
+import com.example.sdr.plugins.pluginCardLayout
 import com.example.sdr.plugins.PluginLayout
 import com.example.sdr.plugins.PluginPicker
 import com.example.sdr.plugins.PluginsPage
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.example.sdr.DemodulationMode
 import com.example.sdr.RdsInformation
 import com.example.sdr.SpectrumFrame
@@ -74,8 +64,6 @@ import com.example.sdr.ui.components.BandwidthControl
 import com.example.sdr.ui.components.ModeControl
 import com.example.sdr.ui.components.SourcePlaybackControl
 import com.example.sdr.ui.components.WebSdrBandControl
-import com.example.sdr.ui.decoders.ModulationInformationPanel
-import com.example.sdr.ui.decoders.ServerDecodedInformationPanel
 import com.example.sdr.ui.map.WebSdrMap
 import com.example.sdr.ui.settings.SettingsPanel
 import com.example.sdr.ui.theme.RadiolaColors
@@ -99,6 +87,8 @@ internal fun ReceiverScreen(
     streamPending: Boolean,
     starting: Boolean = false,
     frequencyInput: String,
+    frequencyInputError: String?,
+    receiverError: String?,
     spectrumSpanHz: Int,
     bandwidthDefault: Boolean = true,
     receiverGain: ReceiverGain,
@@ -107,12 +97,12 @@ internal fun ReceiverScreen(
     waterfallHistory: WaterfallHistory,
     tuningStep: TuningStep,
     actualWaterfallFps: Int,
-    signalDbfs: Float,
+    signalDbfs: State<Float>,
     onRequestPermission: () -> Unit,
     onStartStream: () -> Unit,
     onStopStream: () -> Unit,
     onFrequencyInput: (String) -> Unit,
-    onTune: () -> Unit,
+    onTune: () -> Boolean,
     onReceiverGainChange: (ReceiverGain) -> Unit,
     onTuningStepChange: (TuningStep) -> Unit,
     signalMeterInertia: SignalMeterInertia, onSignalMeterInertiaChange: (SignalMeterInertia) -> Unit,
@@ -167,11 +157,17 @@ internal fun ReceiverScreen(
     val activeBandwidth = uiState.bandwidthHz
     var remoteInput by remember { mutableStateOf("") }
     val activeInput = if (remote) remoteInput else frequencyInput
-    val changeInput: (String) -> Unit = { if (remote) remoteInput = it else onFrequencyInput(it) }
-    val applyInput: () -> Unit = {
-        if (remote) remoteInput.replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 }
-            ?.let { webSession.tune((it * 1_000_000).toLong()) }
-        else onTune()
+    var remoteInputError by remember(source) { mutableStateOf<String?>(null) }
+    val changeInput: (String) -> Unit = {
+        if (remote) { remoteInput = it; remoteInputError = null } else onFrequencyInput(it)
+    }
+    val applyInput: () -> Boolean = {
+        if (remote) {
+            val bands = if (openWebRx) listOfNotNull(webSession.bands.getOrNull(webSession.currentBand)) else webSession.bands
+            val result = com.example.sdr.receiver.validateFrequencyInput(remoteInput, bands.map { it.lowHz..it.highHz })
+            remoteInputError = if (!webSession.tuningReady) "Connect the receiver first" else result.error?.message
+            if (remoteInputError == null && result.hz != null) { webSession.tune(result.hz); true } else false
+        } else onTune()
     }
     val step: (Long) -> Unit = { presentation.cancelFavorite(); presentation.step(it) }
     var ftxMode by presentation::ftxMode
@@ -292,6 +288,7 @@ internal fun ReceiverScreen(
                     }
                 } else GainPanel(receiverGain, gainSteps, onReceiverGainChange, Modifier.width(180.dp))
                 FrequencyControl(tunedHz, activeInput, editingFrequency, changeInput, applyInput,
+                    inputError = if (remote) remoteInputError else frequencyInputError,
                     onEditingChange = { editingFrequency = it }, step = {
                         encoderBrakeRequest++
                         encoderRotating = false
@@ -381,7 +378,7 @@ internal fun ReceiverScreen(
                         WebSdrSignalMeter(webSession, receiverSquelch, squelchOpen, onSquelchChange,
                             Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter, inertia = signalMeterInertia)
                     } else {
-                        SignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter, inertia = signalMeterInertia)
+                        UsbSignalMeter(signalDbfs, receiverSquelch, squelchOpen, onSquelchChange, Modifier.weight(1f).fillMaxHeight(), analog = analogSignalMeter, inertia = signalMeterInertia)
                     }
                     }
                 }
@@ -426,101 +423,26 @@ internal fun ReceiverScreen(
                     Modifier.fillMaxSize().padding(end = ReceiverPlotGeometry.encoderReserve),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-            if (showSpectrum || showWaterfall) Box(
-                Modifier.fillMaxWidth().weight(1f)
-                    .clipToBounds()
-                    .border(1.dp, edge, RoundedCornerShape(6.dp))
-                    .background(RadiolaColors.plot, RoundedCornerShape(6.dp))
-            ) {
-                Column(Modifier.fillMaxSize().padding(4.dp)) {
-                    ReceiverPlotHeader(
-                        stations = presentation.favorites.stations,
-                        centerHz = visibleCenterHz,
-                        spanHz = visibleSpanHz,
-                        axisLabel = if (!showSpectrum) null else if (remote) {
-                            if (automaticDisplay) "dB" else "REL"
-                        } else "dBFS",
-                        automatic = automaticDisplay,
-                        onAutomatic = { automaticDisplay = !automaticDisplay },
-                        onFavorite = { station ->
-                            encoderBrakeRequest++
-                            encoderRotating = false
-                            presentation.activateFavorite(station) { selected = "Receiver" }
-                        },
-                    )
-                    if (showSpectrum) {
-                        Box(Modifier.fillMaxWidth().weight(1f)) {
-                            AmberSpectrum(activeSpectrum, visibleSpanHz, activeBandwidth, channelOffsetHz, passbandOffsetHz.toInt(), visibleCenterHz, Modifier.fillMaxSize(), relative = remote,
-                                displayRange = if (automaticDisplay) automaticLevels?.spectrum else null)
-                            FavoriteFrequencyGuides(presentation.favorites.stations, visibleCenterHz, visibleSpanHz,
-                                Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset))
-                        }
-                    }
-                    if (showWaterfall) {
-                        Box(Modifier.fillMaxWidth().weight(1f).then(waterfallNavigation(
-                            visibleSpanHz = visibleSpanHz,
-                            zoom = effectiveZoom,
-                            maxZoom = maxWaterfallZoom,
-                            onStep = step,
-                            onZoom = { zoom = it },
-                            onContact = {
-                                encoderBrakeRequest++
-                                encoderRotating = false
-                                frequencyMotion.snapTo(latestFrequencyHz.toDouble())
-                                displayFrequencyHz = latestFrequencyHz.toDouble()
-                            },
-                        ))) {
-                            androidx.compose.runtime.key(activeHistory) {
-                            AndroidView(
-                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024, separateSurface = true) },
-                                update = { view ->
-                                    view.setDisplayRange(if (automaticDisplay) automaticLevels?.waterfall else null)
-                                    view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
-                                    view.refresh()
-                                },
-                                modifier = Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset)
-                            )
-                            }
-                            Canvas(Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset).clipToBounds()) {
-                                val center = size.width * (0.5f + channelOffsetHz.toFloat() / visibleSpanHz)
-                                val channelWidth = size.width * (activeBandwidth.toFloat() / visibleSpanHz)
-                                val passbandCenter = size.width * (0.5f + (channelOffsetHz + passbandOffsetHz).toFloat() / visibleSpanHz)
-                                val channelLeft = passbandCenter - channelWidth / 2f
-                                val channelRight = passbandCenter + channelWidth / 2f
-                                drawRect(
-                                    Brush.horizontalGradient(
-                                        listOf(RadiolaColors.receiveChannel.copy(alpha = 20f / 255f), RadiolaColors.receiveChannel.copy(alpha = if (RadiolaColors.selected == RadiolaColors.Theme.LIGHT) .14f else 51f / 255f), RadiolaColors.receiveChannel.copy(alpha = 20f / 255f)),
-                                        startX = channelLeft, endX = channelRight
-                                    ),
-                                    Offset(channelLeft, 0f), Size(channelWidth, size.height)
-                                )
-                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 201f / 255f), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
-                            }
-                            Text(
-                                "${if (!receiving) 0 else if (remote) webSession.visualFps else actualWaterfallFps} FPS",
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
-                                    .background(Color(0xA6111D30), RoundedCornerShape(4.dp))
-                                    .border(.5.dp, Color.White.copy(alpha = .15f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 3.dp),
-                                color = Color.White.copy(alpha = .9f), fontSize = 9.sp, lineHeight = 11.sp,
-                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                            )
-                        }
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().height(18.dp).padding(start = ReceiverPlotGeometry.frequencyInset, end = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        for (fraction in listOf(-0.5, -0.25, 0.0, 0.25, 0.5)) {
-                            Text("%.3f".format(Locale.US, (visibleCenterHz + visibleSpanHz * fraction) / 1_000_000.0), color = muted, fontSize = 11.sp)
-                        }
-                    }
-                }
-
-
-            }
+            if (showSpectrum || showWaterfall) ReceiverPlots(
+                state = ReceiverPlotState(visibleCenterHz, visibleSpanHz, activeBandwidth, channelOffsetHz,
+                    passbandOffsetHz, remote, automaticDisplay, automaticLevels, showSpectrum, showWaterfall,
+                    if (!receiving) 0 else if (remote) webSession.visualFps else actualWaterfallFps),
+                spectrum = activeSpectrum, history = activeHistory, favorites = presentation.favorites.stations,
+                onAutomatic = { automaticDisplay = !automaticDisplay },
+                onFavorite = { station ->
+                    encoderBrakeRequest++
+                    encoderRotating = false
+                    presentation.activateFavorite(station) { selected = "Receiver" }
+                },
+                navigation = ReceiverPlotNavigation(effectiveZoom, maxWaterfallZoom,
+                    onStep = step, onZoom = { zoom = it }, onContact = {
+                        encoderBrakeRequest++
+                        encoderRotating = false
+                        frequencyMotion.snapTo(latestFrequencyHz.toDouble())
+                        displayFrequencyHz = latestFrequencyHz.toDouble()
+                    }),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
             ReceiverDecoderCard(
                 presentation, openWebRx, activeMode, ftxMode, plugin != null, rdsInformation,
                 tunedHz, receiving, wfmStereoEnabled, wfmStereoLocked, signalDbfs, source,
@@ -529,7 +451,7 @@ internal fun ReceiverScreen(
             if (plugin != null) {
                 PluginCard(plugins, pluginLayout, onLayout = { pluginLayout = it },
                     playable = pluginPlayable, onReceiverCommand = presentation::pluginReceiverCommand,
-                    modifier = pluginCardModifier(pluginLayout))
+                    modifier = Modifier.pluginCardLayout(pluginLayout, this))
             }
                 }
                 androidx.compose.animation.AnimatedVisibility(
@@ -568,98 +490,11 @@ internal fun ReceiverScreen(
                     modifier = Modifier.align(Alignment.CenterEnd).width(ReceiverPlotGeometry.encoderWidth).fillMaxHeight()
                 )
                 }
+                if (!remote && selected == "Receiver") {
+                    ReceiverErrorNotice(receiverError,
+                        Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 8.dp))
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun ReceiverPlotHeader(
-    stations: List<com.example.sdr.favorites.FavoriteStation>,
-    centerHz: Double,
-    spanHz: Int,
-    axisLabel: String?,
-    automatic: Boolean,
-    onAutomatic: () -> Unit,
-    onFavorite: (com.example.sdr.favorites.FavoriteStation) -> Unit,
-) {
-    var controlsWidth by remember { mutableIntStateOf(0) }
-    Box(Modifier.fillMaxWidth().height(ReceiverPlotGeometry.headerHeight)) {
-        if (axisLabel != null) {
-            Text(axisLabel, Modifier.align(Alignment.CenterStart).padding(start = 5.dp),
-                color = muted, fontSize = 11.sp)
-        }
-        FavoriteFrequencyMarkers(stations, centerHz, spanHz,
-            Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset),
-            endInset = with(LocalDensity.current) { controlsWidth.toDp() } + 8.dp,
-            onSelect = onFavorite)
-        Row(
-            Modifier.align(Alignment.CenterEnd).onSizeChanged { controlsWidth = it.width }.padding(end = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("AUTO", color = if (automatic) warm else muted, fontSize = 10.sp,
-                modifier = Modifier.clickable(onClick = onAutomatic)
-                    .background(if (automatic) RadiolaColors.primaryTint else Color.Transparent, RoundedCornerShape(4.dp))
-                    .border(.5.dp, if (automatic) warm else edge, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 1.dp))
-            Text("SPAN %d kHz".format(Locale.US, spanHz / 1_000), color = muted, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun ReceiverDecoderCard(
-    presentation: ReceiverPresentation,
-    openWebRx: Boolean,
-    activeMode: DemodulationMode,
-    ftxMode: com.example.sdr.decoders.ftx.FtxMode?,
-    pluginSelected: Boolean,
-    rdsInformation: RdsInformation,
-    tunedHz: Long,
-    receiving: Boolean,
-    wfmStereoEnabled: Boolean,
-    wfmStereoLocked: Boolean,
-    signalDbfs: Float,
-    source: ReceiverSource,
-    webSdrReceiverUrl: String?,
-    onFaxExpand: () -> Unit,
-) {
-    val webSession = presentation.online.session
-    val cardKind = when {
-        presentation.faxSelected -> "fax"
-        openWebRx && webSession.serverDataMode -> "server"
-        activeMode == DemodulationMode.CW || ftxMode != null -> "local"
-        else -> null
-    }
-    // Keep the outgoing card composed until its exit animation has finished.
-    var lastCard by remember { mutableStateOf(Triple(cardKind, activeMode, ftxMode)) }
-    val card = if (cardKind != null) Triple(cardKind, activeMode, ftxMode) else lastCard
-    androidx.compose.runtime.SideEffect { if (cardKind != null) lastCard = card }
-    androidx.compose.animation.AnimatedVisibility(
-        visible = cardKind != null && !pluginSelected,
-        enter = androidx.compose.animation.expandVertically(
-            animationSpec = androidx.compose.animation.core.tween(220), expandFrom = Alignment.Bottom) +
-            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
-        exit = androidx.compose.animation.shrinkVertically(
-            animationSpec = androidx.compose.animation.core.tween(180), shrinkTowards = Alignment.Bottom) +
-            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
-    ) {
-    if (card.first == "fax") com.example.sdr.ui.decoders.FaxInformationPanel(
-        presentation.faxInformation, presentation.faxDecoder, onExpand = onFaxExpand)
-    else if (card.first == "server") ServerDecodedInformationPanel(
-        webSession.modeLabel, webSession.decodedText, webSession::clearDecodedText,
-        sstv = webSession.serverModeId == "sstv", image = webSession.sstvImage,
-        adsb = webSession.serverModeId == "adsb", aircraft = webSession.aircraftReports)
-    else ModulationInformationPanel(
-        card.second, rdsInformation, tunedHz, receiving,
-        wfmStereoEnabled && wfmStereoLocked, signalDbfs,
-        presentation.cwInformation, presentation::clearCw,
-        presentation.cwEnabled,
-        presentation::enableCw,
-        cwBackend = presentation.cwBackend, onCwBackendChange = presentation::selectCwBackend,
-        ftxMode = card.third, ftx = presentation.ftxInformation, onFtxClear = presentation::clearFtx,
-        source = source, serverUrl = webSdrReceiverUrl,
-    ) {}
     }
 }

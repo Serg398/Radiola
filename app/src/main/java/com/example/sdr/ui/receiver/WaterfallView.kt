@@ -1,5 +1,7 @@
 package com.example.sdr.ui.receiver
 
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withClip
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -14,6 +16,7 @@ import com.example.sdr.receiver.WaterfallHistory
 import com.example.sdr.telemetry.RenderTimings
 
 /** Full-band color cache: each historical row is positioned by its own RF coordinates. */
+@android.annotation.SuppressLint("ViewConstructor") // Requires the session-owned history; created by AndroidView.
 class WaterfallView(
     context: Context,
     private val history: WaterfallHistory,
@@ -67,7 +70,7 @@ class WaterfallView(
 
     private var renderWidth = minOf(minimumRenderWidth, history.binCount)
     private var pixels = IntArray(renderWidth)
-    private var bitmap = Bitmap.createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
+    private var bitmap = createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
     private val paint = Paint().apply { isFilterBitmap = false }
     private var cachedRevision = -1L
     private var displayRange: DisplayDbRange? = null
@@ -119,7 +122,7 @@ class WaterfallView(
         if (width < renderWidth && visibleSpanHz < history.latestSpanHz && wanted > renderWidth * .48) width = renderWidth
         if (width != renderWidth) {
             renderWidth = width; pixels = IntArray(width)
-            bitmap = Bitmap.createBitmap(width, history.capacity, Bitmap.Config.ARGB_8888).apply { eraseColor(palette[0]) }
+            bitmap = createBitmap(width, history.capacity, Bitmap.Config.ARGB_8888).apply { eraseColor(palette[0]) }
             cachedRevision = -1
         }
         if (cachedRevision == history.revision) return
@@ -151,28 +154,27 @@ class WaterfallView(
 
     private fun drawWaterfall(canvas: Canvas) {
         val started = System.nanoTime()
-        val checkpoint = canvas.save()
-        canvas.clipRect(0, 0, width, height)
-        canvas.drawColor(palette[0])
-        val rowHeight = maxOf(1, (height + history.capacity - 1) / history.capacity)
-        var age = 0
-        while (age < history.size && age * rowHeight < height) {
-            val row = history.rowAtAge(age)
-            val center = history.centerAt(row)
-            val span = history.spanAt(row)
-            var rows = 1
-            while (age + rows < history.size && row + rows < history.capacity &&
-                history.centerAt(row + rows) == center && history.spanAt(row + rows) == span) rows++
-            val left = (history.imageLeftFraction(row, tuningFrequencyHz.toDouble(), visibleSpanHz) * width).toFloat()
-            val imageWidth = span.toFloat() / visibleSpanHz * width
-            if (left < width && left + imageWidth > 0) {
-                sourceRect.set(0, row, renderWidth, row + rows)
-                destinationRect.set(left, (age * rowHeight).toFloat(), left + imageWidth, ((age + rows) * rowHeight).toFloat())
-                canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
+        canvas.withClip(0, 0, width, height) {
+            canvas.drawColor(palette[0])
+            val rowHeight = maxOf(1, (height + history.capacity - 1) / history.capacity)
+            var age = 0
+            while (age < history.size && age * rowHeight < height) {
+                val row = history.rowAtAge(age)
+                val center = history.centerAt(row)
+                val span = history.spanAt(row)
+                var rows = 1
+                while (age + rows < history.size && row + rows < history.capacity &&
+                    history.centerAt(row + rows) == center && history.spanAt(row + rows) == span) rows++
+                val left = (history.imageLeftFraction(row, tuningFrequencyHz.toDouble(), visibleSpanHz) * width).toFloat()
+                val imageWidth = span.toFloat() / visibleSpanHz * width
+                if (left < width && left + imageWidth > 0) {
+                    sourceRect.set(0, row, renderWidth, row + rows)
+                    destinationRect.set(left, (age * rowHeight).toFloat(), left + imageWidth, ((age + rows) * rowHeight).toFloat())
+                    canvas.drawBitmap(bitmap, sourceRect, destinationRect, paint)
+                }
+                age += rows
             }
-            age += rows
         }
-        canvas.restoreToCount(checkpoint)
         RenderTimings.waterfall.record(System.nanoTime() - started)
     }
 }

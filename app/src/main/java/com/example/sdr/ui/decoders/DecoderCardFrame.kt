@@ -14,11 +14,11 @@ internal val DecoderCardHeight = 160.dp
 /** FT8 card geometry shared by every modulation panel. */
 @Composable
 internal fun DecoderCardFrame(
-    modifier: Modifier = Modifier.fillMaxSize(),
+    modifier: Modifier = Modifier,
     sidebar: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Row(modifier.border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
+    Row(modifier.fillMaxSize().border(1.dp, RadiolaColors.border, RoundedCornerShape(6.dp))
         .background(RadiolaColors.surface, RoundedCornerShape(6.dp))
         .padding(start = 10.dp, end = 8.dp, top = 2.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {

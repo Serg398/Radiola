@@ -1,5 +1,6 @@
 package com.example.sdr.sources
 
+import androidx.core.content.edit
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.*
@@ -41,7 +42,7 @@ internal class WebSdrRuntime(private val context: Context) {
     fun selectSource(value: ReceiverSource) {
         if (value != source) disconnect()
         page = "MAP"
-        source = value; preferences.edit().putString("source", value.storedValue).apply()
+        source = value; preferences.edit { putString("source", value.storedValue) }
         (context.applicationContext as? RadiolaApplication)?.receiver?.updateAudioWarmup()
     }
     fun selectPage(value: String) { page = value }
@@ -49,7 +50,7 @@ internal class WebSdrRuntime(private val context: Context) {
         if (source == ReceiverSource.OPEN_WEB_RX) {
             if (openWebRxReceiver?.url != receiver.url) disconnect()
             openWebRxReceiver = receiver
-            preferences.edit().putString("openwebrx_url", receiver.url).putString("openwebrx_name", receiver.name).apply()
+            preferences.edit { putString("openwebrx_url", receiver.url).putString("openwebrx_name", receiver.name) }
             return
         }
         selectServer(receiver.url, android.text.Html.fromHtml(receiver.name, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim())
@@ -57,7 +58,7 @@ internal class WebSdrRuntime(private val context: Context) {
     fun selectServer(url: String?, name: String) {
         if (receiverUrl != url) disconnect()
         receiverUrl = url; receiverName = name
-        preferences.edit().putString("server_url", receiverUrl).putString("server_name", receiverName).apply()
+        preferences.edit { putString("server_url", receiverUrl).putString("server_name", receiverName) }
     }
     private val selectedUrl get() = if (source == ReceiverSource.OPEN_WEB_RX) openWebRxReceiver?.url else receiverUrl
     val selectedName get() = if (source == ReceiverSource.OPEN_WEB_RX) openWebRxReceiver?.name.orEmpty() else receiverName

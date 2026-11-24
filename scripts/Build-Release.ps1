@@ -41,8 +41,11 @@ try {
 
     $name = "radiola-$($version.versionName).apk"
     $sha256 = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+    $mapping = 'app/build/outputs/mapping/release/mapping.txt'
+    if (!(Test-Path $mapping)) { throw 'R8 mapping is missing from the release build.' }
     New-Item -ItemType Directory -Path $destination | Out-Null
     Copy-Item -LiteralPath $apk -Destination (Join-Path $destination $name)
+    Copy-Item -LiteralPath $mapping -Destination (Join-Path $destination 'mapping.txt')
     "$sha256  $name" | Set-Content -Encoding ascii (Join-Path $destination 'SHA256SUMS.txt')
     $signature | Set-Content -Encoding utf8 (Join-Path $destination 'signature.txt')
     Write-Output $destination

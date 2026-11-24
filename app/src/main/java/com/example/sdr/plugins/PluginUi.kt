@@ -54,9 +54,9 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
     }
 }
 
-internal fun ColumnScope.pluginCardModifier(layout: PluginLayout): Modifier {
-    val width = Modifier.fillMaxWidth()
-    return when (layout) {
+internal fun Modifier.pluginCardLayout(layout: PluginLayout, scope: ColumnScope): Modifier = with(scope) {
+    val width = this@pluginCardLayout.fillMaxWidth()
+    when (layout) {
         PluginLayout.BOTH -> width.height(80.dp)
         PluginLayout.TALL -> width.height(DecoderCardHeight)
         PluginLayout.SPECTRUM, PluginLayout.WATERFALL -> width.height(116.dp)

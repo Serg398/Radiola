@@ -14,7 +14,7 @@ import kotlin.math.sign
 
 /** Drag the RF image under the fixed tuning cursor; two fingers exclusively zoom. */
 @Composable
-internal fun waterfallNavigation(
+internal fun Modifier.waterfallNavigation(
     visibleSpanHz: Int,
     zoom: Float,
     maxZoom: Float = 16f,
@@ -28,7 +28,7 @@ internal fun waterfallNavigation(
     val currentStep by rememberUpdatedState(onStep)
     val currentZoomChange by rememberUpdatedState(onZoom)
     val currentContact by rememberUpdatedState(onContact)
-    return Modifier.pointerInput(Unit) {
+    return this.pointerInput(Unit) {
         val plotInset = ReceiverPlotGeometry.frequencyInset.toPx()
         val minimumDistance = 24.dp.toPx()
         awaitEachGesture {

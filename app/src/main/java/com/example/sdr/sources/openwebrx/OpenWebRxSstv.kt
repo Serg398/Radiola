@@ -1,5 +1,6 @@
 package com.example.sdr.sources.openwebrx
 
+import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Base64
@@ -31,7 +32,7 @@ internal class OpenWebRxSstv {
         } else null
         var current = image
         if (!hasLine || current == null || current.bitmap.width != width || current.bitmap.height != height) {
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(Color.BLACK)
             current = SstvImage(bitmap, message.optString("sstvMode", "SSTV"),
                 message.optString("timestamp"), 0, ++revision)

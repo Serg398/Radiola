@@ -33,7 +33,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -104,7 +103,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build()
     @Volatile private var generation = 0L
-    private var socket: WebSocket? = null
+    private var socket: OpenWebRxStream? = null
     private var landing: Call? = null
     private var output: WebSdrAudioOutput? = null
     private var focusHeld = false
@@ -277,121 +276,89 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
                 faxDecoder.offer(samples, samples.size, rate, 1)
             } })
         output = ownedOutput
-        socket = client.newWebSocket(request, object : WebSocketListener() {
-            val decoder = OpenWebRxStreamDecoder()
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send("SERVER DE CLIENT client=Radiola type=receiver")
+        socket = OpenWebRxStream(client, request, object : OpenWebRxStream.Listener {
+            override fun onPacket() {
+                if (token == generation) lastPacketAt = SystemClock.elapsedRealtime()
             }
-            override fun onMessage(webSocket: WebSocket, text: String) {
+            override fun onMessage(message: JSONObject) {
                 if (token != generation) return
-                lastPacketAt = SystemClock.elapsedRealtime()
-                try {
-                    if (text.startsWith("CLIENT DE SERVER")) {
-                        webSocket.send(JSONObject().put("type", "connectionproperties").put("params",
-                            JSONObject().put("output_rate", 12000).put("hd_output_rate", 48000)).toString())
-                        return
+                when (message.optString("type")) {
+                    "config" -> {
+                        val config = message.getJSONObject("value")
+                        publish(token) { queueConfig(config) }
                     }
-                    val message = JSONObject(text)
-                    when (message.optString("type")) {
-                        "config" -> {
-                            val config = message.getJSONObject("value")
-                            decoder.configure(config)
-                            publish(token) { queueConfig(config) }
-                        }
-                        "profiles" -> {
-                            val entries = message.getJSONArray("value")
-                            publish(token) { updateProfiles(entries) }
-                        }
-                        "modes" -> {
-                            val descriptors = OpenWebRxMode.parse(message.getJSONArray("value"))
-                            publish(token) { modeDescriptors = descriptors; adoptInitialMode() }
-                        }
-                        "features" -> {
-                            val value = message.getJSONObject("value")
-                            val available = value.keys().asSequence().associateWith { value.optBoolean(it, false) }
-                            publish(token) { features = available }
-                        }
-                        "secondary_demod" -> {
-                            val value = message.opt("value")
-                            if (value is JSONObject && value.optString("mode") in setOf("ADSB", "ADSB-LIST")) {
-                                val reports = OpenWebRxAircraft.parse(value)
-                                val snapshot = value.optString("mode") == "ADSB-LIST"
-                                publish(token) {
-                                    if (selectedMode?.id == "adsb") {
-                                        aircraftReports = if (snapshot) reports else OpenWebRxAircraft.merge(aircraftReports, reports)
-                                        state = ReceiverConnectionState.Connected; error = null; retry = 0
-                                    }
-                                }
-                                return
-                            }
-                            if (value is JSONObject && value.optString("mode").equals("SSTV", ignoreCase = true)) {
-                                publish(token) {
-                                    if (selectedMode?.id == "sstv") sstv.accept(value)?.let { sstvImage = it }
-                                }
-                                return
-                            }
-                            val line = formatDecoded(value)
+                    "profiles" -> {
+                        val entries = message.getJSONArray("value")
+                        publish(token) { updateProfiles(entries) }
+                    }
+                    "modes" -> {
+                        val descriptors = OpenWebRxMode.parse(message.getJSONArray("value"))
+                        publish(token) { modeDescriptors = descriptors; adoptInitialMode() }
+                    }
+                    "features" -> {
+                        val value = message.getJSONObject("value")
+                        val available = value.keys().asSequence().associateWith { value.optBoolean(it, false) }
+                        publish(token) { features = available }
+                    }
+                    "secondary_demod" -> {
+                        val value = message.opt("value")
+                        if (value is JSONObject && value.optString("mode") in setOf("ADSB", "ADSB-LIST")) {
+                            val reports = OpenWebRxAircraft.parse(value)
+                            val snapshot = value.optString("mode") == "ADSB-LIST"
                             publish(token) {
-                                if (serverDataMode && line.isNotEmpty()) {
-                                    decodedText = (decodedText + line).takeLast(8000)
-                                    if (!needsAudio) state = ReceiverConnectionState.Connected
+                                if (selectedMode?.id == "adsb") {
+                                    aircraftReports = if (snapshot) reports else OpenWebRxAircraft.merge(aircraftReports, reports)
+                                    state = ReceiverConnectionState.Connected; error = null; retry = 0
                                 }
                             }
+                            return
                         }
-                        "smeter" -> {
-                            val power = message.optDouble("value", Double.NaN)
-                            decoder.signal(power)
+                        if (value is JSONObject && value.optString("mode").equals("SSTV", ignoreCase = true)) {
+                            publish(token) {
+                                if (selectedMode?.id == "sstv") sstv.accept(value)?.let { sstvImage = it }
+                            }
+                            return
                         }
-                        "log_message" -> publish(token) {
-                            val notice = message.optString("value").take(240)
-                            if (notice.isNotBlank()) {
-                                Log.w("OpenWebRx", "Server: $notice")
-                                serverNotice = notice
+                        val line = formatDecoded(value)
+                        publish(token) {
+                            if (serverDataMode && line.isNotEmpty()) {
+                                decodedText = (decodedText + line).takeLast(8000)
+                                if (!needsAudio) state = ReceiverConnectionState.Connected
                             }
                         }
-                        "backoff" -> publish(token) { fail(message.optString("reason", "Server is busy")) }
-                        "sdr_error", "demodulator_error" -> publish(token) { fail(message.optString("value", "Receiver unavailable")) }
                     }
-                } catch (e: Exception) { publish(token) { fail("Invalid OpenWebRX message: ${e.message}") } }
-            }
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                if (token != generation || bytes.size < 2) return
-                lastPacketAt = SystemClock.elapsedRealtime()
-                try {
-                    val payload = bytes.substring(1).toByteArray()
-                    when (bytes[0].toInt()) {
-                        1 -> {
-                            val bins = decoder.spectrum(payload) ?: return
-                            receivedFft.incrementAndGet()
-                            lastFftAt = SystemClock.elapsedRealtime()
-                            pendingRows.offer(Row(token, bins, decoder.centerHz, decoder.spanHz,
-                                SystemClock.elapsedRealtimeNanos()))
-                        }
-                        2, 4 -> {
-                            val rate = if (bytes[0].toInt() == 4) 48000 else 12000
-                            val samples = decoder.audio(payload, rate == 48000)
-                            if (samples.isEmpty() || token != generation) return
-                            lastAudioAt = SystemClock.elapsedRealtime()
-                            receivedAudio.incrementAndGet()
-                            ownedOutput.offer(rate, samples, decoder.signalDbm)
-                            ftxDecoder.offer(samples, samples.size, rate, 1)
-                            if (audioSampleRate != rate) publish(token) { audioSampleRate = rate }
+                    "log_message" -> publish(token) {
+                        val notice = message.optString("value").take(240)
+                        if (notice.isNotBlank()) {
+                            Log.w("OpenWebRx", "Server: $notice")
+                            serverNotice = notice
                         }
                     }
-                } catch (e: Exception) {
-                    publish(token) {
-                        if (bytes[0].toInt() == 1) spectrumWarning = "Cannot decode spectrum: ${e.message}"
-                        else fail("Invalid OpenWebRX audio: ${e.message}")
-                    }
+                    "backoff" -> publish(token) { fail(message.optString("reason", "Server is busy")) }
+                    "sdr_error", "demodulator_error" -> publish(token) { fail(message.optString("value", "Receiver unavailable")) }
                 }
+
             }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = publish(token) {
-                Log.w("OpenWebRx", "Connection failed", t); recover("OpenWebRX connection lost")
+            override fun onSpectrum(bins: FloatArray, centerHz: Long, spanHz: Int, timestampNanos: Long) {
+                if (token != generation) return
+                receivedFft.incrementAndGet()
+                lastFftAt = SystemClock.elapsedRealtime()
+                pendingRows.offer(Row(token, bins, centerHz, spanHz, timestampNanos))
             }
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = publish(token) {
-                Log.i("OpenWebRx", "Socket closed: code=$code reason=$reason")
-                recover(reason.ifBlank { "OpenWebRX connection closed" })
+            override fun onAudio(rate: Int, samples: ShortArray, signalDbm: Float?) {
+                if (token != generation) return
+                lastAudioAt = SystemClock.elapsedRealtime()
+                receivedAudio.incrementAndGet()
+                ownedOutput.offer(rate, samples, signalDbm)
+                ftxDecoder.offer(samples, samples.size, rate, 1)
+                if (audioSampleRate != rate) publish(token) { audioSampleRate = rate }
+            }
+            override fun onError(kind: OpenWebRxStream.ErrorKind, message: String) = publish(token) {
+                when (kind) {
+                    OpenWebRxStream.ErrorKind.SPECTRUM -> spectrumWarning = message
+                    OpenWebRxStream.ErrorKind.PROTOCOL -> fail(message)
+                    OpenWebRxStream.ErrorKind.TRANSPORT -> { Log.w("OpenWebRx", message); recover(message) }
+                }
             }
         })
     }
@@ -627,7 +594,7 @@ internal class OpenWebRxSession(context: Context) : OnlineReceiverSession {
         Log.i("OpenWebRx", "Recovering: $message; selected=${resume?.profile}")
         closeTransport(); error = "$message; reconnecting"; state = ReceiverConnectionState.Connecting
         handler.removeCallbacks(reconnect)
-        handler.postDelayed(reconnect, (1000L shl retry++.coerceAtMost(5)).coerceAtMost(30_000))
+        handler.postDelayed(reconnect, com.example.sdr.receiver.ReceiverRetryPolicy.delayMs(retry++))
     }
     private fun fail(message: String) {
         disconnect(); state = ReceiverConnectionState.Error; error = message

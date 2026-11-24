@@ -1,5 +1,6 @@
 package com.example.sdr.sources.websdr
 
+import androidx.core.content.edit
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -30,7 +31,6 @@ import java.util.concurrent.TimeUnit
 import com.example.sdr.telemetry.RenderTimings
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okio.ByteString
 
 /** Application-owned session. All controls run on main; stateful network decoders stay on socket workers. */
 internal class WebSdrSession(context: Context) : OnlineReceiverSession {
@@ -96,7 +96,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
     @Volatile private var lastAudioAt = 0L
     @Volatile private var lastWaterAt = 0L
     private var metadata: Call? = null
-    private var sound: WebSocket? = null
+    private var sound: WebSdrAudioStream? = null
     private var water: WebSdrWaterfallStream? = null
     @Volatile private var window: WebSdrWaterfallWindow? = null
     @Volatile private var windowConfirmed = false
@@ -141,9 +141,10 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         if (active && bands.isNotEmpty()) updateWaterfall(target)
     }
     private val persist = Runnable {
-        preferences.edit().putLong("frequency", frequencyHz).putString("mode", mode.name).also {
-            if (sourceUrl.isNotBlank()) it.putInt("band_$sourceUrl", currentBand)
-        }.apply()
+        preferences.edit {
+            putLong("frequency", frequencyHz).putString("mode", mode.name)
+            if (sourceUrl.isNotBlank()) putInt("band_$sourceUrl", currentBand)
+        }
     }
     private val reconnect = Runnable { if (active) readMetadata() }
     private val retryAudio = Runnable { if (active && bands.isNotEmpty()) openAudio() }
@@ -222,8 +223,6 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         val epoch = ++audioGeneration; val token = generation
         sound?.cancel(); output?.close(); tuning.clear()
         audioPlaying = false; lastAudioAt = 0; audioOpenedAt = SystemClock.elapsedRealtime()
-        val decoder = WebSdrAudioDecoder()
-        var meterAt = 0L
         fun reportFailure(message: String) = publish(token) {
             if (epoch == audioGeneration) recoverAudio(message)
         }
@@ -250,32 +249,19 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
                 }
             })
         output = ownedOutput
-        sound = client.newWebSocket(socketRequest("/~~stream"), object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) = publish(token) {
-                if (epoch == audioGeneration) { sendTuning(); tuning.flush() }
-            }
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                if (generation != token || audioGeneration != epoch) return
-                try {
-                    decoder.decode(bytes.toByteArray()) { rate, samples ->
-                        if (generation != token || audioGeneration != epoch) return@decode
-                        lastAudioAt = SystemClock.elapsedRealtime()
-                        ownedOutput.offer(rate, samples, decoder.signalDbm)
-                        ftxDecoder.offer(samples, samples.size, rate, 1)
-                    }
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - meterAt >= 100) {
-                        meterAt = now
-                        val rate = decoder.sampleRate
-                        publish(token) { if (epoch == audioGeneration) { audioSampleRate = rate } }
-                    }
-                } catch (e: Exception) { reportFailure("Invalid server audio: ${e.message}") }
-            }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = reportFailure("Audio connection lost")
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = reportFailure("Audio connection closed")
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
-        })
+        sound = WebSdrAudioStream(client, socketRequest("/~~stream"),
+            onOpen = { publish(token) { if (epoch == audioGeneration) { sendTuning(); tuning.flush() } } },
+            onAudio = { rate, samples, signal ->
+                if (generation == token && audioGeneration == epoch) {
+                    lastAudioAt = SystemClock.elapsedRealtime()
+                    ownedOutput.offer(rate, samples, signal)
+                    ftxDecoder.offer(samples, samples.size, rate, 1)
+                }
+            },
+            onRate = { rate -> publish(token) { if (epoch == audioGeneration) audioSampleRate = rate } },
+            onFailure = ::reportFailure)
     }
+
     private fun desiredWindow(previous: WebSdrWaterfallWindow? = window) = WebSdrWaterfallWindow.forViewport(bands[currentBand],
         viewportCenterHz ?: frequencyHz, viewportSpanHz ?: bands[currentBand].spanHz, previous)
     private fun openWaterfall() {
@@ -359,9 +345,10 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
     override fun setBandwidth(hz: Int?) {
         bandwidthDefault = hz == null
         bandwidthHz = (hz ?: WebSdrBandwidth.default(mode)).coerceIn(100, bandwidthLimit)
-        val edit = preferences.edit()
-        if (hz == null) edit.remove("bandwidth_${mode.name}") else edit.putInt("bandwidth_${mode.name}", bandwidthHz)
-        edit.apply(); sendTuning()
+        preferences.edit {
+            if (hz == null) remove("bandwidth_${mode.name}") else putInt("bandwidth_${mode.name}", bandwidthHz)
+        }
+        sendTuning()
     }
     override fun setWaterfallViewport(centerHz: Long, spanHz: Int) {
         if (!active || bands.isEmpty()) return
@@ -369,7 +356,7 @@ internal class WebSdrSession(context: Context) : OnlineReceiverSession {
         viewport.offer(desiredWindow())
     }
     private fun saveSoon() { handler.removeCallbacks(persist); handler.postDelayed(persist, 500) }
-    private fun backoff(attempt: Int) = (1000L shl attempt.coerceIn(0, 5)).coerceAtMost(30_000)
+    private fun backoff(attempt: Int) = com.example.sdr.receiver.ReceiverRetryPolicy.delayMs(attempt)
     private fun recoverAudio(message: String) {
         ++audioGeneration; sound?.cancel(); sound = null; output?.close(); output = null
         tuning.clear(); cwDecoder.clear(); ftxDecoder.clear(); audioPlaying = false; signalDbm = null

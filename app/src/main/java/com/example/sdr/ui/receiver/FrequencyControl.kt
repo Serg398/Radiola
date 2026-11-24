@@ -62,8 +62,8 @@ import java.util.Locale
 @Composable
 internal fun FrequencyControl(
     tunedHz: Long, activeInput: String, editingFrequency: Boolean,
-    changeInput: (String) -> Unit, applyInput: () -> Unit,
-    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, tuningStep: TuningStep = TuningStep.AUTO, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, onRemoveFavorite: () -> Unit = {}, modifier: Modifier = Modifier,
+    changeInput: (String) -> Unit, applyInput: () -> Boolean,
+    onEditingChange: (Boolean) -> Unit, step: (Long) -> Unit, modifier: Modifier = Modifier, inputError: String? = null, tuningStep: TuningStep = TuningStep.AUTO, favorite: Boolean = false, favoriteEnabled: Boolean = true, onFavorite: () -> Unit = {}, onRemoveFavorite: () -> Unit = {},
 ) {
     val textMeasurer = rememberTextMeasurer()
     BoxWithConstraints(modifier) {
@@ -93,16 +93,19 @@ internal fun FrequencyControl(
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             if (editingFrequency) {
-                BasicTextField(
-                    value = activeInput,
-                    onValueChange = changeInput,
-                    modifier = Modifier.weight(1f).alignByBaseline(),
-                    singleLine = true,
-                    textStyle = TextStyle(color = RadiolaColors.text, fontSize = frequencyFontSize, fontWeight = FontWeight.Light),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    cursorBrush = SolidColor(RadiolaColors.primary)
-                )
-                Text("✓", Modifier.clickable { applyInput(); onEditingChange(false) }, color = RadiolaColors.primary, fontSize = 36.sp)
+                Column(Modifier.weight(1f).alignByBaseline()) {
+                    BasicTextField(
+                        value = activeInput,
+                        onValueChange = changeInput,
+                        modifier = Modifier,
+                        singleLine = true,
+                        textStyle = TextStyle(color = RadiolaColors.text, fontSize = if (inputError == null) frequencyFontSize else frequencyFontSize * .8f, fontWeight = FontWeight.Light),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        cursorBrush = SolidColor(RadiolaColors.primary)
+                    )
+                    inputError?.let { Text(it, color = RadiolaColors.warning, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1) }
+                }
+                Text("✓", Modifier.clickable { if (applyInput()) onEditingChange(false) }, color = RadiolaColors.primary, fontSize = 36.sp)
             } else {
                 var digitLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
                 var pressedDigit by remember { mutableStateOf<Rect?>(null) }

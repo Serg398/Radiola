@@ -29,10 +29,13 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
     }
 }
 
+val instrumentationBuildType = providers.gradleProperty("radiola.testBuildType").getOrElse("debug")
+
 android {
     namespace = "com.example.sdr"
     compileSdk = 37
     ndkVersion = "28.2.13676358"
+    testBuildType = instrumentationBuildType
 
     externalNativeBuild {
         cmake {
@@ -48,7 +51,9 @@ android {
         versionName = releaseVersion.getProperty("versionName").also {
             require(it.matches(Regex("\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?")))
         }
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = if (instrumentationBuildType == "verification")
+            "com.example.sdr.ReleaseSmokeInstrumentation" else "androidx.test.runner.AndroidJUnitRunner"
+        testProguardFiles("proguard-test-rules.pro")
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
@@ -71,7 +76,19 @@ android {
             resValue("string", "app_name", "Радиола Dev")
         }
         getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
             if (releaseSigningAvailable) signingConfig = signingConfigs.getByName("release")
+        }
+        create("verification") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".verification"
+            versionNameSuffix = "-verification"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+            resValue("string", "app_name", "Радиола Verification")
         }
     }
 

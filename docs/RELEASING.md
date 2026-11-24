@@ -13,6 +13,31 @@ Release имеет applicationId `com.serg398.radiola`. После публик�
 Данные debug и release независимы. Ранее установленная debug-сборка без суффикса
 может конфликтовать с release из-за другого сертификата подписи.
 
+Release использует R8 и удаление неиспользуемых ресурсов. Правила в
+`app/proguard-rules.pro` сохраняют JNI-имена, конструкторы нативных снимков,
+ONNX и отражение встроенных объектов Rhino. Настольные GUI-инструменты Rhino
+не должны попадать в Android APK. Нельзя заменять эти правила общим подавлением
+предупреждений R8 или удалять их ради нескольких килобайт.
+
+Для проверки оптимизированного кода без замены установленного приложения:
+
+```powershell
+.\gradlew.bat :app:assembleVerification
+.\gradlew.bat :app:assembleVerificationAndroidTest '-Pradiola.testBuildType=verification'
+adb install -r app/build/outputs/apk/verification/app-verification.apk
+adb install -r app/build/outputs/apk/androidTest/verification/app-verification-androidTest.apk
+adb shell am instrument -w com.serg398.radiola.verification.test/com.example.sdr.ReleaseSmokeInstrumentation
+```
+
+`verification` наследует release, подписывается debug-ключом и имеет отдельный
+applicationId `com.serg398.radiola.verification`. Это временная тестовая сборка,
+её нельзя публиковать как release. Проверить JNI, FT8, ONNX-декодеры и JS-плагины
+на устройстве; синтетические JNI-векторы под `#ifndef NDEBUG` в ней отсутствуют,
+поэтому для FT8 используется тест реальной записи.
+Проверка использует собственный Android Instrumentation без зависимости от ABI
+AndroidX Test и оптимизируемых Kotlin-фасадов. Успех: `status=passed`, `checks=6`.
+Обычные UI/lifecycle-тесты запускаются на debug стандартным AndroidJUnitRunner.
+
 ## Подпись
 
 Для обновления уже установленной «Радиолы» использовать существующий ключ
@@ -51,6 +76,8 @@ Android отклонит обновление поверх неё. Для про
 5. Скрипт запускает unit-тесты и Lint, собирает APK, сверяет подпись,
    идентификатор и версию. Готовые файлы находятся в
    `app/build/distributions/radiola-<версия>/` вместе с SHA-256 и отчётом подписи.
+   В каталоге также сохраняется `mapping.txt`. Хранить его вместе с конкретным
+   APK: карта другой пересборки не подходит для расшифровки стеков R8.
 6. Установить именно этот APK на телефон. Для последующих выпусков проверить
    обновление поверх предыдущего APK с тем же ключом и сохранение настроек
    и избранного. Проверить USB, оба онлайн-источника,

@@ -1,5 +1,6 @@
 package com.example.sdr.decoders.cw
 
+import androidx.core.content.edit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,7 +13,7 @@ internal class CwDecodeWorker(context: android.content.Context? = null) {
     var backend by mutableStateOf(runCatching { CwBackend.valueOf(preferences?.getString("backend", "CLASSIC") ?: "CLASSIC") }.getOrDefault(CwBackend.CLASSIC)); private set
     @Synchronized fun selectBackend(value: CwBackend) {
         if (closed || backend == value) return
-        backend = value; preferences?.edit()?.putString("backend", value.name)?.apply(); clear()
+        backend = value; preferences?.edit { putString("backend", value.name) }; clear()
     }
     private data class Block(val generation: Long, val rate: Int, val channels: Int, val samples: ShortArray)
     private val queue = ArrayBlockingQueue<Block>(32)

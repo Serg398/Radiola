@@ -231,6 +231,8 @@ class MainActivity : ComponentActivity() {
                 streamPending = streamPending,
                 starting = receiverSnapshot.state == ReceiverState.Starting,
                 frequencyInput = frequencyInput,
+                frequencyInputError = model.frequencyInputError,
+                receiverError = receiverSnapshot.error,
                 spectrumSpanHz = receiverRates[0],
                 bandwidthDefault = runtime.bandwidths[demodulationMode] == null,
                 rdsInformation = runtime.rds,
@@ -248,7 +250,7 @@ class MainActivity : ComponentActivity() {
                     else encoderHaptics.tick(it)
                 },
                 actualWaterfallFps = actualWaterfallFps,
-                signalDbfs = signalDbfs,
+                signalDbfs = model.signalDbfsState,
                 wfmStereoEnabled = wfmStereoEnabled,
                 wfmStereoLocked = streaming && wfmStereoLocked,
                 onWfmStereoChange = {
@@ -271,7 +273,7 @@ class MainActivity : ComponentActivity() {
                 onStartStream = ::startStream,
                 onPlaybackStart = ::requestNotificationPermission,
                 onStopStream = ::stopStream,
-                onFrequencyInput = { frequencyInput = it },
+                onFrequencyInput = model::editFrequency,
                 onTune = model::applyFrequency,
                 onReceiverGainChange = model::changeReceiverGain,
                 onTuningStepChange = { option ->
