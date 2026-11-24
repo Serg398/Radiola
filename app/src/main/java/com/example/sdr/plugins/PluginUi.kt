@@ -4,10 +4,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sdr.ui.components.CompactMenuEntry
+import com.example.sdr.ui.components.ToolbarCaptionStyle
+import com.example.sdr.ui.components.ToolbarMenuOffset
+import com.example.sdr.ui.components.ToolbarValue
+import com.example.sdr.ui.components.rememberCompactMenuAnchor
+import com.example.sdr.ui.components.toolbarButtonSurface
 import com.example.sdr.ui.decoders.DecoderCardFrame
 import com.example.sdr.ui.decoders.DecoderAction
 import com.example.sdr.ui.decoders.DecoderDivider
@@ -35,16 +42,28 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
 @Composable
 internal fun PluginPicker(manager: PluginManager) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        Text("PLUGINS", Modifier.clickable { open = true }.padding(5.dp),
-            color = if (manager.selected != null) RadiolaColors.primary else RadiolaColors.secondaryText,
-            fontSize = 10.sp)
-        DropdownMenu(open, { open = false }, containerColor = RadiolaColors.surface) {
+    val anchor = rememberCompactMenuAnchor()
+    Box(anchor.modifier) {
+        Column(
+            Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
+                .toolbarButtonSurface(menuOpen = open)
+                .clickable { open = true }
+                .padding(horizontal = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("PLUGINS", Modifier.height(10.dp), color = RadiolaColors.secondaryText,
+                fontSize = 8.sp, style = ToolbarCaptionStyle)
+            ToolbarValue(manager.selected?.name ?: "Off")
+        }
+        DropdownMenu(offset = ToolbarMenuOffset, expanded = open, onDismissRequest = { open = false },
+            modifier = Modifier.width(140.dp).heightIn(max = anchor.maxHeight),
+            containerColor = RadiolaColors.surface) {
             for (plugin in listOf(null, gainPlugin)) {
-                DropdownMenuItem(
-                    text = { Text(plugin?.name ?: "Off", color = RadiolaColors.text) },
-                    onClick = { manager.select(plugin); open = false },
-                )
+                CompactMenuEntry(plugin?.name ?: "Off", selected = plugin == manager.selected) {
+                    open = false
+                    manager.select(plugin)
+                }
             }
         }
     }
