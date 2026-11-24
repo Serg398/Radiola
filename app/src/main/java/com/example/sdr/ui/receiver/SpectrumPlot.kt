@@ -119,14 +119,14 @@ internal fun AmberSpectrum(
         clipRect(left = left, top = top, right = size.width, bottom = bottom) {
         drawRect(
             Brush.horizontalGradient(
-                listOf(RadiolaColors.adaptive(Color(0x19205BCB), Color(0x19E8B36A)), RadiolaColors.adaptive(Color(0x38205BCB), Color(0x38E8B36A)), RadiolaColors.adaptive(Color(0x19205BCB), Color(0x19E8B36A))),
+                listOf(RadiolaColors.receiveChannel.copy(alpha = 25f / 255f), RadiolaColors.receiveChannel.copy(alpha = if (RadiolaColors.selected == RadiolaColors.Theme.LIGHT) .14f else 56f / 255f), RadiolaColors.receiveChannel.copy(alpha = 25f / 255f)),
                 startX = channelLeft, endX = channelRight
             ),
             Offset(channelLeft, top), Size(channelWidth, height)
         )
-        drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
-        drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
-        drawLine(RadiolaColors.adaptive(Color(0xC9205BCB), Color(0xC9E8B36A)), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelLeft, top), Offset(channelLeft, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelRight, top), Offset(channelRight, bottom), 1.dp.toPx())
+        drawLine(RadiolaColors.receiveChannel.copy(alpha = 201f / 255f), Offset(center, top), Offset(center, bottom), 1.dp.toPx())
         }
         RenderTimings.spectrum.record(System.nanoTime() - started)
     }

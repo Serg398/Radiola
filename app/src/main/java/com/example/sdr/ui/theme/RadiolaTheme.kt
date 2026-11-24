@@ -50,6 +50,7 @@ internal object RadiolaColors {
     val sidebar get() = adaptive(Color(0xFFE8ECF1), Color(0xFF16191C), Color(0xFFE5DCBE))
     val border get() = adaptive(Color(0xFFCAD2DD), Color(0xFF3C4248), Color(0xFFBDB38E))
     val primary get() = adaptive(Color(0xFF205BCB), Color(0xFFE8B36A), Color(0xFF57532C))
+    val receiveChannel get() = adaptive(Color(0xFFB66A20), Color(0xFFE8B36A), Color(0xFF57532C))
     val primaryTint get() = adaptive(Color(0xFFE3ECFC), Color(0xFF393025), Color(0xFFD2C79F))
     val text get() = adaptive(Color(0xFF202B3B), Color(0xFFECEEF0), Color(0xFF25271E))
     val secondaryText get() = adaptive(Color(0xFF53647A), Color(0xFFACB3BC), Color(0xFF68674E))

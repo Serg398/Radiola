@@ -515,14 +515,14 @@ internal fun ReceiverScreen(
                                 val channelRight = passbandCenter + channelWidth / 2f
                                 drawRect(
                                     Brush.horizontalGradient(
-                                        listOf(RadiolaColors.adaptive(Color(0x14205BCB), Color(0x14E8B36A)), RadiolaColors.adaptive(Color(0x33205BCB), Color(0x33E8B36A)), RadiolaColors.adaptive(Color(0x14205BCB), Color(0x14E8B36A))),
+                                        listOf(RadiolaColors.receiveChannel.copy(alpha = 20f / 255f), RadiolaColors.receiveChannel.copy(alpha = if (RadiolaColors.selected == RadiolaColors.Theme.LIGHT) .14f else 51f / 255f), RadiolaColors.receiveChannel.copy(alpha = 20f / 255f)),
                                         startX = channelLeft, endX = channelRight
                                     ),
                                     Offset(channelLeft, 0f), Size(channelWidth, size.height)
                                 )
-                                drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.adaptive(Color(0x80205BCB), Color(0x80E8B36A)), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
-                                drawLine(RadiolaColors.adaptive(Color(0xC9205BCB), Color(0xC9E8B36A)), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelLeft, 0f), Offset(channelLeft, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 0.5f), Offset(channelRight, 0f), Offset(channelRight, size.height), 1.dp.toPx())
+                                drawLine(RadiolaColors.receiveChannel.copy(alpha = 201f / 255f), Offset(center, 0f), Offset(center, size.height), 1.dp.toPx())
                             }
                             Text(
                                 "${if (!receiving) 0 else if (remote) webSession.visualFps else actualWaterfallFps} FPS",
