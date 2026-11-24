@@ -43,6 +43,16 @@ internal class PluginManager(private val context: Context) {
         installed = (installed.filterNot { it.id == plugin.id } + plugin).sortedBy { it.name }
     }
     internal data class AudioSpectrum(val sampleRate: Int, val bins: FloatArray)
+    internal data class PcmBlock(val rate: Int, val startMs: Double, val index: Long, val epoch: Long, val bytes: ByteArray)
+    private val pcmQueue = ArrayDeque<PcmBlock>()
+    private var pcmRate = 0
+    private var pcmStartMs = 0.0
+    private var pcmIndex = 0L
+    private var pcmEpoch = 0L
+    private var lastPcmMs = 0L
+
+    @Synchronized
+    fun drainPcm(): List<PcmBlock> = pcmQueue.toList().also { pcmQueue.clear() }
 
     internal class Block(val id: Int, val endpoint: Messenger, val analysisRate: Int = 0) {
         @Volatile var output: ShortArray? = null
@@ -162,6 +172,10 @@ internal class PluginManager(private val context: Context) {
         fallbackBlocks.set(0)
         activePlugin = selected
         playing = true
+        if (selected?.pcmStream == true) {
+            ready = true
+            return
+        }
         bound = context.bindService(Intent(context, PluginScriptService::class.java), connection, Context.BIND_AUTO_CREATE)
         if (!bound) fail("Cannot start script process")
     }
@@ -174,6 +188,8 @@ internal class PluginManager(private val context: Context) {
         startupEndpoint = null
         startupId = 0
         spectrum = null
+        pcmQueue.clear()
+        pcmRate = 0
         analysisCount = 0
         analysisRate = 0
         nextAnalysisNs = 0
@@ -205,7 +221,12 @@ internal class PluginManager(private val context: Context) {
 
     @Synchronized
     fun observePcm(samples: ShortArray, count: Int, rate: Int, channels: Int) {
-        if (activePlugin?.output != PluginPort.CARD) return
+        val plugin = activePlugin ?: return
+        if (plugin.output != PluginPort.CARD || rate <= 0 || channels !in 1..2) return
+        if (plugin.pcmStream) {
+            queuePcm(samples, count, rate, channels)
+            return
+        }
         val target = endpoint ?: return
         val now = System.nanoTime()
         if (now < nextAnalysisNs || pending.isNotEmpty() || rate <= 0 || channels !in 1..2) return
@@ -224,6 +245,31 @@ internal class PluginManager(private val context: Context) {
                 break
             }
         }
+    }
+
+    private fun queuePcm(samples: ShortArray, count: Int, rate: Int, channels: Int) {
+        val frames = minOf(count, samples.size) / channels
+        if (frames <= 0) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (pcmRate != rate || now - lastPcmMs > 1500) {
+            pcmQueue.clear()
+            pcmRate = rate
+            pcmIndex = 0
+            pcmEpoch++
+            pcmStartMs = System.currentTimeMillis() - frames * 1000.0 / rate
+        }
+        lastPcmMs = now
+        val bytes = ByteArray(frames * 2)
+        for (frame in 0 until frames) {
+            val input = frame * channels
+            val sample = if (channels == 1) samples[input].toInt()
+                else (samples[input].toInt() + samples[input + 1].toInt()) / 2
+            bytes[frame * 2] = sample.toByte()
+            bytes[frame * 2 + 1] = (sample shr 8).toByte()
+        }
+        if (pcmQueue.size == 32) pcmQueue.removeFirst()
+        pcmQueue.addLast(PcmBlock(rate, pcmStartMs, pcmIndex, pcmEpoch, bytes))
+        pcmIndex += frames
     }
 
     private fun send(target: Messenger, samples: ShortArray, rate: Int): Block {

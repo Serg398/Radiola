@@ -7,12 +7,16 @@ import com.example.sdr.DemodulationMode
 import com.example.sdr.decoders.cw.CwInformation
 import com.example.sdr.decoders.ftx.FtxInformation
 import com.example.sdr.decoders.ftx.FtxMode
+import com.example.sdr.plugins.PluginManifest
 import com.example.sdr.sources.WebSdrRuntime
 import com.example.sdr.sources.usb.ReceiverRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+internal val localTuningRange = 500_000L..1_766_000_000L
 
 internal data class LocalReceiverState(val frequencyHz: Long, val mode: DemodulationMode,
     val receiving: Boolean, val bandwidthHz: Int)
@@ -147,6 +151,48 @@ internal class ReceiverPresentation(
     }
     fun step(delta: Long) {
         if (online.source.online) online.session.tune(online.session.frequencyHz + delta) else usbStep(delta)
+    }
+    fun pluginReceiverCommand(plugin: PluginManifest, command: JSONObject): String? {
+        val source = online.source
+        if (source !in plugin.sources) return "Plugin does not support this receiver"
+        val session = online.session
+        if (source.online && !session.tuningReady) return "Connect the receiver first"
+        return when (command.optString("type")) {
+            "setFrequency" -> {
+                val hz = (command.opt("value") as? Number)?.toDouble()
+                if (hz == null || !hz.isFinite() || hz < 1 || hz > 9_007_199_254_740_991.0 ||
+                    hz != kotlin.math.floor(hz)) return "Frequency must be a positive integer in Hz"
+                val frequency = hz.toLong()
+                val inRange = when (source) {
+                    ReceiverSource.USB -> frequency in localTuningRange
+                    ReceiverSource.WEB_SDR -> session.bands.any { it.contains(frequency) }
+                    ReceiverSource.OPEN_WEB_RX -> session.bands.getOrNull(session.currentBand)
+                        ?.contains(frequency) == true
+                }
+                if (!inRange) return "Frequency outside receiver range"
+                cancelFavorite()
+                if (source.online) session.tune(frequency) else usbStep(frequency - local().frequencyHz)
+                null
+            }
+            "setMode" -> {
+                val requested = (command.opt("value") as? String)?.trim()?.lowercase().orEmpty()
+                val id = if (requested == "fm") "nfm" else requested
+                if (source == ReceiverSource.OPEN_WEB_RX) {
+                    val option = session.serverModes?.firstOrNull { it.id.equals(requested, true) }
+                        ?: session.serverModes?.firstOrNull { it.id.equals(id, true) }
+                        ?: return "Mode is not available on this server"
+                    cancelFavorite()
+                    selectServerMode(option.id)
+                } else {
+                    val mode = DemodulationMode.entries.firstOrNull { it.name.equals(id, true) }
+                    if (mode == null || source.online && mode == DemodulationMode.WFM) return "Mode is not available"
+                    cancelFavorite()
+                    changeMode(mode)
+                }
+                null
+            }
+            else -> "Unknown receiver command"
+        }
     }
     fun changeMode(value: DemodulationMode) {
         faxMode = false

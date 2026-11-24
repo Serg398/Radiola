@@ -101,7 +101,7 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     }
 
     fun stepFrequency(deltaHz: Long) {
-        requestFrequency((frequencyHz + deltaHz).coerceIn(500_000L, 1_766_000_000L))
+        requestFrequency((frequencyHz + deltaHz).coerceIn(localTuningRange))
     }
 
 }

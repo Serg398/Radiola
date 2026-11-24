@@ -32,6 +32,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.sdr.receiver.ReceiverSource
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,10 +53,11 @@ internal enum class PluginLayout(val label: String, val spectrum: Boolean, val w
 }
 
 @Composable
-internal fun PluginPicker(manager: PluginManager) {
+internal fun PluginPicker(manager: PluginManager, source: ReceiverSource) {
     LaunchedEffect(manager) { manager.loadInstalled() }
     var open by remember { mutableStateOf(false) }
     val anchor = rememberCompactMenuAnchor()
+    val selected = manager.selected?.takeIf { source in it.sources }
     Box(anchor.modifier) {
         Column(
             Modifier.height(28.dp).widthIn(min = 64.dp, max = 120.dp)
@@ -67,13 +69,13 @@ internal fun PluginPicker(manager: PluginManager) {
         ) {
             Text("PLUGINS", Modifier.height(10.dp), color = RadiolaColors.secondaryText,
                 fontSize = 8.sp, style = ToolbarCaptionStyle)
-            ToolbarValue(manager.selected?.name ?: "Off")
+            ToolbarValue(selected?.name ?: "Off")
         }
         DropdownMenu(offset = ToolbarMenuOffset, expanded = open, onDismissRequest = { open = false },
             modifier = Modifier.width(140.dp).heightIn(max = anchor.maxHeight),
             containerColor = RadiolaColors.surface) {
-            for (plugin in listOf(null) + manager.installed) {
-                CompactMenuEntry(plugin?.name ?: "Off", selected = plugin == manager.selected) {
+            for (plugin in listOf(null) + manager.installed.filter { source in it.sources }) {
+                CompactMenuEntry(plugin?.name ?: "Off", selected = plugin == selected) {
                     open = false
                     manager.select(plugin)
                 }
@@ -117,7 +119,7 @@ internal fun PluginsPage(manager: PluginManager) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for (plugin in manager.installed) {
                 Text(plugin.name, color = RadiolaColors.text, fontSize = 16.sp)
-                Text("v${plugin.version} / ${if (plugin.output == PluginPort.PCM) "Online audio" else "Receiver audio"}",
+                Text("v${plugin.version} / ${plugin.sources.joinToString { it.storedValue }}",
                     color = RadiolaColors.secondaryText, fontSize = 12.sp)
                 if (manager.selected == plugin) Text("Selected", color = RadiolaColors.primary, fontSize = 12.sp)
             }
@@ -128,9 +130,19 @@ internal fun PluginsPage(manager: PluginManager) {
 @Composable
 internal fun PluginCard(
     manager: PluginManager, layout: PluginLayout, onLayout: (PluginLayout) -> Unit,
-    playable: Boolean, modifier: Modifier,
+    playable: Boolean, onReceiverCommand: (PluginManifest, JSONObject) -> String?, modifier: Modifier,
 ) {
     val plugin = manager.selected ?: return
+    var webView by remember(plugin) { mutableStateOf<PluginWebView?>(null) }
+    LaunchedEffect(plugin, webView, manager.playing) {
+        val view = webView ?: return@LaunchedEffect
+        if (plugin.pcmStream && manager.playing) {
+            while (true) {
+                manager.drainPcm().forEach(view::publishPcm)
+                delay(40)
+            }
+        }
+    }
     var processed by remember(plugin) { mutableLongStateOf(0) }
     var fallback by remember(plugin) { mutableLongStateOf(0) }
     LaunchedEffect(plugin, manager.playing) {
@@ -179,7 +191,7 @@ internal fun PluginCard(
         DecoderDivider()
         key(plugin.id) {
             AndroidView(
-                factory = { PluginWebView(it, plugin).apply { open() } },
+                factory = { PluginWebView(it, plugin).apply { open() }.also { webView = it } },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 onRelease = PluginWebView::release,
                 update = { view ->
@@ -188,6 +200,7 @@ internal fun PluginCard(
                         when (command.optString("type")) {
                             "start" -> if (playable) manager.play()
                             "stop" -> manager.stop()
+                            "setFrequency", "setMode" -> view.replyReceiverCommand(command, onReceiverCommand(plugin, command))
                             "gain" -> command.optDouble("value").takeIf { it.isFinite() }?.let(manager::updateGain)
                             "layout" -> PluginLayout.entries.firstOrNull {
                                 it.name.equals(command.optString("value"), ignoreCase = true)

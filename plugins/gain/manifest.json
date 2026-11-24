@@ -1,1 +1,1 @@
-{"id":"radiola.gain","name":"JS Gain","version":"1.0","apiVersion":1,"input":"PCM","output":"PCM","initialSize":"COMPACT"}
+{"id":"radiola.gain","name":"JS Gain","version":"1.0","apiVersion":1,"input":"PCM","output":"PCM","initialSize":"COMPACT","sources":["websdr","openwebrx"]}

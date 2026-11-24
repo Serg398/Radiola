@@ -24,6 +24,7 @@ internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView
         "/view.js" to "text/javascript",
         "/common.css" to "text/css",
         "/api.js" to "text/javascript",
+        "/worker.js" to "text/javascript",
     )
     private var port: WebMessagePort? = null
     private var snapshot: String? = null
@@ -46,7 +47,7 @@ internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView
                 val bytes = plugin.webFiles[path.removePrefix("/")]
                 if (request.method == "GET" && url.scheme == origin.scheme && url.authority == origin.authority && type != null && bytes != null) {
                     return WebResourceResponse(type, "UTF-8", 200, "OK", mapOf(
-                        "Content-Security-Policy" to "default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; base-uri 'none'; form-action 'none'",
+                        "Content-Security-Policy" to "default-src 'none'; script-src 'self'; style-src 'self'; worker-src 'self'; img-src data:; base-uri 'none'; form-action 'none'",
                         "X-Content-Type-Options" to "nosniff",
                         "Cache-Control" to "no-store",
                     ), ByteArrayInputStream(bytes))
@@ -83,6 +84,23 @@ internal class PluginWebView(context: Context, plugin: PluginManifest) : WebView
     }
 
     fun open() { loadUrl(page) }
+
+    fun replyReceiverCommand(request: JSONObject, error: String?) {
+        val requestId = (request.opt("requestId") as? String)?.takeIf { it.length in 1..64 } ?: return
+        val payload = JSONObject().put("type", "receiverResult").put("requestId", requestId)
+            .put("ok", error == null)
+        if (error != null) payload.put("error", error)
+        port?.postMessage(WebMessage(payload.toString()))
+    }
+
+    fun publishPcm(block: PluginManager.PcmBlock) {
+        val channel = port ?: return
+        val payload = JSONObject().put("type", "pcm").put("rate", block.rate)
+            .put("startMs", block.startMs).put("index", block.index)
+            .put("epoch", block.epoch)
+            .put("samples", android.util.Base64.encodeToString(block.bytes, android.util.Base64.NO_WRAP))
+        channel.postMessage(WebMessage(payload.toString()))
+    }
 
     fun release() {
         port?.close()

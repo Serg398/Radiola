@@ -1,0 +1,1 @@
+{"id":"radiola.ft8-js","name":"FT8 JS","version":"0.2","apiVersion":1,"input":"PCM","output":"CARD","initialSize":"EXPANDED","runtime":"web-worker","source":"https://github.com/e04/ft8ts/tree/c4d1c10e65f6213f938e4781fec66232286ed569","sources":["rtl-sdr","websdr","openwebrx"]}

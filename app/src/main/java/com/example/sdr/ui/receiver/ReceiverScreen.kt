@@ -151,15 +151,16 @@ internal fun ReceiverScreen(
     }
     val context = LocalContext.current
     val plugins = (context.applicationContext as RadiolaApplication).plugins
-    val plugin = plugins.selected
+    val online = presentation.online
+    val uiState = presentation.state
+    val source = uiState.source
+    val selectedPlugin = plugins.selected
+    val plugin = selectedPlugin?.takeIf { source in it.sources }
     var pluginLayout by rememberSaveable(plugin?.id) {
         mutableStateOf(PluginLayout.forInitialSize(plugin?.initialSize))
     }
     val showSpectrum = plugin == null || pluginLayout.spectrum
     val showWaterfall = plugin == null || pluginLayout.waterfall
-    val online = presentation.online
-    val uiState = presentation.state
-    val source = uiState.source
     val webSdrPage = online.page
     val openWebRx = source == ReceiverSource.OPEN_WEB_RX
     val webSdrReceiverUrl = if (openWebRx) online.openWebRxReceiver?.url else online.receiverUrl
@@ -201,9 +202,12 @@ internal fun ReceiverScreen(
     LaunchedEffect(webSession, receiverSquelch) { webSession.squelchSetting = receiverSquelch }
     val receiving = uiState.receiving
     val pluginPlayable = com.example.sdr.plugins.canRunAudioPlugin(
-        plugin, remote, receiving, openWebRx && webSession.serverDataMode,
+        plugin, source, receiving, openWebRx && webSession.serverDataMode,
     )
-    LaunchedEffect(pluginPlayable) { if (!pluginPlayable) plugins.stop() }
+    LaunchedEffect(source, selectedPlugin, pluginPlayable) {
+        if (selectedPlugin != null && plugin == null) plugins.select(null)
+        else if (!pluginPlayable) plugins.stop()
+    }
     val ftxInformation = presentation.ftxInformation
     val cwInformation = presentation.cwInformation
     var displayFrequencyHz by remember { mutableStateOf(tunedHz.toDouble()) }
@@ -371,7 +375,7 @@ internal fun ReceiverScreen(
                         enabled = !remote || webSession.bandwidthAdjustable)
                     if (remote) WebSdrBandControl(webSession.bands, webSession.currentBand,
                         webSession.active, presentation::selectBand)
-                    PluginPicker(plugins)
+                    PluginPicker(plugins, source)
                     if (!remote && activeMode == DemodulationMode.WFM) StereoToggle(
                         activeMode == DemodulationMode.WFM, wfmStereoEnabled, wfmStereoLocked,
                         onWfmStereoChange
@@ -577,7 +581,8 @@ internal fun ReceiverScreen(
                     PluginCardSize.FULL -> Modifier.fillMaxWidth().weight(1f)
                 }
                 PluginCard(plugins, pluginLayout, onLayout = { pluginLayout = it },
-                    playable = pluginPlayable, modifier = cardModifier)
+                    playable = pluginPlayable, onReceiverCommand = presentation::pluginReceiverCommand,
+                    modifier = cardModifier)
             }
                 }
                 androidx.compose.animation.AnimatedVisibility(

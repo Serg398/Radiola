@@ -56,10 +56,26 @@ internal class PluginStore(private val context: Context) {
         require(name.length in 1..80 && version.length in 1..24) { "Invalid plugin name or version" }
         val output = PluginPort.valueOf(json.getString("output"))
         require(output == PluginPort.PCM || output == PluginPort.CARD) { "Unsupported audio output" }
+        val supportedSources = supportedPluginSources(output)
+        val sources = if (json.has("sources")) {
+            val declared = json.getJSONArray("sources")
+            require(declared.length() in 1..pluginSources.size) { "Invalid plugin sources" }
+            (0 until declared.length()).map { index ->
+                val key = declared.getString(index)
+                requireNotNull(pluginSources[key]) { "Unknown receiver source: ${key.take(40)}" }
+            }.toSet().also {
+                require(it.size == declared.length() && supportedSources.containsAll(it)) { "Unsupported plugin sources" }
+            }
+        } else supportedSources
         val size = PluginCardSize.valueOf(json.optString("initialSize", "COMPACT"))
-        val script = required("process.js").decodeToString()
+        val runtime = json.optString("runtime", "rhino")
+        require(runtime == "rhino" || runtime == "web-worker") { "Unsupported plugin runtime" }
+        val pcmStream = runtime == "web-worker"
+        require(!pcmStream || output == PluginPort.CARD && "worker.js" in files) { "Invalid PCM worker package" }
+        val script = if (pcmStream) "" else required("process.js").decodeToString()
+        files.remove("LICENSE")
         require("index.html" in files) { "Missing index.html" }
-        return PluginManifest(id, name, version, output, size, script, files.toMap())
+        return PluginManifest(id, name, version, output, size, script, files.toMap(), pcmStream, sources)
     }
 
     private fun InputStream.readBounded(limit: Int): ByteArray {
@@ -77,6 +93,7 @@ internal class PluginStore(private val context: Context) {
         const val MAX_ARCHIVE = 1024 * 1024
         val limits = mapOf("manifest.json" to 4096, "process.js" to 96 * 1024,
             "index.html" to 128 * 1024, "view.js" to 256 * 1024,
-            "common.css" to 128 * 1024, "api.js" to 32 * 1024)
+            "common.css" to 128 * 1024, "api.js" to 32 * 1024, "worker.js" to 512 * 1024,
+            "LICENSE" to 64 * 1024)
     }
 }
