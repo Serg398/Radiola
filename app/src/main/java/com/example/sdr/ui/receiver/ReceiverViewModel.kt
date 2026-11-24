@@ -50,7 +50,7 @@ class ReceiverViewModel(application: Application, private val savedState: SavedS
     val waterfallState = mutableStateOf<SpectrumFrame?>(null)
     var waterfallFrameRate by mutableStateOf(WaterfallFrameRate.FPS_30)
     var encoderFeedback by mutableStateOf(EncoderFeedback.LIGHT)
-    var tuningStep by mutableStateOf(TuningStep.KHZ_100)
+    var tuningStep by mutableStateOf(TuningStep.fromStored(null))
     var demodulationMode by mutableStateOf(runtime.mode)
     var receiverGain by mutableStateOf(runtime.gain)
     var gainSteps by mutableStateOf(ReceiverGain.defaultSteps)

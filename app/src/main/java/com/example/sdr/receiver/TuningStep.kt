@@ -30,6 +30,6 @@ enum class TuningStep(val label: String, val fixedHz: Long?) {
     }
 
     companion object {
-        fun fromStored(value: String?): TuningStep = entries.firstOrNull { it.name == value } ?: KHZ_100
+        fun fromStored(value: String?): TuningStep = entries.firstOrNull { it.name == value } ?: KHZ_1
     }
 }
