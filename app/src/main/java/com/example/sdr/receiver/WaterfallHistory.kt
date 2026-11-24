@@ -16,6 +16,10 @@ class WaterfallHistory(val binCount: Int = 8192, val capacity: Int = 160) {
         private set
     var revision = 0L
         private set
+    private val listeners = mutableSetOf<() -> Unit>()
+    fun addListener(listener: () -> Unit) { listeners.add(listener) }
+    fun removeListener(listener: () -> Unit) { listeners.remove(listener) }
+
     private var lastSession = -1L
     private var lastGeneration = -1L
     val latestSpanHz get() = if (size == 0) 2_400_000 else spans[newestRow]
@@ -44,6 +48,7 @@ class WaterfallHistory(val binCount: Int = 8192, val capacity: Int = 160) {
         }
         size = minOf(size + 1, capacity); revision++
         RenderTimings.history.record(System.nanoTime() - started)
+        listeners.forEach { it() }
         return true
     }
     fun rowAtAge(age: Int): Int { require(age in 0 until size); return (newestRow + age) % capacity }

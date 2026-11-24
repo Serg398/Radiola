@@ -45,34 +45,6 @@ import kotlin.math.roundToInt
 
 private const val USB_PERMISSION_ACTION = "com.example.sdr.USB_PERMISSION"
 
-private class FrameGate(private var framesPerSecond: Int) {
-    private var previousVsyncNanos = 0L
-    private var accumulatedNanos = 0L
-
-    fun setRate(value: Int) {
-        framesPerSecond = value
-        reset()
-    }
-
-    fun reset() {
-        previousVsyncNanos = 0L
-        accumulatedNanos = 0L
-    }
-
-    fun isDue(vsyncNanos: Long): Boolean {
-        if (previousVsyncNanos == 0L) {
-            previousVsyncNanos = vsyncNanos
-            return true
-        }
-        accumulatedNanos += (vsyncNanos - previousVsyncNanos).coerceIn(0L, 100_000_000L)
-        previousVsyncNanos = vsyncNanos
-        val interval = 1_000_000_000L / framesPerSecond
-        if (accumulatedNanos < interval) return false
-        accumulatedNanos %= interval
-        return true
-    }
-}
-
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && runtime.session.snapshot().state in listOf(ReceiverState.Starting, ReceiverState.Running))
@@ -114,8 +86,11 @@ class MainActivity : ComponentActivity() {
         set(value) { model.frequencyHz = value }
     private val spectrumState get() = model.spectrumState
     private val waterfallState get() = model.waterfallState
-    private var lastSpectrumGeneration = 0L
-    private var lastWaterfallGeneration = 0L
+    private var lastCapturedGeneration = 0L
+    private var capturedSessionId = 0L
+    private val pendingVisualFrames = ArrayDeque<SpectrumFrame>()
+    private var nextVisualFrameNanos = 0L
+    private var previousVsyncNanos = 0L
     private var waterfallFrameRate
         get() = model.waterfallFrameRate
         set(value) { model.waterfallFrameRate = value }
@@ -171,8 +146,6 @@ class MainActivity : ComponentActivity() {
             batteryCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
         }
     }
-    private val spectrumGate = FrameGate(30)
-    private val waterfallGate = FrameGate(30)
     private var fpsWindowStartNanos = 0L
     private var spectrumFramesInWindow = 0
     private var waterfallFramesInWindow = 0
@@ -214,36 +187,37 @@ class MainActivity : ComponentActivity() {
     private val spectrumFrameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!streaming) return
-            val updateSpectrum = spectrumGate.isDue(frameTimeNanos)
-            val updateWaterfall = waterfallGate.isDue(frameTimeNanos)
-            if (updateSpectrum || updateWaterfall) {
-                val generation = receiverSession.spectrumGeneration()
-                val spectrumChanged = updateSpectrum && generation != lastSpectrumGeneration
-                val waterfallChanged = updateWaterfall && generation != lastWaterfallGeneration
-                if (spectrumChanged || waterfallChanged) {
-                    val frame = receiverSession.spectrum()
-                    if (frame.timestampNanos > 0) RenderTimings.frameAge.record((System.nanoTime() - frame.timestampNanos).coerceAtLeast(0))
-                    if (spectrumChanged) {
-                        val bins = frame.bins
-                        var peak = -90f
-                        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.offsetForBandwidth(runtime.bandwidth(demodulationMode)) - frame.centerFrequencyHz) * bins.size.toDouble() / frame.spanHz).roundToInt()
-                        val halfBins = maxOf(1, runtime.bandwidth(demodulationMode) * bins.size / (2 * frame.spanHz))
-                        for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
-                            if (bins[index] > peak) peak = bins[index]
-                        }
-                        signalDbfs = peak
-                        squelchOpen = NativeSdr.squelchOpen()
-                        wfmStereoLocked = NativeSdr.wfmStereoLocked()
-                        lastSpectrumGeneration = frame.generation
-                        spectrumState.value = frame
-                        spectrumFramesInWindow++
-                    }
-                    if (waterfallChanged) {
-                        lastWaterfallGeneration = frame.generation
-                        model.waterfallHistory.append(frame)
-                        waterfallState.value = frame
-                        waterfallFramesInWindow++
-                    }
+            // Capture each new FFT independently of the 30 Hz publication deadline.
+            val generation = receiverSession.spectrumGeneration()
+            if (generation != lastCapturedGeneration) {
+                val frame = receiverSession.spectrum()
+                if (frame.sessionId != capturedSessionId) {
+                    pendingVisualFrames.clear()
+                    nextVisualFrameNanos = 0L
+                    capturedSessionId = frame.sessionId
+                }
+                lastCapturedGeneration = frame.generation
+                pendingVisualFrames.addLast(frame)
+                // Bound latency when the UI stalls instead of replaying an old backlog.
+                while (pendingVisualFrames.size > 3) pendingVisualFrames.removeFirst()
+            }
+            val vsyncInterval = if (previousVsyncNanos == 0L) 0L else
+                (frameTimeNanos - previousVsyncNanos).coerceIn(0L, 33_333_333L)
+            previousVsyncNanos = frameTimeNanos
+            val interval = 1_000_000_000L / waterfallFrameRate.framesPerSecond
+            // One frame of headroom absorbs small differences between FFT and display clocks.
+            if (nextVisualFrameNanos == 0L && pendingVisualFrames.size >= 2)
+                nextVisualFrameNanos = frameTimeNanos
+            if (nextVisualFrameNanos != 0L &&
+                frameTimeNanos + vsyncInterval / 2 >= nextVisualFrameNanos) {
+                if (pendingVisualFrames.isEmpty()) {
+                    nextVisualFrameNanos = 0L
+                } else {
+                    val frame = pendingVisualFrames.removeFirst()
+                    publishVisualFrame(frame)
+                    nextVisualFrameNanos += interval
+                    if (nextVisualFrameNanos <= frameTimeNanos - vsyncInterval / 2)
+                        nextVisualFrameNanos = frameTimeNanos + interval
                 }
             }
             if (fpsWindowStartNanos == 0L) fpsWindowStartNanos = frameTimeNanos
@@ -257,6 +231,26 @@ class MainActivity : ComponentActivity() {
             }
             choreographer.postFrameCallback(this)
         }
+    }
+
+    private fun publishVisualFrame(frame: SpectrumFrame) {
+        if (frame.timestampNanos > 0)
+            RenderTimings.frameAge.record((System.nanoTime() - frame.timestampNanos).coerceAtLeast(0))
+        val bins = frame.bins
+        var peak = -90f
+        val centerBin = (bins.size / 2.0 + (frequencyHz + demodulationMode.offsetForBandwidth(runtime.bandwidth(demodulationMode)) - frame.centerFrequencyHz) * bins.size.toDouble() / frame.spanHz).roundToInt()
+        val halfBins = maxOf(1, runtime.bandwidth(demodulationMode) * bins.size / (2 * frame.spanHz))
+        for (index in maxOf(0, centerBin - halfBins)..minOf(bins.lastIndex, centerBin + halfBins)) {
+            if (bins[index] > peak) peak = bins[index]
+        }
+        signalDbfs = peak
+        squelchOpen = NativeSdr.squelchOpen()
+        wfmStereoLocked = NativeSdr.wfmStereoLocked()
+        spectrumState.value = frame
+        model.waterfallHistory.append(frame)
+        waterfallState.value = frame
+        spectrumFramesInWindow++
+        waterfallFramesInWindow++
     }
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -288,7 +282,6 @@ class MainActivity : ComponentActivity() {
         runtime.stereo = wfmStereoEnabled
         receiverSquelch = displaySettings.receiverSquelch()
         NativeSdr.setSquelch(receiverSquelch.enabled, receiverSquelch.thresholdDbfs)
-        waterfallGate.setRate(waterfallFrameRate.framesPerSecond)
         signalMeterInertia = displaySettings.signalMeterInertia()
         analogSignalMeter = displaySettings.analogSignalMeter()
         applyScreenAlwaysOn(displaySettings.screenAlwaysOn())
@@ -432,6 +425,7 @@ class MainActivity : ComponentActivity() {
         runtime.visible(false)
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
+        resetFrameTiming()
         unregisterReceiver(usbReceiver)
         super.onStop()
     }
@@ -439,6 +433,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
+        resetFrameTiming()
         destroyed = true
         runtime.removeObserver(receiverObserver)
         super.onDestroy()
@@ -541,8 +536,6 @@ class MainActivity : ComponentActivity() {
         receiverSnapshot = value
         if (streaming && !wasRunning) {
             NativeSdr.tunerGains().takeIf { it.isNotEmpty() }?.let { gainSteps = it.sorted() }
-            lastSpectrumGeneration = 0
-            lastWaterfallGeneration = 0
             resetFrameTiming()
             lastStreamBytes = receiverSession.stats()[0]
             lastStreamTime = SystemClock.elapsedRealtime()
@@ -553,6 +546,7 @@ class MainActivity : ComponentActivity() {
         } else if (!streaming) {
             mainHandler.removeCallbacks(streamPoll)
             choreographer.removeFrameCallback(spectrumFrameCallback)
+            resetFrameTiming()
             actualSpectrumFps = 0
             actualWaterfallFps = 0
             receiverMessage = when (value.state) {
@@ -586,11 +580,15 @@ class MainActivity : ComponentActivity() {
         runtime.stop()
         mainHandler.removeCallbacks(streamPoll)
         choreographer.removeFrameCallback(spectrumFrameCallback)
+        resetFrameTiming()
     }
 
     private fun resetFrameTiming() {
-        spectrumGate.reset()
-        waterfallGate.reset()
+        lastCapturedGeneration = 0L
+        capturedSessionId = 0L
+        pendingVisualFrames.clear()
+        nextVisualFrameNanos = 0L
+        previousVsyncNanos = 0L
         fpsWindowStartNanos = 0L
         spectrumFramesInWindow = 0
         waterfallFramesInWindow = 0
@@ -598,7 +596,7 @@ class MainActivity : ComponentActivity() {
 
     private fun changeWaterfallFrameRate(option: WaterfallFrameRate) {
         waterfallFrameRate = option
-        waterfallGate.setRate(option.framesPerSecond)
+        resetFrameTiming()
         actualWaterfallFps = 0
         displaySettings.saveWaterfallFrameRate(option)
     }

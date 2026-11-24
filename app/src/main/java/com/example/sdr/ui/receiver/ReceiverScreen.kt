@@ -486,11 +486,11 @@ internal fun ReceiverScreen(
                         ))) {
                             androidx.compose.runtime.key(activeHistory) {
                             AndroidView(
-                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024) },
+                                factory = { WaterfallView(it, activeHistory, minimumRenderWidth = if (remote) activeHistory.binCount else 1024, separateSurface = !remote) },
                                 update = { view ->
                                     view.setDisplayRange(if (automaticDisplay) automaticLevels?.waterfall else null)
                                     view.setTuning(visibleCenterHz.toLong(), visibleSpanHz)
-                                    activeWaterfall.value // Subscribe to the independent waterfall snapshot.
+                                    if (remote) activeWaterfall.value // USB is driven directly by history publication.
                                     view.refresh()
                                 },
                                 modifier = Modifier.fillMaxSize().padding(start = ReceiverPlotGeometry.frequencyInset)

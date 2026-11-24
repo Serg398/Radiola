@@ -7,7 +7,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
-import android.view.View
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.widget.FrameLayout
 import com.example.sdr.receiver.WaterfallHistory
 import com.example.sdr.telemetry.RenderTimings
 
@@ -16,7 +18,53 @@ class WaterfallView(
     context: Context,
     private val history: WaterfallHistory,
     private val minimumRenderWidth: Int = 1024,
-) : View(context) {
+    private val separateSurface: Boolean = false,
+) : FrameLayout(context) {
+    private var surfaceReady = false
+    private val surface = if (separateSurface) SurfaceView(context) else null
+    private val historyListener: () -> Unit = { refresh(); renderSurface() }
+
+    init {
+        setWillNotDraw(separateSurface)
+        surface?.let { child ->
+            addView(child, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            child.holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    surfaceReady = true
+                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    refresh()
+                    renderSurface()
+                }
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    surfaceReady = false
+                }
+            })
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (separateSurface) history.addListener(historyListener)
+    }
+
+    override fun onDetachedFromWindow() {
+        history.removeListener(historyListener)
+        super.onDetachedFromWindow()
+    }
+
+    // Main-thread publication keeps the history and bitmap under a single owner.
+    private fun renderSurface() {
+        val holder = surface?.holder ?: return
+        if (!surfaceReady || !holder.surface.isValid || width == 0 || height == 0) return
+        val canvas = holder.lockHardwareCanvas()
+        try {
+            drawWaterfall(canvas)
+        } finally {
+            holder.unlockCanvasAndPost(canvas)
+        }
+    }
+
     private var renderWidth = minOf(minimumRenderWidth, history.binCount)
     private var pixels = IntArray(renderWidth)
     private var bitmap = Bitmap.createBitmap(renderWidth, history.capacity, Bitmap.Config.ARGB_8888)
@@ -50,7 +98,7 @@ class WaterfallView(
         if (tuningFrequencyHz == frequencyHz && visibleSpanHz == spanHz) return
         tuningFrequencyHz = frequencyHz; visibleSpanHz = spanHz.coerceAtLeast(1)
         refresh()
-        invalidate()
+        if (separateSurface) renderSurface() else invalidate()
     }
     fun refresh() {
         val started = System.nanoTime()
@@ -79,7 +127,7 @@ class WaterfallView(
         for (age in 0 until rows) renderRow(history.rowAtAge(age))
         cachedRevision = history.revision
         RenderTimings.cache.record(System.nanoTime() - started)
-        invalidate()
+        if (!separateSurface) invalidate()
     }
     private fun renderRow(row: Int) {
         for (x in 0 until renderWidth) {
@@ -97,8 +145,12 @@ class WaterfallView(
         bitmap.setPixels(pixels, 0, renderWidth, 0, row, renderWidth, 1)
     }
     override fun onDraw(canvas: Canvas) {
-        val started = System.nanoTime()
         super.onDraw(canvas)
+        if (!separateSurface) drawWaterfall(canvas)
+    }
+
+    private fun drawWaterfall(canvas: Canvas) {
+        val started = System.nanoTime()
         val checkpoint = canvas.save()
         canvas.clipRect(0, 0, width, height)
         canvas.drawColor(palette[0])
