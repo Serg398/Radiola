@@ -193,6 +193,7 @@ internal fun SettingsPanel(
                         }
                         Text(stringResource(R.string.app_name), color = settingsWarm, fontSize = 30.sp, fontWeight = FontWeight.Light)
                         SettingsInfo("Version", version)
+                        SettingsInfo("Developer", "Serg398")
                         SettingsInfo("Receiver", "RTL-SDR Blog V4")
                     }
                 }
